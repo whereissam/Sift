@@ -2,8 +2,9 @@
 
 import time
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from .auth import verify_api_key
 from .schemas import (
     AIProvider,
     AISettingsRequest,
@@ -18,7 +19,7 @@ from ..core.summarizer import LiteLLMProvider, TranscriptSummarizer
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/ai", tags=["AI Settings"])
+router = APIRouter(prefix="/ai", tags=["AI Settings"], dependencies=[Depends(verify_api_key)])
 
 # Provider configurations with default models
 PROVIDER_CONFIGS = {

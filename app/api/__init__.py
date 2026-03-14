@@ -3,6 +3,11 @@
 from fastapi import APIRouter
 
 from .routes import router as main_router
+from .download_routes import router as download_router
+from .transcription_routes import router as transcription_router
+from .transcript_fetch_routes import router as transcript_fetch_router
+from .job_management_routes import router as job_management_router
+from .summarize_routes import router as summarize_router
 from .subscription_routes import router as subscription_router
 from .batch_routes import router as batch_router
 from .schedule_routes import router as schedule_router
@@ -21,6 +26,11 @@ from .realtime_routes import router as realtime_router
 # Create combined router
 router = APIRouter()
 router.include_router(main_router)
+router.include_router(download_router)
+router.include_router(transcription_router)
+router.include_router(transcript_fetch_router)
+router.include_router(job_management_router)
+router.include_router(summarize_router)
 router.include_router(subscription_router)
 router.include_router(batch_router)
 router.include_router(schedule_router)

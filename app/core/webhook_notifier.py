@@ -1,14 +1,58 @@
 """Webhook notification system with retry logic."""
 
 import asyncio
+import ipaddress
 import logging
+import socket
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlparse
 import httpx
 
 from ..config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Private/reserved IP ranges that should not be targeted by webhooks
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _validate_webhook_url(url: str) -> tuple[bool, str | None]:
+    """Validate webhook URL to prevent SSRF attacks."""
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False, "Invalid URL"
+
+    # Only allow http/https schemes
+    if parsed.scheme not in ("http", "https"):
+        return False, f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed."
+
+    if not parsed.hostname:
+        return False, "URL has no hostname"
+
+    # Resolve hostname and check against blocked networks
+    try:
+        addrs = socket.getaddrinfo(parsed.hostname, None)
+        for _, _, _, _, sockaddr in addrs:
+            ip = ipaddress.ip_address(sockaddr[0])
+            for network in _BLOCKED_NETWORKS:
+                if ip in network:
+                    return False, f"Webhook URL resolves to a private/reserved IP address"
+    except socket.gaierror:
+        return False, f"Cannot resolve hostname: {parsed.hostname}"
+
+    return True, None
 
 
 class WebhookNotifier:
@@ -50,6 +94,12 @@ class WebhookNotifier:
         url = webhook_url or self._default_url
         if not url:
             logger.debug(f"No webhook URL configured for event {event}")
+            return False
+
+        # Validate URL to prevent SSRF
+        is_valid, validation_error = _validate_webhook_url(url)
+        if not is_valid:
+            logger.warning(f"Webhook URL validation failed for {event}: {validation_error}")
             return False
 
         full_payload = {
@@ -148,6 +198,11 @@ class WebhookNotifier:
         Returns:
             Tuple of (success, error_message)
         """
+        # Validate URL to prevent SSRF
+        is_valid, error = _validate_webhook_url(webhook_url)
+        if not is_valid:
+            return False, error
+
         payload = {
             "event": "test",
             "timestamp": datetime.utcnow().isoformat() + "Z",

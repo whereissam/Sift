@@ -187,10 +187,24 @@ class ObsidianExporter:
         if not is_valid:
             return ObsidianExportResult(success=False, error=error)
 
-        # Determine target directory
+        # Determine target directory with path traversal protection
         target_dir = self.vault_path
         if subfolder:
-            target_dir = self.vault_path / subfolder
+            # Sanitize subfolder to prevent path traversal
+            safe_subfolder = Path(subfolder)
+            # Reject absolute paths and ".." components
+            if safe_subfolder.is_absolute() or ".." in safe_subfolder.parts:
+                return ObsidianExportResult(
+                    success=False,
+                    error=f"Invalid subfolder: path traversal detected in '{subfolder}'",
+                )
+            target_dir = (self.vault_path / safe_subfolder).resolve()
+            # Verify resolved path is within vault
+            if not str(target_dir).startswith(str(self.vault_path.resolve())):
+                return ObsidianExportResult(
+                    success=False,
+                    error="Subfolder resolves outside of vault directory",
+                )
             target_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate filename

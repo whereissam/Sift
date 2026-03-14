@@ -17,7 +17,11 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         # Use existing request ID from header or generate new one
-        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+        raw_id = request.headers.get("X-Request-ID") or ""
+        # Sanitize: only allow alphanumeric, hyphens, max 36 chars
+        import re
+        sanitized_id = re.sub(r"[^a-zA-Z0-9\-]", "", raw_id)[:36]
+        request_id = sanitized_id if sanitized_id else str(uuid.uuid4())[:8]
 
         # Store in context for logging
         token = request_id_ctx.set(request_id)

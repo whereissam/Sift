@@ -56,6 +56,7 @@ class DownloadRequest(BaseModel):
 
     url: str = Field(
         ...,
+        max_length=2048,
         description="Audio content URL",
         examples=[
             "https://x.com/i/spaces/1vOxwdyYrlqKB",
@@ -364,6 +365,7 @@ class SummarizeRequest(BaseModel):
 
     text: str = Field(
         ...,
+        max_length=500_000,
         description="Text to summarize (typically a transcript)",
     )
     summary_type: SummaryType = Field(
@@ -564,6 +566,7 @@ class WebhookTestRequest(BaseModel):
 
     url: str = Field(
         ...,
+        max_length=2048,
         description="Webhook URL to test",
     )
 
@@ -737,6 +740,7 @@ class TranslateRequest(BaseModel):
     text: str = Field(
         ...,
         min_length=1,
+        max_length=500_000,
         description="Text to translate",
     )
     source_lang: str = Field(

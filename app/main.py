@@ -186,13 +186,27 @@ _cors_origins = (
     ["*"] if _settings.cors_origins == "*"
     else [o.strip() for o in _settings.cors_origins.split(",") if o.strip()]
 )
+_allow_credentials = _cors_origins != ["*"]  # Wildcard origins cannot use credentials
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=_allow_credentials,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["X-API-Key", "Content-Type", "Authorization"],
 )
+
+# Security headers middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Timeout middleware
 app.add_middleware(TimeoutMiddleware)

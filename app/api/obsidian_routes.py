@@ -1,8 +1,9 @@
 """API routes for Obsidian integration."""
 
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from .auth import verify_api_key
 from .schemas import (
     ObsidianSettingsRequest,
     ObsidianSettingsResponse,
@@ -15,7 +16,7 @@ from ..core.obsidian_exporter import ObsidianExporter
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/obsidian", tags=["Obsidian"])
+router = APIRouter(prefix="/obsidian", tags=["Obsidian"], dependencies=[Depends(verify_api_key)])
 
 
 @router.get("/settings", response_model=ObsidianSettingsResponse)

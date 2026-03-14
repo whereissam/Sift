@@ -287,9 +287,23 @@ class JobStore:
                 return self._row_to_dict(row)
         return None
 
+    # Allowlist of columns that can be updated via update_job()
+    _UPDATABLE_COLUMNS = {
+        "status", "source_url", "platform", "raw_file_path", "converted_file_path",
+        "output_format", "quality", "model_size", "language", "transcription_format",
+        "content_info", "transcription_result", "file_size_mb", "error",
+        "progress", "last_checkpoint", "priority", "batch_id", "scheduled_at",
+        "webhook_url", "updated_at", "completed_at",
+    }
+
     def update_job(self, job_id: str, **kwargs) -> Optional[dict]:
         """Update job fields."""
         kwargs["updated_at"] = datetime.utcnow().isoformat()
+
+        # Reject any column names not in the allowlist
+        invalid_keys = set(kwargs.keys()) - self._UPDATABLE_COLUMNS
+        if invalid_keys:
+            raise ValueError(f"Invalid column names: {invalid_keys}")
 
         # Handle JSON fields
         for json_field in ["content_info", "transcription_result", "last_checkpoint"]:

@@ -195,9 +195,21 @@ class SubscriptionStore:
             rows = conn.execute(query, params).fetchall()
             return [self._row_to_subscription_dict(row) for row in rows]
 
+    # Allowlist of columns that can be updated
+    _UPDATABLE_COLUMNS = {
+        "name", "url", "subscription_type", "platform", "enabled",
+        "check_interval", "auto_transcribe", "output_format", "quality",
+        "last_checked_at", "last_item_at", "error", "updated_at",
+    }
+
     def update_subscription(self, subscription_id: str, **kwargs) -> Optional[dict]:
         """Update subscription fields."""
         kwargs["updated_at"] = datetime.utcnow().isoformat()
+
+        # Reject any column names not in the allowlist
+        invalid_keys = set(kwargs.keys()) - self._UPDATABLE_COLUMNS
+        if invalid_keys:
+            raise ValueError(f"Invalid column names: {invalid_keys}")
 
         # Convert boolean fields to int
         for bool_field in ["enabled", "auto_transcribe"]:

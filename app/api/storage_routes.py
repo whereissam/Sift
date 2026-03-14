@@ -1,12 +1,13 @@
 """Storage management API routes."""
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from .auth import verify_api_key
 from ..core.storage_manager import get_storage_manager
 
-router = APIRouter(prefix="/storage", tags=["storage"])
+router = APIRouter(prefix="/storage", tags=["storage"], dependencies=[Depends(verify_api_key)])
 
 
 class StorageStatsResponse(BaseModel):

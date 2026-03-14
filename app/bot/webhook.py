@@ -33,11 +33,14 @@ async def telegram_webhook(request: Request) -> Response:
     if _application is None:
         return Response(content="Bot not initialized", status_code=503)
 
-    # Verify secret token if configured
-    if _webhook_secret:
-        header_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-        if header_secret != _webhook_secret:
-            return Response(content="Unauthorized", status_code=403)
+    # Always verify secret token — reject if secret is not configured
+    if not _webhook_secret:
+        return Response(content="Webhook secret not configured", status_code=503)
+
+    import hmac
+    header_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not hmac.compare_digest(header_secret, _webhook_secret):
+        return Response(content="Unauthorized", status_code=403)
 
     from telegram import Update
 
