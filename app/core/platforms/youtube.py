@@ -110,6 +110,9 @@ class YouTubeDownloader(PlatformDownloader):
                 "--print-json",
                 # Workaround for YouTube SABR streaming issues
                 "--extractor-args", "youtube:player_client=web",
+                # Parallel fragment downloads
+                "--concurrent-fragments", "16",
+                "--fragment-retries", "5",
             ]
 
             if download_format == "mp3":

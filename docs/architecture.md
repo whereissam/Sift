@@ -2,12 +2,57 @@
 
 ## System Overview
 
-AudioGrab consists of these main components:
+AudioGrab runs in two modes:
+
+### Desktop Mode (Tauri + Rust)
+
+A native desktop app with an embedded Rust backend. No Python or server required.
+
+```
+┌─────────────────────────────────────────┐
+│           AudioGrab.app (Tauri)         │
+│                                         │
+│  ┌───────────────┐  ┌───────────────┐  │
+│  │ React Frontend│  │  Rust Backend │  │
+│  │   (Webview)   │◄─│  (axum :8000) │  │
+│  └───────────────┘  └───────┬───────┘  │
+│                             │          │
+│                      ┌──────┴──────┐   │
+│                      │  yt-dlp     │   │
+│                      │  ffmpeg     │   │
+│                      │  SQLite     │   │
+│                      └─────────────┘   │
+└─────────────────────────────────────────┘
+```
+
+- **Frontend**: React 19 + TanStack Router + Tailwind CSS (rendered in native webview)
+- **Backend**: axum HTTP server embedded in the Tauri process
+- **Download engine**: Spawns yt-dlp as subprocess with `--concurrent-fragments 16`
+- **Storage**: SQLite via rusqlite for job persistence
+- **Bundle size**: ~15 MB
+
+### Web Mode (Python + FastAPI)
+
+Self-hosted server mode with full feature set including transcription, LLM summarization, Telegram bot.
 
 1. **Core Library** (`app/core/`) - Downloads audio/video from various platforms and converts formats
 2. **FastAPI Backend** (`app/api/`) - REST API for external integrations
 3. **Telegram Bot** (`app/bot/`) - User-friendly chat interface
 4. **CLI** (`app/cli.py`) - Command-line interface
+
+### Desktop vs Web Feature Comparison
+
+| Feature | Desktop (Rust) | Web (Python) |
+|---------|---------------|-------------|
+| Download (all 10 platforms) | Yes | Yes |
+| Job management & SQLite | Yes | Yes |
+| Parallel HLS fragments | Yes (16x) | Yes (16x) |
+| Transcription (Whisper) | Planned | Yes |
+| LLM Summarization | Planned | Yes |
+| Telegram Bot | No | Yes |
+| Subscriptions/RSS | Planned | Yes |
+| Webhooks | Planned | Yes |
+| Bundle size | ~15 MB | ~300 MB+ (with deps) |
 
 ## Supported Platforms
 
@@ -79,6 +124,23 @@ yt-dlp maintains these changes and handles:
 - Error recovery
 
 ## Module Structure
+
+### Rust Backend (Desktop)
+
+```
+frontend/src-tauri/src/
+├── main.rs              # Tauri entry point
+├── lib.rs               # App setup, starts axum server
+└── backend/
+    ├── mod.rs            # Server startup (axum + CORS)
+    ├── types.rs          # Platform, DownloadJob, DownloadRequest, etc.
+    ├── platform.rs       # URL → platform detection (regex)
+    ├── downloader.rs     # yt-dlp subprocess orchestration
+    ├── routes.rs         # API routes (health, download, jobs, queue)
+    └── db.rs             # SQLite persistence (rusqlite)
+```
+
+### Python Backend (Web)
 
 ```
 xdownloader/

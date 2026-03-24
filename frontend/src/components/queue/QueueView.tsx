@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { animated } from '@react-spring/web'
+
+const AnimatedDiv = animated.div as React.FC<React.HTMLAttributes<HTMLDivElement> & { style?: Record<string, unknown> }>
 import { Button } from '@/components/ui/button'
 import { RefreshCw, Loader2, Clock, ArrowUp, ArrowDown, Trash2, Play, ChevronUp, ChevronDown } from 'lucide-react'
 import { useSwipeGesture } from '@/hooks/useSwipeGesture'
@@ -83,7 +85,7 @@ function SwipeableQueueItem({
       </div>
 
       {/* Main content */}
-      <animated.div
+      <AnimatedDiv
         {...bind()}
         style={{ x, touchAction: 'pan-y' }}
         className="relative flex items-center gap-2 sm:gap-3 p-3 bg-card border rounded-lg cursor-grab active:cursor-grabbing"
@@ -165,7 +167,7 @@ function SwipeableQueueItem({
             <ChevronDown className="h-5 w-5" />
           </Button>
         </div>
-      </animated.div>
+      </AnimatedDiv>
     </div>
   )
 }

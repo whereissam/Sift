@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { ThemeProvider } from "@/components/theme-provider";
+import { DesktopSplash } from "@/components/DesktopSplash";
 import "./index.css";
 
 const router = createRouter({ routeTree });
@@ -13,7 +14,9 @@ if (!rootElement.innerHTML) {
   root.render(
     <React.StrictMode>
       <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
-        <RouterProvider router={router} />
+        <DesktopSplash>
+          <RouterProvider router={router} />
+        </DesktopSplash>
       </ThemeProvider>
     </React.StrictMode>
   );

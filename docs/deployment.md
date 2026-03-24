@@ -1,10 +1,41 @@
 # Deployment Guide
 
-## Prerequisites
+## Desktop App (Recommended for end users)
+
+The desktop app is a self-contained native binary — no Python, no server setup.
+
+### Prerequisites
+
+- [Rust](https://rustup.rs/) (for building)
+- [Bun](https://bun.sh/) (for frontend build)
+- yt-dlp and ffmpeg in PATH (`brew install yt-dlp ffmpeg`)
+
+### Build
+
+```bash
+make desktop
+```
+
+This produces:
+- **macOS**: `frontend/src-tauri/target/release/bundle/dmg/AudioGrab_0.2.0_aarch64.dmg`
+- **Windows**: `frontend/src-tauri/target/release/bundle/msi/AudioGrab_0.2.0_x64_en-US.msi`
+- **Linux**: `frontend/src-tauri/target/release/bundle/deb/audio-grab_0.2.0_amd64.deb`
+
+### Development
+
+```bash
+make dev    # Tauri dev mode with hot-reload for both frontend and Rust backend
+```
+
+---
+
+## Web Mode (Self-hosted server)
+
+### Prerequisites
 
 - Python 3.10+
 - FFmpeg installed and in PATH
-- Valid Twitter/X authentication cookies
+- (Optional) Twitter/X authentication cookies
 - (Optional) Telegram bot token from @BotFather
 
 ## Local Development

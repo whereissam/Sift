@@ -103,6 +103,9 @@ class XVideoDownloader(PlatformDownloader):
                 "-o", output_template,
                 "--print-json",
                 "--merge-output-format", "mp4",
+                # Parallel fragment downloads
+                "--concurrent-fragments", "16",
+                "--fragment-retries", "5",
             ]
 
             cmd.append(url)

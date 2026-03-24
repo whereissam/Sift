@@ -108,6 +108,9 @@ class InstagramVideoDownloader(PlatformDownloader):
                 "--recode-video", "mp4",  # Recode to mp4 if needed
                 # Instagram-specific options
                 "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                # Parallel fragment downloads
+                "--concurrent-fragments", "16",
+                "--fragment-retries", "5",
             ]
 
             cmd.append(url)

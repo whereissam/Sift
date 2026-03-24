@@ -40,6 +40,11 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "ruff>=0.2.0",
 ]
+desktop = [
+    "nuitka>=2.1",
+    "ordered-set>=4.1.0",
+    "zstandard>=0.22.0",
+]
 transcribe = [
     "faster-whisper>=1.0.0",
 ]

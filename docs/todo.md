@@ -6,6 +6,16 @@ AudioGrab is evolving from a media utility into an **AI-First Knowledge Extracti
 
 ## Priority Matrix
 
+### v1.5 — Desktop App (Complete)
+
+| Feature | Difficulty | Impact | Priority |
+|---------|------------|--------|----------|
+| Tauri v2 Desktop Shell | Medium | Very High | P0 ✅ |
+| Rust Backend (axum) | High | Very High | P1 ✅ |
+| Parallel HLS Downloads (16x) | Low | High | P2 ✅ |
+| SQLite Job Persistence (Rust) | Medium | High | P3 ✅ |
+| Platform Detection (10 platforms) | Low | High | P4 ✅ |
+
 ### v1.x — Utility Foundation (Complete)
 
 | Feature | Difficulty | Impact | Priority |

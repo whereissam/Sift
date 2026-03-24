@@ -105,6 +105,10 @@ class XSpacesDownloader(PlatformDownloader):
                 "--audio-format", download_format if download_format == "mp3" else "m4a",
                 "-o", output_template,
                 "--print-json",
+                # Parallel HLS fragment downloads (major speedup for Spaces)
+                "--concurrent-fragments", "16",
+                "--fragment-retries", "5",
+                "--socket-timeout", "30",
             ]
 
             if download_format == "mp3":

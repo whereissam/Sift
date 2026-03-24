@@ -126,6 +126,9 @@ class XiaohongshuVideoDownloader(PlatformDownloader):
                 # Xiaohongshu-specific options
                 "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "--add-header", "Referer:https://www.xiaohongshu.com/",
+                # Parallel fragment downloads
+                "--concurrent-fragments", "16",
+                "--fragment-retries", "5",
             ]
 
             cmd.append(url)

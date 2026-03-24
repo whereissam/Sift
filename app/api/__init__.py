@@ -22,6 +22,7 @@ from .sentiment_routes import router as sentiment_router
 from .extract_routes import router as extract_router, presets_router as extract_presets_router
 from .obsidian_routes import router as obsidian_router
 from .realtime_routes import router as realtime_router
+from .model_routes import router as model_router
 
 # Create combined router
 router = APIRouter()
@@ -47,5 +48,6 @@ router.include_router(extract_presets_router)  # /extract/presets route
 router.include_router(extract_router)  # /jobs/{job_id}/extract/* routes
 router.include_router(obsidian_router)  # /obsidian/* routes
 router.include_router(realtime_router)  # /transcribe/live WebSocket
+router.include_router(model_router)  # /models/* routes (desktop model management)
 
 __all__ = ["router"]

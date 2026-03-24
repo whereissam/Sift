@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { Menu, X, Home, Info, Sparkles, ListOrdered, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useTheme } from '@/components/theme-provider'
+
 import { useSwipeDirection } from '@/hooks/useSwipeGesture'
 
 const NAV_ITEMS = [
@@ -15,10 +15,8 @@ const NAV_ITEMS = [
 
 export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false)
-  const { theme } = useTheme()
   const location = useLocation()
   const { onTouchStart, getSwipeDirection } = useSwipeDirection()
-  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   // Close menu on route change
   useEffect(() => {

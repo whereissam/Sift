@@ -1,3 +1,6 @@
+# Claude Code
+.claude/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -51,7 +54,8 @@ credentials.json
 *.m4a
 *.mp3
 *.aac
-*.ts
+# MPEG-TS transport streams (not TypeScript — those are in frontend/src/)
+output/**/*.ts
 *.m3u8
 
 # Logs

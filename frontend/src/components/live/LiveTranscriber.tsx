@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Mic, Square, RotateCcw, Download, Copy, AlertCircle, Check, Sparkles, Info } from 'lucide-react'
+import { Mic, Square, RotateCcw, Copy, AlertCircle, Check, Sparkles, Info } from 'lucide-react'
 import { useAudioCapture, isAudioCaptureSupported } from '@/hooks/useAudioCapture'
 import { useRealtimeTranscription } from '@/hooks/useRealtimeTranscription'
 import { TranscriptDisplay, FullTranscriptView } from './TranscriptDisplay'

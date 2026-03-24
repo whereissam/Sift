@@ -45,18 +45,30 @@
 
 ## Quick Start
 
+### Desktop App (recommended)
+
 ```bash
-# Install
 git clone https://github.com/yourusername/audiograb.git
 cd audiograb
-uv sync --extra transcribe
 
 # Install system dependencies (macOS)
 brew install ffmpeg yt-dlp
 
-# Run
+# Build and run the desktop app
+make desktop    # Builds .dmg (macOS) / .msi (Windows) / .deb (Linux)
+```
+
+### Web Mode (self-hosted)
+
+```bash
+git clone https://github.com/yourusername/audiograb.git
+cd audiograb
+uv sync --extra transcribe
+brew install ffmpeg yt-dlp
+
+# Run (two terminals)
 uv run audiograb-api          # Backend: http://localhost:8000
-cd frontend && npm run dev    # Frontend: http://localhost:5173
+cd frontend && bun run dev    # Frontend: http://localhost:5173
 ```
 
 ## CLI Usage
@@ -198,6 +210,68 @@ API_KEY=my-secret-key
 curl -H "X-API-Key: my-secret-key" http://localhost:8000/api/health
 ```
 
+## Build
+
+### Desktop App
+
+Native desktop app — **pure Rust backend** (~15 MB) with Tauri v2. No Python required.
+
+**Prerequisites:** [Rust](https://rustup.rs/), [Bun](https://bun.sh/), yt-dlp, ffmpeg
+
+```bash
+# Install system deps (macOS)
+brew install yt-dlp ffmpeg
+
+# Build the desktop app
+make desktop
+```
+
+**Output:**
+| Platform | Installer | Location |
+|----------|-----------|----------|
+| macOS | `.dmg` | `frontend/src-tauri/target/release/bundle/dmg/` |
+| Windows | `.msi` | `frontend/src-tauri/target/release/bundle/msi/` |
+| Linux | `.deb` | `frontend/src-tauri/target/release/bundle/deb/` |
+
+**Dev mode** (hot-reload for both frontend and Rust backend):
+```bash
+make dev
+```
+
+### Web Server (self-hosted)
+
+Full-featured Python backend with transcription, LLM summarization, Telegram bot.
+
+**Prerequisites:** Python 3.10+, [uv](https://github.com/astral-sh/uv), [Bun](https://bun.sh/), yt-dlp, ffmpeg
+
+```bash
+# Install Python deps
+uv sync --extra transcribe
+
+# Run both backend + frontend
+make dev-web
+
+# Or run separately:
+make dev-backend    # Python API on :8000
+make dev-frontend   # Vite on :5173
+```
+
+### Docker
+
+```bash
+docker-compose up -d    # API + Frontend + Whisper + Ollama
+```
+
+See [Deployment Guide](docs/deployment.md) for Docker, cloud, and systemd setup.
+
+### Desktop Architecture
+
+The desktop app embeds an **axum HTTP server** (Rust) that replaces the Python FastAPI backend. It starts on `localhost:8000` inside the Tauri process — the React frontend talks to it the same way as in web mode.
+
+- **Download engine**: Calls yt-dlp as a subprocess with `--concurrent-fragments 16`
+- **Job persistence**: SQLite via rusqlite
+- **Bundle size**: ~15 MB (vs ~300 MB with Python)
+
 ## Architecture & Vision
 
 AudioGrab is evolving from a media downloader into an **AI-First Intelligence Platform**. The core insight: users don't want files — they want the *knowledge* inside those files.
@@ -214,9 +288,11 @@ The **Agentic Pipeline** (on the roadmap) will make this entire chain automatic:
 
 ## Documentation
 
-- **API Docs**: http://localhost:8000/docs (Swagger UI)
+- **API Docs**: http://localhost:8000/docs (Swagger UI — web mode)
+- [Architecture](docs/architecture.md) - System design, download flow, module structure
+- [Deployment](docs/deployment.md) - Docker, cloud, systemd setup
 - [Diarization Setup](docs/diarization-setup.md) - Speaker identification
-- [X/Twitter API](docs/api-endpoints.md) - Internal API details
+- [API Endpoints](docs/api-endpoints.md) - Internal API details
 - [Queue & Scheduling](docs/queue-scheduling.md) - Batch downloads, priority queue, scheduling
 - [Webhooks & Annotations](docs/webhooks-annotations.md) - Notifications and collaboration
 - [Feature Roadmap](docs/todo.md) - Full v1.x and v2.0 AI-Native roadmap

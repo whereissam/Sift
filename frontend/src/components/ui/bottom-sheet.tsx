@@ -1,5 +1,7 @@
 import * as React from 'react'
 import { useSpring, animated, config } from '@react-spring/web'
+
+const AnimatedDiv = animated.div as React.FC<React.HTMLAttributes<HTMLDivElement> & { style?: Record<string, unknown>; ref?: React.Ref<HTMLDivElement> }>
 import { useDrag } from '@use-gesture/react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -41,7 +43,7 @@ export function BottomSheet({
   }, [open, currentSnap, api, maxHeight, snapPoints])
 
   const bind = useDrag(
-    ({ movement: [, my], velocity: [, vy], direction: [, dy], cancel, active }) => {
+    ({ movement: [, my], velocity: [, vy], direction: [, dy], cancel: _cancel, active }) => {
       const currentY = maxHeight * (1 - snapPoints[currentSnap])
 
       if (active) {
@@ -92,16 +94,16 @@ export function BottomSheet({
   return (
     <>
       {/* Backdrop */}
-      <animated.div
+      <AnimatedDiv
         className="fixed inset-0 bg-black/50 z-40"
         style={{
-          opacity: y.to([0, maxHeight], [1, 0]),
+          opacity: y.to([0, maxHeight], [1, 0]) as unknown as number,
         }}
         onClick={onClose}
       />
 
       {/* Sheet */}
-      <animated.div
+      <AnimatedDiv
         ref={containerRef}
         className={cn(
           'fixed left-0 right-0 bottom-0 z-50 bg-background rounded-t-2xl shadow-xl',
@@ -138,7 +140,7 @@ export function BottomSheet({
         <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: `${maxHeight - 80}px` }}>
           {children}
         </div>
-      </animated.div>
+      </AnimatedDiv>
     </>
   )
 }
