@@ -151,7 +151,11 @@ class SpotifyDownloader(PlatformDownloader):
                 logger.error(f"spotdl error: {combined_output}")
 
                 if "rate" in combined_output.lower() and "limit" in combined_output.lower():
-                    raise AudioGrabError("Spotify rate limited. Please try again later.")
+                    raise AudioGrabError(
+                        "Spotify rate limited — too many requests. "
+                        "Wait 10–30 minutes before trying again. "
+                        "If this persists, try a different network or use a VPN."
+                    )
 
                 if "no results" in combined_output.lower() or "not found" in combined_output.lower():
                     raise ContentNotFoundError(f"Could not find audio for: {url}")
