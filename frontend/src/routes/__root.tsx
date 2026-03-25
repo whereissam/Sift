@@ -10,75 +10,84 @@ const NAV_ITEMS = [
   { to: '/live', label: 'Live', icon: Mic },
 ] as const
 
+const UTIL_ITEMS = [
+  { to: '/subscriptions', label: 'Feeds', icon: Rss },
+  { to: '/settings', label: 'Settings', icon: Settings },
+] as const
+
 export const Route = createRootRoute({
   component: () => {
     const location = useLocation()
-    const isMainPage = ['/audio', '/video', '/transcribe', '/clips', '/'].includes(location.pathname)
+    const isMainPage = ['/audio', '/video', '/transcribe', '/clips', '/live', '/'].includes(location.pathname)
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background to-muted flex flex-col">
-        {/* Top right controls */}
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
-          {isMainPage && (
-            <>
-              <Link
-                to="/subscriptions"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-card border shadow-sm hover:bg-muted transition-colors text-sm font-medium text-foreground"
-              >
-                <Rss className="h-4 w-4" />
-                <span className="hidden sm:inline">Subscriptions</span>
+      <div className="min-h-screen bg-background text-foreground flex flex-col">
+        {/* ─── Top toolbar ─── */}
+        <header className="border-b border-border">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6">
+            <div className="flex items-center h-12 sm:h-14 gap-6">
+              {/* Brand mark */}
+              <Link to="/audio" className="flex items-center gap-2 shrink-0">
+                <img src="/logo.svg" alt="AudioGrab" className="h-6 sm:h-7 w-auto" />
+                <span className="text-sm sm:text-base font-bold tracking-tight text-foreground hidden sm:block">
+                  AudioGrab
+                </span>
               </Link>
-              <Link
-                to="/settings"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-card border shadow-sm hover:bg-muted transition-colors text-sm font-medium text-foreground"
-              >
-                <Settings className="h-4 w-4" />
-                <span className="hidden sm:inline">Settings</span>
-              </Link>
-            </>
-          )}
-          <ThemeToggle />
-        </div>
 
-        {/* Main content */}
-        {isMainPage ? (
-          <div className="flex-1 flex items-center justify-center p-3 sm:p-4">
-            <div className="w-full max-w-xl">
-              {/* Header */}
-              <div className="text-center mb-6 sm:mb-8">
-                <div className="flex justify-center mb-3 sm:mb-4">
-                  <img src="/logo.svg" alt="AudioGrab" className="h-12 sm:h-16 w-auto" />
-                </div>
-                <h1 className="text-2xl sm:text-4xl font-bold text-foreground mb-1 sm:mb-2">AudioGrab</h1>
-                <p className="text-sm sm:text-base text-muted-foreground">Download audio and video from your favorite platforms</p>
-              </div>
+              {/* Main nav */}
+              <nav className="flex items-center gap-0.5 flex-1 overflow-x-auto">
+                {NAV_ITEMS.map(({ to, label, icon: Icon }) => {
+                  const active = location.pathname === to || (to === '/audio' && location.pathname === '/')
+                  return (
+                    <Link
+                      key={to}
+                      to={to}
+                      className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
+                        active
+                          ? 'text-primary'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {label}
+                    </Link>
+                  )
+                })}
+              </nav>
 
-              {/* Navigation Tabs */}
-              <div className="grid w-full grid-cols-5 mb-4 h-11 sm:h-10 bg-muted rounded-lg p-1">
-                {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+              {/* Utils */}
+              <div className="flex items-center gap-1 shrink-0">
+                {isMainPage && UTIL_ITEMS.map(({ to, label, icon: Icon }) => (
                   <Link
                     key={to}
                     to={to}
-                    className={`flex items-center justify-center gap-1 sm:gap-2 text-xs sm:text-sm rounded-md transition-all ${
-                      location.pathname === to
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
+                    className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    title={label}
                   >
-                    <Icon className="h-4 w-4" />
-                    <span className="hidden sm:inline">{label}</span>
+                    <Icon className="w-3.5 h-3.5" />
+                    <span className="hidden md:inline">{label}</span>
                   </Link>
                 ))}
+                <ThemeToggle />
               </div>
-
-              {/* Page Content */}
-              <Outlet />
-
-              <p className="text-center text-xs text-muted-foreground mt-6">
-                Supports public content with replay/download enabled
-              </p>
             </div>
           </div>
+        </header>
+
+        {/* ─── Content ─── */}
+        {isMainPage ? (
+          <main className="flex-1 flex flex-col">
+            <div className="max-w-3xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 flex-1">
+              <Outlet />
+            </div>
+            <footer className="border-t border-border">
+              <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+                <p className="text-[11px] text-muted-foreground">
+                  Public content with replay/download enabled only
+                </p>
+              </div>
+            </footer>
+          </main>
         ) : (
           <Outlet />
         )}

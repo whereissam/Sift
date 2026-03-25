@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
-import { Twitter, Youtube } from 'lucide-react'
+import { Twitter, Youtube, Instagram, BookOpen } from 'lucide-react'
 import {
   DownloadStatus,
   Platform,
@@ -16,6 +15,13 @@ export const Route = createFileRoute('/video')({
   component: VideoPage,
 })
 
+const PLATFORM_ICONS: Record<string, typeof Twitter> = {
+  x_video: Twitter,
+  youtube_video: Youtube,
+  instagram: Instagram,
+  xiaohongshu: BookOpen,
+}
+
 function VideoPage() {
   const [platform, setPlatform] = useState<Platform>('x_video')
   const [url, setUrl] = useState('')
@@ -26,10 +32,10 @@ function VideoPage() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
   const [contentInfo, setContentInfo] = useState<ContentInfo | null>(null)
 
-  const handlePlatformChange = (newPlatform: string) => {
-    setPlatform(newPlatform as Platform)
+  const handlePlatformChange = (newPlatform: Platform) => {
+    setPlatform(newPlatform)
     setUrl('')
-    setFormat(PLATFORM_FORMATS[newPlatform as Platform][0].value)
+    setFormat(PLATFORM_FORMATS[newPlatform][0].value)
     setStatus('idle')
     setMessage('')
   }
@@ -115,37 +121,55 @@ function VideoPage() {
   }
 
   return (
-    <Tabs value={platform} onValueChange={handlePlatformChange} className="w-full">
-      <TabsList className="grid w-full grid-cols-2 mb-4 h-11 sm:h-10">
-        <TabsTrigger value="x_video" className="flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
-          <Twitter className="h-4 w-4" />
-          <span>X/Twitter</span>
-        </TabsTrigger>
-        <TabsTrigger value="youtube_video" className="flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
-          <Youtube className="h-4 w-4" />
-          <span>YouTube</span>
-        </TabsTrigger>
-      </TabsList>
-
-      <div className="bg-card rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
-        {VIDEO_PLATFORMS.map((p) => (
-          <TabsContent key={p} value={p} className="mt-0">
-            <DownloadForm
-              platform={p}
-              url={url}
-              setUrl={setUrl}
-              format={format}
-              setFormat={setFormat}
-              quality={quality}
-              setQuality={setQuality}
-              status={status}
-              message={message}
-              onDownload={handleDownload}
-              isVideo
-            />
-          </TabsContent>
-        ))}
+    <div className="stagger">
+      {/* Page title */}
+      <div className="mb-6 sm:mb-8 animate-fade-up">
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+          Video
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Grab video from social platforms
+        </p>
       </div>
-    </Tabs>
+
+      {/* Platform selector */}
+      <div className="flex flex-wrap gap-1.5 mb-6 animate-fade-up">
+        {VIDEO_PLATFORMS.map((p) => {
+          const Icon = PLATFORM_ICONS[p]
+          const active = platform === p
+          return (
+            <button
+              key={p}
+              onClick={() => handlePlatformChange(p)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium border transition-colors ${
+                active
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/30'
+              }`}
+            >
+              {Icon && <Icon className="w-3.5 h-3.5" />}
+              {PLATFORM_LABELS[p]}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Download form */}
+      <div className="animate-fade-up">
+        <DownloadForm
+          platform={platform}
+          url={url}
+          setUrl={setUrl}
+          format={format}
+          setFormat={setFormat}
+          quality={quality}
+          setQuality={setQuality}
+          status={status}
+          message={message}
+          onDownload={handleDownload}
+          isVideo
+        />
+      </div>
+    </div>
   )
 }

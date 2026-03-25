@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { Twitter, Podcast, Music, Youtube, Radio } from 'lucide-react'
 import {
@@ -16,6 +15,14 @@ export const Route = createFileRoute('/audio')({
   component: AudioPage,
 })
 
+const PLATFORM_ICONS: Record<string, typeof Twitter> = {
+  x_spaces: Twitter,
+  apple_podcasts: Podcast,
+  spotify: Music,
+  youtube: Youtube,
+  xiaoyuzhou: Radio,
+}
+
 function AudioPage() {
   const [platform, setPlatform] = useState<Platform>('x_spaces')
   const [url, setUrl] = useState('')
@@ -25,10 +32,10 @@ function AudioPage() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
   const [contentInfo, setContentInfo] = useState<ContentInfo | null>(null)
 
-  const handlePlatformChange = (newPlatform: string) => {
-    setPlatform(newPlatform as Platform)
+  const handlePlatformChange = (newPlatform: Platform) => {
+    setPlatform(newPlatform)
     setUrl('')
-    setFormat(PLATFORM_FORMATS[newPlatform as Platform][0].value)
+    setFormat(PLATFORM_FORMATS[newPlatform][0].value)
     setStatus('idle')
     setMessage('')
   }
@@ -114,48 +121,52 @@ function AudioPage() {
   }
 
   return (
-    <Tabs value={platform} onValueChange={handlePlatformChange} className="w-full">
-      <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 mb-4 text-muted-foreground">
-        <TabsList className="inline-flex w-auto min-w-full sm:grid sm:grid-cols-5 gap-1">
-          <TabsTrigger value="x_spaces" className="flex items-center gap-1.5 px-3 sm:px-2 whitespace-nowrap">
-            <Twitter className="h-4 w-4 flex-shrink-0" />
-            <span className="text-xs">Spaces</span>
-          </TabsTrigger>
-          <TabsTrigger value="apple_podcasts" className="flex items-center gap-1.5 px-3 sm:px-2 whitespace-nowrap">
-            <Podcast className="h-4 w-4 flex-shrink-0" />
-            <span className="text-xs">Apple</span>
-          </TabsTrigger>
-          <TabsTrigger value="spotify" className="flex items-center gap-1.5 px-3 sm:px-2 whitespace-nowrap">
-            <Music className="h-4 w-4 flex-shrink-0" />
-            <span className="text-xs">Spotify</span>
-          </TabsTrigger>
-          <TabsTrigger value="youtube" className="flex items-center gap-1.5 px-3 sm:px-2 whitespace-nowrap">
-            <Youtube className="h-4 w-4 flex-shrink-0" />
-            <span className="text-xs">YouTube</span>
-          </TabsTrigger>
-          <TabsTrigger value="xiaoyuzhou" className="flex items-center gap-1.5 px-3 sm:px-2 whitespace-nowrap">
-            <Radio className="h-4 w-4 flex-shrink-0" />
-            <span className="text-xs">小宇宙</span>
-          </TabsTrigger>
-        </TabsList>
+    <div className="stagger">
+      {/* Page title */}
+      <div className="mb-6 sm:mb-8 animate-fade-up">
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+          Audio
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Grab audio from podcasts, spaces, and streams
+        </p>
       </div>
 
-      <div className="bg-card rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
-        {AUDIO_PLATFORMS.map((p) => (
-          <TabsContent key={p} value={p} className="mt-0">
-            <DownloadForm
-              platform={p}
-              url={url}
-              setUrl={setUrl}
-              format={format}
-              setFormat={setFormat}
-              status={status}
-              message={message}
-              onDownload={handleDownload}
-            />
-          </TabsContent>
-        ))}
+      {/* Platform selector — compact inline pills */}
+      <div className="flex flex-wrap gap-1.5 mb-6 animate-fade-up">
+        {AUDIO_PLATFORMS.map((p) => {
+          const Icon = PLATFORM_ICONS[p]
+          const active = platform === p
+          return (
+            <button
+              key={p}
+              onClick={() => handlePlatformChange(p)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium border transition-colors ${
+                active
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/30'
+              }`}
+            >
+              {Icon && <Icon className="w-3.5 h-3.5" />}
+              {PLATFORM_LABELS[p]}
+            </button>
+          )
+        })}
       </div>
-    </Tabs>
+
+      {/* Download form */}
+      <div className="animate-fade-up">
+        <DownloadForm
+          platform={platform}
+          url={url}
+          setUrl={setUrl}
+          format={format}
+          setFormat={setFormat}
+          status={status}
+          message={message}
+          onDownload={handleDownload}
+        />
+      </div>
+    </div>
   )
 }
