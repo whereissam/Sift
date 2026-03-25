@@ -27,7 +27,7 @@ AudioGrab is evolving from a media utility into an **AI-First Knowledge Extracti
 | Watch Folders & Subscriptions | Medium | High | P4 ✅ |
 | Audio Pre-processing | Medium | Medium | P5 ✅ |
 | AI Provider Manager | Medium | High | P6 ✅ |
-| Sentiment & Vibe Analysis | Medium | Medium | P7 |
+| Sentiment & Vibe Analysis | Medium | Medium | P7 ✅ |
 | Social Media Clip Generator | High | High | P8 ✅ |
 | AI Translation & Dubbing | Very High | Very High | P9 (Translation ✅) |
 
@@ -229,43 +229,37 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 
 ---
 
-## P7: Sentiment & Psychographic Mapping
+## P7: Sentiment & Vibe Analysis ✅ COMPLETED
 
-**Goal:** Go beyond simple sentiment — generate an emotional & rhetorical intelligence layer for audio content. Don't just detect "heated moments"; use AI to explain *why* they're heated and surface contradictions.
+**Goal:** Generate an emotional intelligence layer for audio content — detect heated moments, sentiment shifts, and emotional arcs.
 
 ### Tasks
 
-- [ ] Create sentiment analysis service (`app/core/sentiment_analyzer.py`)
-- [ ] Research and select sentiment analysis approach:
-  - [ ] LLM-based sentiment prompts (most flexible, required for reasoning)
-  - [ ] FinBERT (financial sentiment, good for podcast discussions)
-  - [ ] General sentiment models from HuggingFace (fast baseline)
-- [ ] Sentiment tagging types:
-  - [ ] Positive/Negative/Neutral
-  - [ ] Bullish/Bearish (for financial content)
-  - [ ] Aggressive/Calm (for debates)
-  - [ ] Excitement level (0-100)
-- [ ] Analyze transcript segments:
-  - [ ] Process each transcript segment individually
-  - [ ] Aggregate scores over time windows
-  - [ ] Identify "heated" moments and debates
-  - [ ] **AI Reasoning**: For each flagged moment, generate a 1-2 sentence explanation of *why* the sentiment shifted
-- [ ] **Contradiction Detection** (AI-powered):
-  - [ ] Cross-reference statements across the full transcript
-  - [ ] Flag when a speaker's position at timestamp A conflicts with their statement at timestamp B
-  - [ ] Generate contradiction report with evidence quotes and timestamps
-  - [ ] Example output: *"At 10:12, Speaker A claimed X, but at 32:40, Speaker A said Y — these positions are inconsistent."*
-- [ ] Web UI visualization:
-  - [ ] Emotional timeline/heatmap alongside transcript
-  - [ ] Color-coded segments (red=heated, green=positive, etc.)
-  - [ ] Click on timeline to jump to that moment
-  - [ ] Summary of overall emotional arc
-  - [ ] Contradiction highlights with linked timestamps
-- [ ] API endpoints:
-  - [ ] `POST /jobs/{id}/analyze-sentiment` - Run sentiment analysis
-  - [ ] `GET /jobs/{id}/sentiment` - Get sentiment results
-  - [ ] `GET /jobs/{id}/contradictions` - Get detected contradictions
-- [ ] Export sentiment data with transcript
+- [x] Create sentiment analysis service (`app/core/sentiment_analyzer.py`)
+- [x] LLM-based sentiment analysis (via configured AI provider)
+- [x] Sentiment tagging types:
+  - [x] Polarity (positive/negative/neutral)
+  - [x] Energy level (0-100)
+  - [x] Heat score for identifying intense moments
+  - [x] Dominant emotions per segment
+- [x] Analyze transcript segments:
+  - [x] Process segments with configurable time window aggregation
+  - [x] Identify heated moments and debates
+  - [x] Generate emotional arc summary with peak moments
+- [x] Web UI visualization:
+  - [x] Sentiment section in transcription results (`SentimentSection.tsx`, `SentimentTimeline.tsx`)
+  - [x] Emotional timeline/heatmap
+  - [x] Heated moments display
+- [x] API endpoints:
+  - [x] `POST /jobs/{id}/analyze-sentiment` - Run sentiment analysis
+  - [x] `GET /jobs/{id}/sentiment` - Get cached sentiment results
+  - [x] `GET /jobs/{id}/sentiment/timeline` - Emotional heatmap timeline
+  - [x] `GET /jobs/{id}/sentiment/heated-moments` - Top intense moments
+
+### Future Enhancements (moved to P13)
+- [ ] Contradiction detection (cross-reference statements)
+- [ ] Psychographic mapping (persuasion techniques, topic deflection)
+- [ ] Cross-platform speaker tracking
 
 ---
 

@@ -20,6 +20,13 @@ Full interactive documentation available at http://localhost:8000/docs (Swagger 
 | GET | `/api/jobs` | List all jobs |
 | POST | `/api/jobs/{id}/retry` | Retry failed job |
 
+### Transcript Fetch Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/transcript/check` | Check if platform transcript is available (YouTube, Spotify) |
+| POST | `/api/transcript/fetch` | Fetch existing transcript from platform (no Whisper needed) |
+
 ### Batch & Queue Endpoints
 
 | Method | Endpoint | Description |

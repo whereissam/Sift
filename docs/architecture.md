@@ -48,7 +48,12 @@ Self-hosted server mode with full feature set including transcription, LLM summa
 | Job management & SQLite | Yes | Yes |
 | Parallel HLS fragments | Yes (16x) | Yes (16x) |
 | Transcription (Whisper) | Planned | Yes |
+| Speaker Diarization | Planned | Yes |
 | LLM Summarization | Planned | Yes |
+| Sentiment Analysis | Planned | Yes |
+| Social Media Clips | Planned | Yes |
+| Translation | Planned | Yes |
+| Real-time Transcription | Planned | Yes |
 | Telegram Bot | No | Yes |
 | Subscriptions/RSS | Planned | Yes |
 | Webhooks | Planned | Yes |
@@ -217,6 +222,36 @@ xdownloader/
 ├── pyproject.toml
 └── README.md
 ```
+
+## Frontend Design System
+
+The frontend uses an **Industrial Utility** aesthetic — dense, left-aligned, and optimized for power users who want to paste a URL and go.
+
+### Typography
+- **Display/UI**: Plus Jakarta Sans (variable weight 300–800)
+- **Code/URLs**: JetBrains Mono
+- **Letter spacing**: -0.011em (tight, utilitarian)
+
+### Color System (OKLCH)
+- **Light mode**: Warm parchment background (`oklch(0.975 0.005 80)`), near-black text, signal orange accent (`oklch(0.58 0.17 38)`)
+- **Dark mode**: Warm charcoal (`oklch(0.16 0.008 60)`), warm gray text, amber-orange accent (`oklch(0.72 0.15 55)`)
+- No gradients — flat surfaces with hairline borders
+
+### Layout
+- Top toolbar: brand mark + main nav (Audio, Video, Transcribe, Clips, Live) + utilities (Feeds, Settings, theme toggle)
+- Content area: `max-w-3xl`, left-aligned
+- Sharp corners: `--radius: 0.125rem` (2px)
+- No decorative shadows on containers
+
+### Interaction
+- Oversized monospace URL input (56–64px) as the hero element
+- Keyboard hint (`Enter`) appears when URL is entered
+- Platform selector: compact inline pill buttons with inverted active state
+- Format/quality: inline toggle buttons, not card grids
+- Collapsible per-platform URL guides with step-by-step instructions
+- Staggered fade-up entrance animation on page load
+
+---
 
 ## Core Components
 
