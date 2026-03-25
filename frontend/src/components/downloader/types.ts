@@ -109,6 +109,7 @@ export const PLATFORM_GUIDES: Record<Platform, { steps: string[]; tip?: string }
       'Tap the "..." menu then "Share" > "Copy link"',
       'Paste the link here',
     ],
+    tip: 'Spotify has rate limits — if download fails, wait 10–30 min and try again',
   },
   youtube: {
     steps: [
