@@ -45,31 +45,43 @@
 
 ## Quick Start
 
+### System Dependencies
+
+```bash
+# macOS (required for both modes)
+brew install ffmpeg yt-dlp
+```
+
 ### Desktop App (recommended)
+
+Native app with Rust backend — no Python needed.
 
 ```bash
 git clone https://github.com/yourusername/audiograb.git
 cd audiograb
 
-# Install system dependencies (macOS)
-brew install ffmpeg yt-dlp
+# Development (hot-reload)
+make dev
 
-# Build and run the desktop app
-make desktop    # Builds .dmg (macOS) / .msi (Windows) / .deb (Linux)
+# Build installer (.dmg / .msi / .deb)
+make desktop
 ```
 
-### Web Mode (self-hosted)
+### Web Mode (self-hosted, full features)
+
+Python backend with transcription, LLM summarization, Telegram bot.
 
 ```bash
 git clone https://github.com/yourusername/audiograb.git
 cd audiograb
 uv sync --extra transcribe
-brew install ffmpeg yt-dlp
 
-# Run (two terminals)
-uv run audiograb-api          # Backend: http://localhost:8000
-cd frontend && bun run dev    # Frontend: http://localhost:5173
+# Run both backend + frontend
+make dev-web
 ```
+
+> **Important:** Desktop and web modes both use port 8000. Only run one at a time.
+> If you get port conflicts, run: `lsof -ti:8000 | xargs kill -9`
 
 ## CLI Usage
 
@@ -210,50 +222,48 @@ API_KEY=my-secret-key
 curl -H "X-API-Key: my-secret-key" http://localhost:8000/api/health
 ```
 
-## Build
+## Build & Run
+
+### Available Commands
+
+| Command | What it does |
+|---------|-------------|
+| `make dev` | Desktop dev mode — Tauri + Rust backend + hot-reload |
+| `make dev-web` | Web dev mode — Python backend + Vite frontend |
+| `make dev-backend` | Python backend only (`:8000`) |
+| `make dev-frontend` | Vite frontend only (`:5173`) |
+| `make desktop` | Build desktop installer (`.dmg` / `.msi` / `.deb`) |
+| `make test` | Run Python test suite |
+| `make lint` | Lint Python + TypeScript + Rust |
+| `make clean` | Remove build artifacts |
 
 ### Desktop App
-
-Native desktop app — **pure Rust backend** (~15 MB) with Tauri v2. No Python required.
 
 **Prerequisites:** [Rust](https://rustup.rs/), [Bun](https://bun.sh/), yt-dlp, ffmpeg
 
 ```bash
-# Install system deps (macOS)
-brew install yt-dlp ffmpeg
-
-# Build the desktop app
-make desktop
+make desktop    # Build installer (~1 min)
 ```
 
-**Output:**
 | Platform | Installer | Location |
 |----------|-----------|----------|
-| macOS | `.dmg` | `frontend/src-tauri/target/release/bundle/dmg/` |
+| macOS | `.dmg` (6.9 MB) | `frontend/src-tauri/target/release/bundle/dmg/` |
 | Windows | `.msi` | `frontend/src-tauri/target/release/bundle/msi/` |
 | Linux | `.deb` | `frontend/src-tauri/target/release/bundle/deb/` |
 
-**Dev mode** (hot-reload for both frontend and Rust backend):
-```bash
-make dev
-```
+The desktop app embeds an **axum HTTP server** (Rust) that runs on `localhost:8000` inside the Tauri process. The React frontend connects the same way as web mode — no configuration needed.
 
-### Web Server (self-hosted)
+- **Download engine**: yt-dlp subprocess with `--concurrent-fragments 16`
+- **Job persistence**: SQLite via rusqlite
+- **Binary**: 17 MB, **DMG**: 6.9 MB
 
-Full-featured Python backend with transcription, LLM summarization, Telegram bot.
+### Web Server
 
 **Prerequisites:** Python 3.10+, [uv](https://github.com/astral-sh/uv), [Bun](https://bun.sh/), yt-dlp, ffmpeg
 
 ```bash
-# Install Python deps
-uv sync --extra transcribe
-
-# Run both backend + frontend
-make dev-web
-
-# Or run separately:
-make dev-backend    # Python API on :8000
-make dev-frontend   # Vite on :5173
+uv sync --extra transcribe    # Install Python deps
+make dev-web                  # Starts backend + frontend
 ```
 
 ### Docker
@@ -263,14 +273,6 @@ docker-compose up -d    # API + Frontend + Whisper + Ollama
 ```
 
 See [Deployment Guide](docs/deployment.md) for Docker, cloud, and systemd setup.
-
-### Desktop Architecture
-
-The desktop app embeds an **axum HTTP server** (Rust) that replaces the Python FastAPI backend. It starts on `localhost:8000` inside the Tauri process — the React frontend talks to it the same way as in web mode.
-
-- **Download engine**: Calls yt-dlp as a subprocess with `--concurrent-fragments 16`
-- **Job persistence**: SQLite via rusqlite
-- **Bundle size**: ~15 MB (vs ~300 MB with Python)
 
 ## Architecture & Vision
 

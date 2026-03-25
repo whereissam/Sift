@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 class InstagramVideoDownloader(PlatformDownloader):
     """Downloads videos and reels from Instagram using yt-dlp."""
 
+    PLATFORM = Platform.INSTAGRAM
+
     # URL patterns for Instagram posts, reels, and IGTV
     URL_PATTERNS = [
         r"(?:https?://)?(?:www\.)?instagram\.com/(?:p|reel|tv)/([a-zA-Z0-9_-]+)",

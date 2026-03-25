@@ -28,6 +28,8 @@ class DiscordAudioDownloader(PlatformDownloader):
     - Discord soundboard clips
     """
 
+    PLATFORM = Platform.DISCORD
+
     # URL patterns for Discord audio
     URL_PATTERNS = [
         # CDN attachment URLs

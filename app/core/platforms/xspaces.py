@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 class XSpacesDownloader(PlatformDownloader):
     """Downloads Twitter/X Spaces using yt-dlp."""
 
+    PLATFORM = Platform.X_SPACES
+
     # URL patterns for X Spaces
     URL_PATTERNS = [
         r"(?:https?://)?(?:www\.)?(?:twitter\.com|x\.com)/i/spaces/([a-zA-Z0-9]+)",

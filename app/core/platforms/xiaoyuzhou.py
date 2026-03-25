@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 class XiaoyuzhouDownloader(PlatformDownloader):
     """Downloads podcast episodes from 小宇宙 (Xiaoyuzhou FM)."""
 
+    PLATFORM = Platform.XIAOYUZHOU
+
     # URL patterns for Xiaoyuzhou
     URL_PATTERNS = [
         r"(?:https?://)?(?:www\.)?xiaoyuzhoufm\.com/episode/([a-zA-Z0-9]+)",

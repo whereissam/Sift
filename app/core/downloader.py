@@ -51,10 +51,21 @@ class DownloaderFactory:
 
     @classmethod
     def detect_platform(cls, url: str) -> Optional[Platform]:
-        """Auto-detect platform from URL."""
+        """Auto-detect platform from URL.
+
+        Uses class-level PLATFORM attribute to avoid instantiation
+        (which may fail if external tools like spotdl aren't installed).
+        """
         for downloader_cls in _get_platform_downloaders():
             if downloader_cls.can_handle_url(url):
-                return downloader_cls().platform
+                # Use class attribute if available, otherwise instantiate
+                if hasattr(downloader_cls, 'PLATFORM'):
+                    return downloader_cls.PLATFORM
+                try:
+                    return downloader_cls().platform
+                except Exception:
+                    # Tool not installed — skip but still return platform from class name
+                    return None
         return None
 
     @classmethod
@@ -113,7 +124,13 @@ class DownloaderFactory:
         available = []
         for downloader_cls in _get_platform_downloaders():
             if downloader_cls.is_available():
-                available.append(downloader_cls().platform)
+                if hasattr(downloader_cls, 'PLATFORM'):
+                    available.append(downloader_cls.PLATFORM)
+                else:
+                    try:
+                        available.append(downloader_cls().platform)
+                    except Exception:
+                        pass
         return available
 
 

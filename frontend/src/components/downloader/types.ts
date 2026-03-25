@@ -36,39 +36,31 @@ export interface TranscriptionResult {
 export const AUDIO_PLATFORMS: Platform[] = ['x_spaces', 'apple_podcasts', 'spotify', 'youtube', 'xiaoyuzhou']
 export const VIDEO_PLATFORMS: Platform[] = ['x_video', 'youtube_video', 'instagram', 'xiaohongshu']
 
-export const PLATFORM_FORMATS: Record<Platform, { value: string; label: string; desc: string }[]> = {
-  x_spaces: [
-    { value: 'm4a', label: 'M4A', desc: 'Original quality' },
-    { value: 'mp3', label: 'MP3', desc: 'Most compatible' },
-  ],
-  apple_podcasts: [
-    { value: 'm4a', label: 'M4A', desc: 'Original quality' },
-    { value: 'mp3', label: 'MP3', desc: 'Most compatible' },
-  ],
-  spotify: [
-    { value: 'mp3', label: 'MP3', desc: 'Most compatible' },
-    { value: 'm4a', label: 'M4A', desc: 'AAC format' },
-  ],
-  youtube: [
-    { value: 'm4a', label: 'M4A', desc: 'Best quality' },
-    { value: 'mp3', label: 'MP3', desc: 'Most compatible' },
-  ],
-  xiaoyuzhou: [
-    { value: 'm4a', label: 'M4A', desc: 'Original quality' },
-    { value: 'mp3', label: 'MP3', desc: 'Most compatible' },
-  ],
-  x_video: [
-    { value: 'mp4', label: 'MP4', desc: 'Best quality' },
-  ],
-  youtube_video: [
-    { value: 'mp4', label: 'MP4', desc: 'Best quality' },
-  ],
-  instagram: [
-    { value: 'mp4', label: 'MP4', desc: 'Best quality' },
-  ],
-  xiaohongshu: [
-    { value: 'mp4', label: 'MP4', desc: 'Best quality' },
-  ],
+// ─── Format options (centralized) ───────────────────────────────
+export type FormatOption = { value: string; label: string; desc: string }
+
+const AUDIO_FORMAT_OPTIONS: FormatOption[] = [
+  { value: 'm4a', label: 'M4A', desc: 'Original quality' },
+  { value: 'mp3', label: 'MP3', desc: 'Most compatible' },
+  { value: 'mp4', label: 'MP4', desc: 'Video container' },
+]
+
+const VIDEO_FORMAT_OPTIONS: FormatOption[] = [
+  { value: 'mp4', label: 'MP4', desc: 'Best quality' },
+]
+
+export const PLATFORM_FORMATS: Record<Platform, FormatOption[]> = {
+  // Audio platforms — all share the same format options
+  x_spaces: AUDIO_FORMAT_OPTIONS,
+  apple_podcasts: AUDIO_FORMAT_OPTIONS,
+  spotify: AUDIO_FORMAT_OPTIONS,
+  youtube: AUDIO_FORMAT_OPTIONS,
+  xiaoyuzhou: AUDIO_FORMAT_OPTIONS,
+  // Video platforms — mp4 only
+  x_video: VIDEO_FORMAT_OPTIONS,
+  youtube_video: VIDEO_FORMAT_OPTIONS,
+  instagram: VIDEO_FORMAT_OPTIONS,
+  xiaohongshu: VIDEO_FORMAT_OPTIONS,
 }
 
 export const PLATFORM_PLACEHOLDERS: Record<Platform, string> = {
@@ -93,6 +85,76 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   youtube_video: 'YouTube',
   instagram: 'Instagram',
   xiaohongshu: '小红书',
+}
+
+export const PLATFORM_GUIDES: Record<Platform, { steps: string[]; tip?: string }> = {
+  x_spaces: {
+    steps: [
+      'Open the Space and tap "Listen"',
+      'Tap the share icon and copy the link',
+      'Paste the link here',
+    ],
+    tip: 'Works with live, scheduled, and recorded Spaces',
+  },
+  apple_podcasts: {
+    steps: [
+      'Open the episode in Apple Podcasts',
+      'Tap the "..." menu then "Share Episode"',
+      'Copy the link and paste it here',
+    ],
+  },
+  spotify: {
+    steps: [
+      'Open the episode in Spotify',
+      'Tap the "..." menu then "Share" > "Copy link"',
+      'Paste the link here',
+    ],
+  },
+  youtube: {
+    steps: [
+      'Open the video on YouTube',
+      'Click "Share" below the video',
+      'Copy the link and paste it here',
+    ],
+    tip: 'Also works with YouTube Music links',
+  },
+  xiaoyuzhou: {
+    steps: [
+      'Open the episode in 小宇宙',
+      'Tap the share icon and copy the link',
+      'Paste the link here',
+    ],
+  },
+  x_video: {
+    steps: [
+      'Open the tweet with the video',
+      'Tap the share icon and copy the link',
+      'Paste the tweet URL here',
+    ],
+    tip: 'The URL should look like x.com/user/status/...',
+  },
+  youtube_video: {
+    steps: [
+      'Open the video on YouTube',
+      'Click "Share" below the video',
+      'Copy the link and paste it here',
+    ],
+  },
+  instagram: {
+    steps: [
+      'Open the Reel or video post',
+      'Tap "..." then "Link" to copy',
+      'Paste the link here',
+    ],
+    tip: 'Works with Reels and video posts',
+  },
+  xiaohongshu: {
+    steps: [
+      'Open the video post in 小红书',
+      'Tap the share icon and copy the link',
+      'Paste the link here',
+    ],
+  },
 }
 
 export const QUALITY_OPTIONS = [

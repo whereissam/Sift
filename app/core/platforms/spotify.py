@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 class SpotifyDownloader(PlatformDownloader):
     """Downloads from Spotify using spotDL (finds YouTube matches)."""
 
+    PLATFORM = Platform.SPOTIFY
+
     # URL patterns for Spotify
     URL_PATTERNS = [
         r"open\.spotify\.com/episode/([a-zA-Z0-9]+)",
@@ -35,16 +37,20 @@ class SpotifyDownloader(PlatformDownloader):
         else:
             self.download_dir = self.settings.get_download_path()
 
-        self._spotdl_path = self._find_spotdl()
-
-    def _find_spotdl(self) -> str:
-        """Find spotdl binary in PATH."""
-        spotdl = shutil.which("spotdl")
-        if not spotdl:
-            raise ToolNotFoundError(
-                "spotdl not found. Install with: pip install spotdl"
+        self._spotdl_path = shutil.which("spotdl")
+        self._yt_dlp_path = (
+            shutil.which("yt-dlp")
+            or next(
+                (p for p in ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"]
+                 if Path(p).exists()),
+                None,
             )
-        return spotdl
+        )
+
+        if not self._spotdl_path and not self._yt_dlp_path:
+            raise ToolNotFoundError(
+                "Neither spotdl nor yt-dlp found. Install one: brew install yt-dlp"
+            )
 
     @property
     def platform(self) -> Platform:
@@ -88,8 +94,12 @@ class SpotifyDownloader(PlatformDownloader):
         output_format: str = "mp3",
         quality: str = "high",
     ) -> DownloadResult:
-        """Download from Spotify using spotDL."""
+        """Download from Spotify using spotDL or yt-dlp fallback."""
         logger.info(f"Starting Spotify download for: {url}")
+
+        # Use yt-dlp fallback if spotdl is not installed
+        if not self._spotdl_path and self._yt_dlp_path:
+            return await self._download_with_ytdlp(url, output_path, output_format, quality)
 
         try:
             content_id = self.extract_content_id(url)
@@ -108,16 +118,15 @@ class SpotifyDownloader(PlatformDownloader):
             bitrate = bitrate_map.get(quality, "256k")
 
             # Build spotdl command
-            output_template = str(self.download_dir / "{artist} - {title}")
+            # For mp4, download as mp3 first then convert
+            download_format = "mp3" if output_format == "mp4" else output_format
+            needs_conversion = output_format == "mp4"
 
             cmd = [
                 self._spotdl_path,
-                "download",
                 url,
-                "--output", output_template,
-                "--format", output_format if output_format in ["mp3", "m4a", "flac", "ogg", "opus"] else "mp3",
-                "--bitrate", bitrate,
-                "--print-errors",
+                "-o", str(self.download_dir),
+                "--output-format", download_format if download_format in ["mp3", "m4a", "flac", "ogg", "opus"] else "mp3",
             ]
 
             logger.info("Running spotdl... (this may take a while)")
@@ -135,19 +144,24 @@ class SpotifyDownloader(PlatformDownloader):
             stdout_text = stdout.decode() if stdout else ""
             stderr_text = stderr.decode() if stderr else ""
 
-            if process.returncode != 0:
-                error_msg = stderr_text or stdout_text or "Unknown error"
-                logger.error(f"spotdl error: {error_msg}")
+            # spotdl prints to stderr even on success (warnings); check both
+            combined_output = f"{stderr_text}\n{stdout_text}".strip()
 
-                if "no results" in error_msg.lower() or "not found" in error_msg.lower():
+            if process.returncode != 0:
+                logger.error(f"spotdl error: {combined_output}")
+
+                if "rate" in combined_output.lower() and "limit" in combined_output.lower():
+                    raise AudioGrabError("Spotify rate limited. Please try again later.")
+
+                if "no results" in combined_output.lower() or "not found" in combined_output.lower():
                     raise ContentNotFoundError(f"Could not find audio for: {url}")
 
-                raise AudioGrabError(f"spotdl failed: {error_msg[:500]}")
+                raise AudioGrabError(f"spotdl failed: {combined_output[:500]}")
 
             # Find the downloaded file
             # spotdl outputs files in format: "Artist - Title.ext"
             file_path = None
-            ext = f".{output_format}" if output_format in ["mp3", "m4a", "flac", "ogg", "opus"] else ".mp3"
+            ext = f".{download_format}" if download_format in ["mp3", "m4a", "flac", "ogg", "opus"] else ".mp3"
 
             # Look for recently created files
             for f in self.download_dir.glob(f"*{ext}"):
@@ -165,6 +179,19 @@ class SpotifyDownloader(PlatformDownloader):
 
             if not file_path or not file_path.exists():
                 raise AudioGrabError("Download completed but output file not found")
+
+            # Convert to mp4 if needed
+            if needs_conversion:
+                from ..converter import AudioConverter
+                logger.info(f"Converting to {output_format}...")
+                converter = AudioConverter()
+                converted_path = await converter.convert(
+                    input_path=file_path,
+                    output_format=output_format,
+                    quality=quality,
+                    keep_original=False,
+                )
+                file_path = converted_path
 
             # Extract metadata from filename
             filename = file_path.stem
@@ -208,11 +235,120 @@ class SpotifyDownloader(PlatformDownloader):
                 error=f"Unexpected error: {e}",
             )
 
+    async def _download_with_ytdlp(
+        self,
+        url: str,
+        output_path: Optional[Path] = None,
+        output_format: str = "mp3",
+        quality: str = "high",
+    ) -> DownloadResult:
+        """Fallback: download Spotify content using yt-dlp."""
+        logger.info("Using yt-dlp fallback for Spotify download")
+
+        try:
+            self.download_dir.mkdir(parents=True, exist_ok=True)
+
+            if output_path:
+                output_template = str(output_path)
+            else:
+                output_template = str(self.download_dir / "%(title)s [%(id)s].%(ext)s")
+
+            # For mp4, download as m4a first then convert
+            download_format = "m4a" if output_format == "mp4" else output_format
+            needs_conversion = output_format == "mp4"
+
+            cmd = [
+                self._yt_dlp_path,
+                "--no-progress",
+                "-x",
+                "--audio-format", download_format if download_format == "mp3" else "m4a",
+                "-o", output_template,
+                "--print-json",
+                "--concurrent-fragments", "16",
+                "--fragment-retries", "5",
+            ]
+
+            if download_format == "mp3":
+                quality_map = {"low": "64K", "medium": "128K", "high": "192K", "highest": "320K"}
+                cmd.extend(["--audio-quality", quality_map.get(quality, "192K")])
+
+            cmd.append(url)
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                error_msg = stderr.decode() if stderr else "Unknown error"
+                raise AudioGrabError(f"yt-dlp failed for Spotify: {error_msg[:500]}")
+
+            # Parse JSON output
+            output = stdout.decode().strip()
+            file_path = None
+            metadata = None
+
+            for line in output.split('\n'):
+                if line.startswith('{'):
+                    try:
+                        data = json.loads(line)
+                        file_path = Path(data.get('_filename', data.get('filename', '')))
+                        metadata = AudioMetadata(
+                            platform=Platform.SPOTIFY,
+                            content_id=data.get('id', ''),
+                            title=data.get('title', 'Unknown'),
+                            creator_name=data.get('uploader') or data.get('artist'),
+                            duration_seconds=data.get('duration'),
+                        )
+                        break
+                    except json.JSONDecodeError:
+                        continue
+
+            if not file_path or not file_path.exists():
+                raise AudioGrabError("Download completed but output file not found")
+
+            # Convert to mp4 if needed
+            if needs_conversion:
+                from ..converter import AudioConverter
+                converter = AudioConverter()
+                file_path = await converter.convert(
+                    input_path=file_path,
+                    output_format=output_format,
+                    quality=quality,
+                    keep_original=False,
+                )
+
+            file_size = file_path.stat().st_size
+            logger.info(f"Download complete: {file_path} ({file_size / (1024*1024):.2f} MB)")
+
+            return DownloadResult(
+                success=True,
+                file_path=file_path,
+                metadata=metadata,
+                file_size_bytes=file_size,
+            )
+
+        except (AudioGrabError,) as e:
+            return DownloadResult(success=False, file_path=None, metadata=None, error=str(e))
+        except Exception as e:
+            logger.exception(f"yt-dlp fallback error: {e}")
+            return DownloadResult(success=False, file_path=None, metadata=None, error=str(e))
+
     async def get_metadata(self, url: str) -> Optional[AudioMetadata]:
         """Get metadata for Spotify content without downloading."""
         try:
             content_id = self.extract_content_id(url)
             content_type = self._get_content_type(url)
+
+            if not self._spotdl_path:
+                return AudioMetadata(
+                    platform=Platform.SPOTIFY,
+                    content_id=content_id,
+                    title=f"Spotify {content_type}",
+                )
 
             # Use spotdl to get metadata
             cmd = [

@@ -112,12 +112,16 @@ pub fn extract_content_id(url: &str, platform: Platform) -> Option<String> {
     }
 }
 
-/// Check if yt-dlp is available in PATH.
+/// Check if yt-dlp is available (PATH + common locations).
 pub fn is_ytdlp_available() -> bool {
     which::which("yt-dlp").is_ok()
+        || std::path::Path::new("/opt/homebrew/bin/yt-dlp").exists()
+        || std::path::Path::new("/usr/local/bin/yt-dlp").exists()
 }
 
-/// Check if ffmpeg is available in PATH.
+/// Check if ffmpeg is available (PATH + common locations).
 pub fn is_ffmpeg_available() -> bool {
     which::which("ffmpeg").is_ok()
+        || std::path::Path::new("/opt/homebrew/bin/ffmpeg").exists()
+        || std::path::Path::new("/usr/local/bin/ffmpeg").exists()
 }

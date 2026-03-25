@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 class YouTubeVideoDownloader(PlatformDownloader):
     """Downloads videos from YouTube using yt-dlp."""
 
+    PLATFORM = Platform.YOUTUBE_VIDEO
+
     # URL patterns for YouTube
     URL_PATTERNS = [
         r"(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",

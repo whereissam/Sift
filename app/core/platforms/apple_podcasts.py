@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 class ApplePodcastsDownloader(PlatformDownloader):
     """Downloads podcast episodes from Apple Podcasts via RSS feeds."""
 
+    PLATFORM = Platform.APPLE_PODCASTS
+
     # URL patterns for Apple Podcasts
     URL_PATTERNS = [
         # Podcast page: podcasts.apple.com/us/podcast/show-name/id123456789

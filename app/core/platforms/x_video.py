@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 class XVideoDownloader(PlatformDownloader):
     """Downloads videos from X/Twitter posts using yt-dlp."""
 
+    PLATFORM = Platform.X_VIDEO
+
     # URL patterns for X/Twitter posts with video
     URL_PATTERNS = [
         r"(?:https?://)?(?:www\.)?(?:twitter\.com|x\.com)/\w+/status/(\d+)",

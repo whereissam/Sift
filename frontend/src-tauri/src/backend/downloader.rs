@@ -5,6 +5,32 @@ use tokio::process::Command;
 use super::platform;
 use super::types::*;
 
+/// Resolve the full path to yt-dlp binary.
+/// macOS apps launched from Finder don't inherit shell PATH,
+/// so we check common Homebrew/system locations as fallback.
+fn find_ytdlp() -> String {
+    if let Ok(path) = which::which("yt-dlp") {
+        return path.to_string_lossy().to_string();
+    }
+    // Common fallback locations
+    for candidate in &[
+        "/opt/homebrew/bin/yt-dlp",
+        "/usr/local/bin/yt-dlp",
+        "/usr/bin/yt-dlp",
+    ] {
+        if std::path::Path::new(candidate).exists() {
+            return candidate.to_string();
+        }
+    }
+    "yt-dlp".to_string()
+}
+
+/// Build a PATH that includes common binary locations.
+fn extended_path() -> String {
+    let base = std::env::var("PATH").unwrap_or_default();
+    format!("/opt/homebrew/bin:/usr/local/bin:{}", base)
+}
+
 /// Build yt-dlp command for audio downloads.
 fn build_audio_cmd(
     url: &str,
@@ -24,7 +50,7 @@ fn build_audio_cmd(
     };
 
     let mut cmd = vec![
-        "yt-dlp".to_string(),
+        find_ytdlp(),
         "--no-progress".to_string(),
         "-x".to_string(),
         "--audio-format".to_string(),
@@ -84,7 +110,7 @@ fn build_video_cmd(
     };
 
     let mut cmd = vec![
-        "yt-dlp".to_string(),
+        find_ytdlp(),
         "--no-progress".to_string(),
         "-f".to_string(),
         format_spec.to_string(),
@@ -164,10 +190,22 @@ pub async fn execute_download(
         build_audio_cmd(url, output_dir, format, quality, detected_platform)
     };
 
+    log::info!("yt-dlp resolved to: {}", args[0]);
+    log::info!("PATH: {}", extended_path());
     log::info!("Running: {} ...", args[..3.min(args.len())].join(" "));
 
-    let output = match Command::new(&args[0])
-        .args(&args[1..])
+    // Run via /bin/sh to ensure shebangs and PATH resolve correctly.
+    // Tauri's sandboxed environment may not handle Python script shebangs.
+    let shell_cmd = args
+        .iter()
+        .map(|a| shell_escape::escape(std::borrow::Cow::Borrowed(a.as_str())).to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let output = match Command::new("/bin/sh")
+        .arg("-c")
+        .arg(&shell_cmd)
+        .env("PATH", extended_path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

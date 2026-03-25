@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 class XiaohongshuVideoDownloader(PlatformDownloader):
     """Downloads videos from Xiaohongshu (小红书/RED) using yt-dlp."""
 
+    PLATFORM = Platform.XIAOHONGSHU
+
     # URL patterns for Xiaohongshu posts
     URL_PATTERNS = [
         # Full web URL
