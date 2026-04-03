@@ -1,4 +1,4 @@
-// Content script for AudioGrab browser extension
+// Content script for Sift browser extension
 // This script runs on supported pages to provide visual feedback
 
 // Check if current page is a supported audio/video source

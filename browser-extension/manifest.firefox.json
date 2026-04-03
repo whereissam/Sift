@@ -1,6 +1,6 @@
 {
   "manifest_version": 2,
-  "name": "AudioGrab",
+  "name": "Sift",
   "description": "Download and transcribe audio from X Spaces, YouTube, podcasts, and more",
   "version": "1.0.0",
   "icons": {
@@ -42,7 +42,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "audiograb@example.com",
+      "id": "sift@example.com",
       "strict_min_version": "109.0"
     }
   }

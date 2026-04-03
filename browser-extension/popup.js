@@ -101,7 +101,7 @@ async function sendToServer(action) {
     chrome.tabs.create({ url: serverUrl });
   } catch (error) {
     if (error.message.includes('Failed to fetch')) {
-      showMessage(`Cannot connect to ${serverUrl}. Is AudioGrab running?`, true);
+      showMessage(`Cannot connect to ${serverUrl}. Is Sift running?`, true);
     } else {
       showMessage(error.message, true);
     }

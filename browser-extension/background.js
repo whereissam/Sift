@@ -1,4 +1,4 @@
-// Background service worker for AudioGrab browser extension
+// Background service worker for Sift browser extension
 
 // Set badge when on supported pages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
