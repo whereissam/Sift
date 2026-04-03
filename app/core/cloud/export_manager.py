@@ -172,8 +172,12 @@ class ExportManager:
                 raise ValueError("No cloud providers configured")
             provider_id = provider.provider_id
 
-        # Verify file exists
-        path = Path(file_path)
+        # Verify file exists and is within allowed directory
+        from ...config import get_settings as _get_settings
+        path = Path(file_path).resolve()
+        _base_dir = Path(_get_settings().download_dir).resolve()
+        if not str(path).startswith(str(_base_dir) + "/") and path != _base_dir:
+            raise ValueError(f"file_path must be within the download directory: {_base_dir}")
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 

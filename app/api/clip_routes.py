@@ -4,9 +4,11 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from .auth import verify_api_key
+from .ratelimit import limiter
 from .schemas import (
     GenerateClipsRequest,
     ClipSuggestionResponse,
@@ -28,10 +30,10 @@ from .transcription_store import transcription_jobs
 logger = logging.getLogger(__name__)
 
 # Separate router for clips-related endpoints that don't have {job_id} path parameter
-clips_api_router = APIRouter(prefix="/clips", tags=["Clips"])
+clips_api_router = APIRouter(prefix="/clips", tags=["Clips"], dependencies=[Depends(verify_api_key)])
 
 # Router for job-specific clip operations
-router = APIRouter(prefix="/jobs", tags=["Clips"])
+router = APIRouter(prefix="/jobs", tags=["Clips"], dependencies=[Depends(verify_api_key)])
 
 # In-memory storage for clips (keyed by job_id)
 # This is separate from transcription_jobs to avoid modifying the schema
@@ -134,7 +136,8 @@ async def check_clips_availability(job_id: str):
 
 
 @router.post("/{job_id}/clips", response_model=ClipsResponse)
-async def generate_clips(job_id: str, request: GenerateClipsRequest):
+@limiter.limit("5/minute")
+async def generate_clips(request: Request, job_id: str, body: GenerateClipsRequest):
     """Generate viral clip suggestions for a completed transcription job.
 
     Uses AI to analyze the transcript and identify segments with high
@@ -188,10 +191,10 @@ async def generate_clips(job_id: str, request: GenerateClipsRequest):
     result = await generator.generate_clips(
         segments=segments,
         job_id=job_id,
-        max_clips=request.max_clips,
-        target_duration=request.target_duration,
-        platforms=_convert_platforms(request.platforms),
-        min_viral_score=request.min_viral_score,
+        max_clips=body.max_clips,
+        target_duration=body.target_duration,
+        platforms=_convert_platforms(body.platforms),
+        min_viral_score=body.min_viral_score,
     )
 
     if not result.success:

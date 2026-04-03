@@ -2,10 +2,12 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/models", tags=["models"])
+from .auth import verify_api_key
+
+router = APIRouter(prefix="/api/models", tags=["models"], dependencies=[Depends(verify_api_key)])
 
 # Default model storage location (inside user data dir)
 MODELS_DIR = Path.home() / ".sift" / "models"

@@ -1,9 +1,10 @@
 """Cloud storage API routes."""
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from .auth import verify_api_key
 from ..core.cloud import (
     ExportManager,
     get_export_manager,
@@ -11,7 +12,7 @@ from ..core.cloud import (
     ProviderType,
 )
 
-router = APIRouter(prefix="/cloud", tags=["cloud"])
+router = APIRouter(prefix="/cloud", tags=["cloud"], dependencies=[Depends(verify_api_key)])
 
 
 class ProviderCreateRequest(BaseModel):

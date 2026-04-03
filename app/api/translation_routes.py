@@ -1,8 +1,9 @@
 """API routes for translation."""
 
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from .auth import verify_api_key
 from .schemas import (
     TranslateRequest,
     TranslateFromJobRequest,
@@ -24,7 +25,7 @@ from ..core.job_store import get_job_store
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/translate", tags=["Translation"])
+router = APIRouter(prefix="/translate", tags=["Translation"], dependencies=[Depends(verify_api_key)])
 
 
 @router.get("/languages", response_model=SupportedLanguagesResponse)

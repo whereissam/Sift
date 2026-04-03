@@ -76,7 +76,14 @@ async def create_batch_from_file(
     The file should contain one URL per line.
     Empty lines and lines starting with # are ignored.
     """
-    content = await file.read()
+    # Read with size limit (10MB max for URL list files)
+    MAX_BATCH_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    content = await file.read(MAX_BATCH_FILE_SIZE + 1)
+    if len(content) > MAX_BATCH_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size: {MAX_BATCH_FILE_SIZE // (1024*1024)}MB",
+        )
     text = content.decode("utf-8")
 
     # Parse URLs from file

@@ -1,6 +1,9 @@
 # Claude Code
 .claude/
 
+# GStack security reports
+.gstack/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -2,9 +2,10 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .auth import verify_api_key
+from .ratelimit import limiter
 from .schemas import JobStatus, SummarizeRequest
 from .transcription_store import transcription_jobs
 
@@ -14,7 +15,8 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 @router.post("/summarize")
-async def summarize_text(request: SummarizeRequest):
+@limiter.limit("5/minute")
+async def summarize_text(request: Request, body: SummarizeRequest):
     """
     Summarize text using an LLM.
 
@@ -27,8 +29,8 @@ async def summarize_text(request: SummarizeRequest):
     """
     from ..core.summarizer import TranscriptSummarizer, SummaryType as CoreSummaryType
 
-    text = request.text
-    summary_type_str = request.summary_type.value
+    text = body.text
+    summary_type_str = body.summary_type.value
 
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
@@ -70,7 +72,8 @@ async def summarize_text(request: SummarizeRequest):
 
 
 @router.post("/summarize/job/{job_id}")
-async def summarize_job(job_id: str, summary_type: str = "bullet_points"):
+@limiter.limit("5/minute")
+async def summarize_job(request: Request, job_id: str, summary_type: str = "bullet_points"):
     """
     Summarize a completed transcription job.
 

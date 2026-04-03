@@ -3,8 +3,10 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from .auth import verify_api_key
+from .ratelimit import limiter
 from .schemas import (
     AnalyzeSentimentRequest,
     SentimentSegmentResponse,
@@ -28,7 +30,7 @@ from .transcription_store import transcription_jobs
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/jobs", tags=["Sentiment"])
+router = APIRouter(prefix="/jobs", tags=["Sentiment"], dependencies=[Depends(verify_api_key)])
 
 # In-memory storage for sentiment analysis results (keyed by job_id)
 _sentiment_storage: dict[str, dict] = {}
@@ -129,7 +131,8 @@ async def check_sentiment_availability(job_id: str):
 
 
 @router.post("/{job_id}/analyze-sentiment", response_model=SentimentResponse)
-async def analyze_sentiment(job_id: str, request: AnalyzeSentimentRequest):
+@limiter.limit("5/minute")
+async def analyze_sentiment(request: Request, job_id: str, body: AnalyzeSentimentRequest):
     """Analyze sentiment and emotional heat of a completed transcription.
 
     Uses AI to analyze each segment for:
@@ -183,7 +186,7 @@ async def analyze_sentiment(job_id: str, request: AnalyzeSentimentRequest):
     result = await analyzer.analyze_sentiment(
         segments=segments,
         job_id=job_id,
-        window_size=request.window_size,
+        window_size=body.window_size,
     )
 
     if not result.success:

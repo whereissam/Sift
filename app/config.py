@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # API Authentication (optional - if set, requires X-API-Key header)
     api_key: str | None = None
 
+    # Encryption key for secrets at rest (auto-generated if not set)
+    encryption_key: str | None = None
+
     # CORS (comma-separated origins, or "*" for all)
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 

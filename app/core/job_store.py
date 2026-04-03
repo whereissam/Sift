@@ -1,5 +1,7 @@
 """Persistent job storage using SQLite."""
 
+import base64
+import hashlib
 import json
 import logging
 import sqlite3
@@ -10,6 +12,49 @@ from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _get_encryption_key() -> bytes:
+    """Get or derive a Fernet-compatible encryption key for secrets at rest."""
+    from ..config import get_settings
+    settings = get_settings()
+    if settings.encryption_key:
+        # Derive a 32-byte key from the user-provided key
+        key_bytes = hashlib.sha256(settings.encryption_key.encode()).digest()
+    else:
+        # Derive a machine-specific key from the download directory path
+        key_bytes = hashlib.sha256(settings.download_dir.encode()).digest()
+    return base64.urlsafe_b64encode(key_bytes)
+
+
+def _encrypt_secret(value: str) -> str:
+    """Encrypt a secret value for storage."""
+    try:
+        from cryptography.fernet import Fernet
+        f = Fernet(_get_encryption_key())
+        return "enc:" + f.encrypt(value.encode()).decode()
+    except ImportError:
+        logger.warning("cryptography package not installed — storing secret with basic obfuscation")
+        encoded = base64.b64encode(value.encode()).decode()
+        return "b64:" + encoded
+
+
+def _decrypt_secret(value: str) -> str:
+    """Decrypt a stored secret value."""
+    if not value:
+        return value
+    if value.startswith("enc:"):
+        try:
+            from cryptography.fernet import Fernet
+            f = Fernet(_get_encryption_key())
+            return f.decrypt(value[4:].encode()).decode()
+        except Exception:
+            logger.warning("Failed to decrypt secret — returning empty")
+            return ""
+    elif value.startswith("b64:"):
+        return base64.b64decode(value[4:].encode()).decode()
+    # Plaintext (legacy, pre-encryption) — return as-is
+    return value
 
 # Current schema version for migrations
 SCHEMA_VERSION = 2
@@ -759,7 +804,11 @@ class JobStore:
             ).fetchone()
 
             if row:
-                return dict(row)
+                result = dict(row)
+                # Decrypt API key if present
+                if result.get("api_key"):
+                    result["api_key"] = _decrypt_secret(result["api_key"])
+                return result
         return None
 
     def save_ai_settings(
@@ -782,6 +831,9 @@ class JobStore:
         """
         now = datetime.utcnow().isoformat()
 
+        # Encrypt API key before storing
+        encrypted_key = _encrypt_secret(api_key) if api_key else None
+
         with self._get_conn() as conn:
             # Check if settings exist
             existing = conn.execute(
@@ -794,13 +846,13 @@ class JobStore:
                     UPDATE ai_settings
                     SET provider = ?, model = ?, api_key = ?, base_url = ?, updated_at = ?
                     WHERE is_default = 1
-                """, (provider, model, api_key, base_url, now))
+                """, (provider, model, encrypted_key, base_url, now))
             else:
                 # Insert new settings
                 conn.execute("""
                     INSERT INTO ai_settings (provider, model, api_key, base_url, is_default, created_at, updated_at)
                     VALUES (?, ?, ?, ?, 1, ?, ?)
-                """, (provider, model, api_key, base_url, now, now))
+                """, (provider, model, encrypted_key, base_url, now, now))
 
         logger.info(f"Saved AI settings: provider={provider}, model={model}")
         return self.get_ai_settings()

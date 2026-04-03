@@ -2,8 +2,10 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from .auth import verify_api_key
+from .ratelimit import limiter
 from .schemas import (
     ExtractRequest,
     ExtractedFieldResponse,
@@ -22,7 +24,7 @@ from .transcription_store import transcription_jobs
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/jobs", tags=["Extraction"])
+router = APIRouter(prefix="/jobs", tags=["Extraction"], dependencies=[Depends(verify_api_key)])
 
 # In-memory storage for extraction results (keyed by job_id)
 _extraction_storage: dict[str, dict] = {}
@@ -62,7 +64,8 @@ async def check_extraction_availability(job_id: str):
 
 
 @router.post("/{job_id}/extract", response_model=ExtractionResponse)
-async def extract_structured_data(job_id: str, request: ExtractRequest):
+@limiter.limit("5/minute")
+async def extract_structured_data(request: Request, job_id: str, body: ExtractRequest):
     """Extract structured data from a completed transcription.
 
     Uses AI to extract machine-readable data based on the selected preset.
@@ -94,15 +97,15 @@ async def extract_structured_data(job_id: str, request: ExtractRequest):
         )
 
     try:
-        preset = ExtractionPreset(request.preset.value)
+        preset = ExtractionPreset(body.preset.value)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown preset: {request.preset}")
+        raise HTTPException(status_code=400, detail=f"Unknown preset: {body.preset}")
 
     result = await extractor.extract(
         transcript=job.text,
         job_id=job_id,
         preset=preset,
-        custom_schema=request.custom_schema,
+        custom_schema=body.custom_schema,
     )
 
     if not result.success:

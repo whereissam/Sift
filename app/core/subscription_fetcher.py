@@ -13,6 +13,8 @@ from typing import Optional
 import feedparser
 import httpx
 
+from .url_validator import validate_url_ssrf
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,6 +64,12 @@ class RSSFetcher(BaseFetcher):
     ) -> list[FetchedItem]:
         """Fetch episodes from an RSS feed."""
         logger.info(f"Fetching RSS feed: {source_url}")
+
+        # SSRF protection: block private/reserved IPs
+        is_valid, error = validate_url_ssrf(source_url)
+        if not is_valid:
+            logger.warning(f"Blocked RSS fetch to {source_url}: {error}")
+            return []
 
         try:
             async with httpx.AsyncClient() as client:
@@ -117,6 +125,12 @@ class RSSFetcher(BaseFetcher):
             return False, None, None
 
         # Try to fetch and parse the RSS feed directly
+        # SSRF protection: block private/reserved IPs
+        is_valid, error = validate_url_ssrf(source_url)
+        if not is_valid:
+            logger.warning(f"Blocked RSS validation for {source_url}: {error}")
+            return False, None, None
+
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
