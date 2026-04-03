@@ -1,6 +1,6 @@
 # API Endpoints Reference
 
-## AudioGrab REST API
+## Sift REST API
 
 Full interactive documentation available at http://localhost:8000/docs (Swagger UI).
 

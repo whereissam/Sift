@@ -67,7 +67,7 @@ This installs:
 Start the API and check health:
 
 ```bash
-uv run audiograb-api
+uv run sift-api
 ```
 
 ```bash
@@ -165,7 +165,7 @@ If you use HuggingFace's **Inference API** (cloud-hosted models) for other proje
 - **PRO ($9/month)**: 20x more monthly allowance
 - **Enterprise**: Highest rate limits
 
-But again, AudioGrab diarization runs locally - these limits don't apply.
+But again, Sift diarization runs locally - these limits don't apply.
 
 ### Token Security
 

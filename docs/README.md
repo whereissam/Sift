@@ -1,4 +1,4 @@
-# AudioGrab Backend
+# Sift Backend
 
 A Python backend service for downloading audio and video from X Spaces, Apple Podcasts, Spotify, YouTube, Discord, Instagram, 小红书, and more.
 
@@ -98,7 +98,7 @@ Requires a `sp_dc` cookie for authentication. To get it:
 
 #### Known issues
 
-- **Spotify regional blocking:** Spotify's CDN (`open.spotify.com/get_access_token`) blocks requests from certain regions (notably Japan and some cloud provider IPs). If you see a 403 error when fetching Spotify transcripts, try using a VPN to a US or EU region. This is a Spotify-side restriction, not a bug in AudioGrab.
+- **Spotify regional blocking:** Spotify's CDN (`open.spotify.com/get_access_token`) blocks requests from certain regions (notably Japan and some cloud provider IPs). If you see a 403 error when fetching Spotify transcripts, try using a VPN to a US or EU region. This is a Spotify-side restriction, not a bug in Sift.
 - **YouTube IP blocking:** YouTube may block transcript requests from IPs that make too many requests, or from cloud provider IPs. If you encounter `RequestBlocked` errors, try again later or use a different IP/proxy.
 
 ## Documentation

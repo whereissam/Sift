@@ -17,8 +17,8 @@ make desktop
 ```
 
 This produces:
-- **macOS**: `frontend/src-tauri/target/release/bundle/dmg/AudioGrab_0.2.0_aarch64.dmg`
-- **Windows**: `frontend/src-tauri/target/release/bundle/msi/AudioGrab_0.2.0_x64_en-US.msi`
+- **macOS**: `frontend/src-tauri/target/release/bundle/dmg/Sift_0.2.0_aarch64.dmg`
+- **Windows**: `frontend/src-tauri/target/release/bundle/msi/Sift_0.2.0_x64_en-US.msi`
 - **Linux**: `frontend/src-tauri/target/release/bundle/deb/audio-grab_0.2.0_amd64.deb`
 
 ### Development
@@ -76,7 +76,7 @@ TELEGRAM_BOT_MODE=polling          # "polling" or "webhook"
 # Server Configuration
 HOST=0.0.0.0
 PORT=8000
-DOWNLOAD_DIR=/tmp/audiograb
+DOWNLOAD_DIR=/tmp/sift
 MAX_CONCURRENT_DOWNLOADS=5
 ```
 
@@ -87,7 +87,7 @@ MAX_CONCURRENT_DOWNLOADS=5
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Or use the script
-uv run audiograb-api
+uv run sift-api
 ```
 
 ### 4. Run Telegram Bot
@@ -95,7 +95,7 @@ uv run audiograb-api
 **Polling mode** (local dev — bot runs as a separate process):
 
 ```bash
-uv run audiograb-bot
+uv run sift-bot
 ```
 
 **Webhook mode** (production — bot runs inside the FastAPI server):
@@ -103,7 +103,7 @@ uv run audiograb-bot
 Set `TELEGRAM_BOT_MODE=webhook` and `TELEGRAM_WEBHOOK_URL` in `.env`, then just start the API server. The bot will register the webhook and process updates via `/api/telegram/webhook`.
 
 ```bash
-uv run audiograb-api  # Bot starts automatically in webhook mode
+uv run sift-api  # Bot starts automatically in webhook mode
 ```
 
 ## Docker Deployment
@@ -153,7 +153,7 @@ services:
   # Option A: Run bot as separate container (polling mode)
   bot:
     build: .
-    command: uv run audiograb-bot
+    command: uv run sift-bot
     environment:
       - TWITTER_AUTH_TOKEN=${TWITTER_AUTH_TOKEN}
       - TWITTER_CT0=${TWITTER_CT0}
@@ -203,7 +203,7 @@ Create `/etc/systemd/system/xdownloader.service`:
 
 ```ini
 [Unit]
-Description=AudioGrab API
+Description=Sift API
 After=network.target
 
 [Service]

@@ -1,7 +1,7 @@
-# AudioGrab - Frontend
+# Sift - Frontend
 
 <p align="center">
-  <img src="public/logo.svg" alt="AudioGrab" width="200">
+  <img src="public/logo.svg" alt="Sift" width="200">
 </p>
 
 Modern React frontend for downloading, transcribing, and analyzing audio from X Spaces, YouTube, Apple Podcasts, Spotify, and more.
@@ -35,7 +35,7 @@ bun run dev       # http://localhost:5173
 Make sure the Python backend is running at http://localhost:8000:
 ```bash
 # From project root
-uv run audiograb-api
+uv run sift-api
 ```
 
 ### Build for production

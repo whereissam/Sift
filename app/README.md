@@ -1,6 +1,6 @@
-# AudioGrab — Python Backend
+# Sift — Python Backend
 
-FastAPI backend powering AudioGrab's web/server mode. Provides the full feature set including download, transcription, LLM summarization, Telegram bot, and more.
+FastAPI backend powering Sift's web/server mode. Provides the full feature set including download, transcription, LLM summarization, Telegram bot, and more.
 
 > **Note:** The [desktop app](../frontend/src-tauri/) uses a Rust backend instead. This Python backend is for self-hosted/web deployments.
 
@@ -9,7 +9,7 @@ FastAPI backend powering AudioGrab's web/server mode. Provides the full feature 
 ```bash
 # From project root
 uv sync --extra transcribe
-uv run audiograb-api          # http://localhost:8000
+uv run sift-api               # http://localhost:8000
 ```
 
 API docs at http://localhost:8000/docs (Swagger UI).
@@ -18,9 +18,9 @@ API docs at http://localhost:8000/docs (Swagger UI).
 
 | Command | Script | Description |
 |---------|--------|-------------|
-| `uv run audiograb-api` | `app/main.py:main` | FastAPI server |
-| `uv run audiograb-bot` | `app/bot/bot.py:run_bot` | Telegram bot (polling) |
-| `uv run audiograb` | `app/cli.py:cli` | CLI tool |
+| `uv run sift-api` | `app/main.py:main` | FastAPI server |
+| `uv run sift-bot` | `app/bot/bot.py:run_bot` | Telegram bot (polling) |
+| `uv run sift` | `app/cli.py:cli` | CLI tool |
 
 ## Module Structure
 
@@ -61,7 +61,7 @@ app/
 │
 ├── core/                    # Business logic
 │   ├── base.py              # Platform enum, PlatformDownloader ABC, DownloadResult
-│   ├── exceptions.py        # AudioGrabError hierarchy
+│   ├── exceptions.py        # SiftError hierarchy
 │   ├── downloader.py        # DownloaderFactory (URL → platform downloader)
 │   ├── platforms/           # Per-platform downloaders (yt-dlp subprocess)
 │   │   ├── xspaces.py      # X Spaces

@@ -2,7 +2,7 @@
 
 ## System Overview
 
-AudioGrab runs in two modes:
+Sift runs in two modes:
 
 ### Desktop Mode (Tauri + Rust)
 
@@ -10,7 +10,7 @@ A native desktop app with an embedded Rust backend. No Python or server required
 
 ```
 ┌─────────────────────────────────────────┐
-│           AudioGrab.app (Tauri)         │
+│             Sift.app (Tauri)            │
 │                                         │
 │  ┌───────────────┐  ┌───────────────┐  │
 │  │ React Frontend│  │  Rust Backend │  │

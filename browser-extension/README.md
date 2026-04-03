@@ -1,4 +1,4 @@
-# AudioGrab Browser Extension
+# Sift Browser Extension
 
 One-click download and transcription from your browser.
 
@@ -10,7 +10,7 @@ One-click download and transcription from your browser.
 2. Enable "Developer mode" (toggle in top right)
 3. Click "Load unpacked"
 4. Select this `browser-extension` folder
-5. The AudioGrab icon will appear in your toolbar
+5. The Sift icon will appear in your toolbar
 
 ### Firefox
 
@@ -22,13 +22,13 @@ One-click download and transcription from your browser.
 ## Usage
 
 1. Navigate to a supported page (X Spaces, YouTube, Apple Podcasts, Spotify, 小宇宙)
-2. Click the AudioGrab icon in your toolbar
+2. Click the Sift icon in your toolbar
 3. Click "Transcribe" or "Download Audio"
 4. The job will be queued and the Web UI will open
 
 ## Configuration
 
-Click the extension icon and enter your AudioGrab server URL at the bottom:
+Click the extension icon and enter your Sift server URL at the bottom:
 - Default: `http://localhost:8000`
 - For remote servers, use the full URL
 

@@ -1,12 +1,12 @@
-# AudioGrab
+# Sift
 
 <p align="center">
-  <img src="frontend/public/logo.svg" alt="AudioGrab" width="200">
+  <img src="frontend/public/logo.svg" alt="Sift" width="200">
 </p>
 
 **AI-First Knowledge Extraction Platform.** Ingest audio and video from X Spaces, Apple Podcasts, Spotify, YouTube, Discord, Instagram, 小红书, and more — then extract, search, and reason over the knowledge inside.
 
-> Downloading is just the first step. AudioGrab turns media into searchable, queryable intelligence.
+> Downloading is just the first step. Sift turns media into searchable, queryable intelligence.
 
 ## Features
 
@@ -33,7 +33,7 @@
 - **Content Distiller** - Feed multiple URLs and get a single synthesized briefing (coming soon)
 
 ### Automate & Integrate
-- **Agentic Ingest Pipeline** - Paste a URL and AudioGrab auto-triggers summarization, entity extraction, and search indexing (coming soon)
+- **Agentic Ingest Pipeline** - Paste a URL and Sift auto-triggers summarization, entity extraction, and search indexing (coming soon)
 - **Telegram Research Assistant** - Send a link, then ask questions about the content — the bot answers instantly
 - **Intelligent Webhooks** - Notifications include AI-generated summaries, key findings, and detected insights (coming soon)
 - **Subscriptions** - Auto-monitor RSS feeds, YouTube channels, and playlists
@@ -57,8 +57,8 @@ brew install ffmpeg yt-dlp
 Native app with Rust backend — no Python needed.
 
 ```bash
-git clone https://github.com/yourusername/audiograb.git
-cd audiograb
+git clone https://github.com/yourusername/Sift.git
+cd Sift
 
 # Development (hot-reload)
 make dev
@@ -72,8 +72,8 @@ make desktop
 Python backend with transcription, LLM summarization, Telegram bot.
 
 ```bash
-git clone https://github.com/yourusername/audiograb.git
-cd audiograb
+git clone https://github.com/yourusername/Sift.git
+cd Sift
 uv sync --extra transcribe
 
 # Run both backend + frontend
@@ -86,9 +86,9 @@ make dev-web
 ## CLI Usage
 
 ```bash
-uv run audiograb "https://x.com/i/spaces/1vOxwdyYrlqKB"
-uv run audiograb "https://youtube.com/watch?v=xxx" -f mp3
-uv run audiograb "https://podcasts.apple.com/..." -q highest
+uv run sift "https://x.com/i/spaces/1vOxwdyYrlqKB"
+uv run sift "https://youtube.com/watch?v=xxx" -f mp3
+uv run sift "https://podcasts.apple.com/..." -q highest
 ```
 
 ## API
@@ -120,7 +120,7 @@ Full API documentation available at http://localhost:8000/docs (Swagger UI)
 More than a download bot — a **research assistant**. Send a link and ask questions about the content. Supports all 10 platforms with inline format selection, transcription, and AI-powered Q&A.
 
 ```bash
-uv run audiograb-bot  # Polling mode (local dev)
+uv run sift-bot  # Polling mode (local dev)
 ```
 
 Or run in webhook mode alongside the FastAPI server — set in `.env`:
@@ -276,7 +276,7 @@ See [Deployment Guide](docs/deployment.md) for Docker, cloud, and systemd setup.
 
 ## Architecture & Vision
 
-AudioGrab is evolving from a media downloader into an **AI-First Intelligence Platform**. The core insight: users don't want files — they want the *knowledge* inside those files.
+Sift is evolving from a media downloader into an **AI-First Intelligence Platform**. The core insight: users don't want files — they want the *knowledge* inside those files.
 
 ```
 URL → Ingest → Transcribe → Understand → Search → Act
@@ -286,7 +286,7 @@ URL → Ingest → Transcribe → Understand → Search → Act
                   Enhance    Entities     Ask Audio   Webhook
 ```
 
-The **Agentic Pipeline** (on the roadmap) will make this entire chain automatic: paste a URL, and AudioGrab handles the rest — downloading, transcribing, indexing, summarizing, and making the content queryable.
+The **Agentic Pipeline** (on the roadmap) will make this entire chain automatic: paste a URL, and Sift handles the rest — downloading, transcribing, indexing, summarizing, and making the content queryable.
 
 ## Documentation
 
