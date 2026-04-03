@@ -1,8 +1,8 @@
-# AudioGrab Feature Roadmap
+# Sift Feature Roadmap
 
 ## Vision
 
-AudioGrab is evolving from a media utility into an **AI-First Knowledge Extraction Platform**. The user's true intent isn't to own an MP3 — it's to get the *insight* trapped inside that MP3. Downloading is a legacy middle step that becomes invisible as the platform matures.
+Sift is evolving from a media utility into an **AI-First Knowledge Extraction Platform**. The user's true intent isn't to own an MP3 — it's to get the *insight* trapped inside that MP3. Downloading is a legacy middle step that becomes invisible as the platform matures.
 
 ## Priority Matrix
 
@@ -30,6 +30,17 @@ AudioGrab is evolving from a media utility into an **AI-First Knowledge Extracti
 | Sentiment & Vibe Analysis | Medium | Medium | P7 ✅ |
 | Social Media Clip Generator | High | High | P8 ✅ |
 | AI Translation & Dubbing | Very High | Very High | P9 (Translation ✅) |
+
+### v1.x — Multi-Engine Transcription (Complete)
+
+| Feature | Difficulty | Impact | Priority |
+|---------|------------|--------|----------|
+| Multi-Engine Architecture | Medium | High | P9.5 ✅ |
+| SenseVoice (FunASR) Backend | Medium | High | P9.5 ✅ |
+| Apple Speech (macOS) Backend | Low | Medium | P9.5 ✅ |
+| Cloud API Backend (OpenAI) | Low | Medium | P9.5 ✅ |
+| Engine Auto-Selection | Low | High | P9.5 ✅ |
+| Frontend Engine Selector | Low | Medium | P9.5 ✅ |
 
 ### v2.0 — AI-Native Intelligence (Next)
 
@@ -99,7 +110,7 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 
 ## P2: Browser Extension ✅ COMPLETED
 
-**Goal:** One-click download from browser to AudioGrab Web UI.
+**Goal:** One-click download from browser to Sift Web UI.
 
 ### Tasks
 
@@ -107,9 +118,9 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 - [x] Create Firefox extension manifest
 - [x] Extension features:
   - [x] Detect supported URLs (X Spaces, YouTube, etc.)
-  - [x] Show AudioGrab icon when on supported page
-  - [x] Click to send URL to AudioGrab API
-  - [x] Configuration page for AudioGrab server URL
+  - [x] Show Sift icon when on supported page
+  - [x] Click to send URL to Sift API
+  - [x] Configuration page for Sift server URL
 - [x] Create simple bookmarklet alternative:
   ```javascript
   javascript:(function(){var s='http://localhost:8000';window.open(s+'/api/add?url='+encodeURIComponent(window.location.href)+'&action=transcribe')})()
@@ -225,7 +236,7 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
   - [x] Base URL field (for custom/local endpoints)
   - [x] Model selection per provider
   - [x] Test connection button
-- [x] Docker Compose setup for AudioGrab + Ollama together
+- [x] Docker Compose setup for Sift + Ollama together
 
 ---
 
@@ -454,7 +465,7 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 
 ## P12: Agentic Ingest Pipeline
 
-**Goal:** When a user pastes a URL, AudioGrab doesn't just download — it triggers an autonomous multi-agent research loop that extracts maximum value.
+**Goal:** When a user pastes a URL, Sift doesn't just download — it triggers an autonomous multi-agent research loop that extracts maximum value.
 
 ### Tasks
 
@@ -638,4 +649,4 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 - [ ] Multi-language UI
 - [ ] Export to cloud storage (S3, Google Drive, Dropbox)
 - [ ] Notion integration for structured data export
-- [ ] MCP server for LLM agent integration (expose AudioGrab as a tool for AI agents)
+- [ ] MCP server for LLM agent integration (expose Sift as a tool for AI agents)

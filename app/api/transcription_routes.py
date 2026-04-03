@@ -32,6 +32,11 @@ from .download_routes import jobs as download_jobs
 async def _process_transcription(job_id: str, request: TranscribeRequest, audio_path: Path):
     """Background task to process transcription with checkpoint and diarization support."""
     from ..core.transcriber import AudioTranscriber, TranscriptionSegment
+    from ..core.transcription_engine import (
+        TranscriptionEngine,
+        get_engine,
+        get_best_engine,
+    )
 
     job = transcription_jobs[job_id]
     job.status = JobStatus.PROCESSING
@@ -62,17 +67,45 @@ async def _process_transcription(job_id: str, request: TranscribeRequest, audio_
             else:
                 logger.warning(f"[{job_id}] Audio enhancement failed: {result.error}, continuing with original audio")
 
-        transcriber = AudioTranscriber(model_size=request.model.value)
+        # Determine which engine to use
+        engine_type_str = getattr(request, 'engine', 'auto')
+        if hasattr(engine_type_str, 'value'):
+            engine_type_str = engine_type_str.value
 
-        task = "translate" if request.translate else "transcribe"
-        result = await transcriber.transcribe(
-            audio_path=audio_path,
-            language=request.language,
-            task=task,
-            vad_filter=True,
-            job_id=job_id,  # Enable checkpointing
-            output_format=request.output_format.value,
-        )
+        if engine_type_str == "auto":
+            engine_type = get_best_engine(language=request.language)
+            logger.info(f"[{job_id}] Auto-selected engine: {engine_type.value}")
+        else:
+            engine_type = TranscriptionEngine(engine_type_str)
+
+        # Check if translate is requested with a non-whisper engine
+        translate_requested = getattr(request, 'translate', False)
+
+        # Use the multi-engine path for non-whisper engines
+        if engine_type != TranscriptionEngine.WHISPER:
+            if translate_requested:
+                logger.warning(
+                    f"[{job_id}] Translation requested but {engine_type.value} engine does not support translation. "
+                    "Only the Whisper engine supports translation to English."
+                )
+            engine = get_engine(engine_type)
+            logger.info(f"[{job_id}] Transcribing with {engine_type.value} engine...")
+            result = await engine.transcribe(
+                audio_path=audio_path,
+                language=request.language,
+            )
+        else:
+            # Legacy whisper path with full checkpoint/resume support
+            transcriber = AudioTranscriber(model_size=request.model.value)
+            task = "translate" if translate_requested else "transcribe"
+            result = await transcriber.transcribe(
+                audio_path=audio_path,
+                language=request.language,
+                task=task,
+                vad_filter=True,
+                job_id=job_id,
+                output_format=request.output_format.value,
+            )
 
         if result.success:
             segments = result.segments or []
@@ -136,11 +169,11 @@ async def _process_transcription(job_id: str, request: TranscribeRequest, audio_
 
             if request.output_format == TranscriptionOutputFormat.SRT:
                 if has_speakers:
-                    job.formatted_output = transcriber.format_as_srt_with_speakers(segments)
+                    job.formatted_output = AudioTranscriber.format_as_srt_with_speakers(segments)
                 else:
-                    job.formatted_output = transcriber.format_as_srt(segments)
+                    job.formatted_output = AudioTranscriber.format_as_srt(segments)
             elif request.output_format == TranscriptionOutputFormat.VTT:
-                job.formatted_output = transcriber.format_as_vtt(segments)
+                job.formatted_output = AudioTranscriber.format_as_vtt(segments)
             elif request.output_format == TranscriptionOutputFormat.JSON:
                 job.formatted_output = json.dumps({
                     "text": result.text,
@@ -157,7 +190,7 @@ async def _process_transcription(job_id: str, request: TranscribeRequest, audio_
                     "diarized": has_speakers,
                 }, ensure_ascii=False, indent=2)
             elif request.output_format == TranscriptionOutputFormat.DIALOGUE:
-                job.formatted_output = transcriber.format_as_dialogue(segments)
+                job.formatted_output = AudioTranscriber.format_as_dialogue(segments)
             else:
                 job.formatted_output = result.text
 
@@ -217,6 +250,32 @@ async def _process_transcription(job_id: str, request: TranscribeRequest, audio_
         logger.exception(f"Transcription error for job {job_id}")
         job.status = JobStatus.FAILED
         job.error = str(e) if str(e) else "Transcription failed"
+
+
+@router.get("/transcribe/engines")
+async def list_transcription_engines():
+    """List available transcription engines and their status."""
+    from ..core.transcription_engine import get_available_engines, get_best_engine
+
+    engines = get_available_engines()
+    best = get_best_engine()
+
+    return {
+        "engines": [
+            {
+                "id": e.engine.value,
+                "name": e.name,
+                "description": e.description,
+                "available": e.available,
+                "languages": e.languages,
+                "models": e.models,
+                "requires_download": e.requires_download,
+                "platform_restriction": e.platform_restriction,
+            }
+            for e in engines
+        ],
+        "recommended": best.value,
+    }
 
 
 @router.post("/transcribe", response_model=TranscriptionJob)
@@ -376,6 +435,8 @@ async def resume_transcription(
             self.output_format = type("Format", (), {"value": checkpoint.output_format})()
             self.language = checkpoint.language
             self.translate = checkpoint.task == "translate"
+            # Resume always uses whisper since checkpointing is whisper-only
+            self.engine = "whisper"
 
     request = ResumeTranscribeRequest()
 
@@ -389,6 +450,7 @@ async def resume_transcription(
 async def transcribe_uploaded_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    engine: str = Form(default="auto"),
     model: str = Form(default="base"),
     output_format: str = Form(default="text"),
     language: str = Form(default=None),
@@ -462,6 +524,8 @@ async def transcribe_uploaded_file(
     # Create a mock request object for the background task
     class UploadTranscribeRequest:
         def __init__(self):
+            from .schemas import TranscriptionEngineType
+            self.engine = TranscriptionEngineType(engine) if engine in [e.value for e in TranscriptionEngineType] else TranscriptionEngineType.AUTO
             self.model = WhisperModelSize(model) if model in [e.value for e in WhisperModelSize] else WhisperModelSize.BASE
             self.output_format = output_format_enum
             self.language = language if language else None

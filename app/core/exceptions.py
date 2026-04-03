@@ -1,23 +1,24 @@
-"""Custom exceptions for AudioGrab."""
+"""Custom exceptions for Sift."""
 
 
-class AudioGrabError(Exception):
-    """Base exception for all AudioGrab errors."""
+class SiftError(Exception):
+    """Base exception for all Sift errors."""
 
     pass
 
 
-# Backward compatibility alias
-XDownloaderError = AudioGrabError
+# Backward compatibility aliases
+XDownloaderError = SiftError
+AudioGrabError = SiftError
 
 
-class AuthenticationError(AudioGrabError):
+class AuthenticationError(SiftError):
     """Invalid or expired authentication credentials."""
 
     pass
 
 
-class ContentNotFoundError(AudioGrabError):
+class ContentNotFoundError(SiftError):
     """Content not found (Space, episode, track)."""
 
     pass
@@ -27,7 +28,7 @@ class ContentNotFoundError(AudioGrabError):
 SpaceNotFoundError = ContentNotFoundError
 
 
-class ContentNotAvailableError(AudioGrabError):
+class ContentNotAvailableError(SiftError):
     """Content exists but not available for download."""
 
     pass
@@ -37,31 +38,31 @@ class ContentNotAvailableError(AudioGrabError):
 SpaceNotAvailableError = ContentNotAvailableError
 
 
-class DownloadError(AudioGrabError):
+class DownloadError(SiftError):
     """Failed to download audio."""
 
     pass
 
 
-class FFmpegError(AudioGrabError):
+class FFmpegError(SiftError):
     """FFmpeg processing failed."""
 
     pass
 
 
-class ToolNotFoundError(AudioGrabError):
+class ToolNotFoundError(SiftError):
     """Required external tool not found (yt-dlp, spotdl, ffmpeg)."""
 
     pass
 
 
-class RateLimitError(AudioGrabError):
+class RateLimitError(SiftError):
     """API rate limit exceeded."""
 
     pass
 
 
-class UnsupportedPlatformError(AudioGrabError):
+class UnsupportedPlatformError(SiftError):
     """URL does not match any supported platform."""
 
     pass

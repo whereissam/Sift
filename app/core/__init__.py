@@ -1,8 +1,9 @@
 """Core downloader functionality."""
 
 from .exceptions import (
-    AudioGrabError,
+    SiftError,
     XDownloaderError,  # Backward compatibility
+    AudioGrabError,  # Backward compatibility
     AuthenticationError,
     ContentNotFoundError,
     SpaceNotFoundError,  # Backward compatibility
@@ -18,8 +19,9 @@ from .downloader import DownloaderFactory, download_audio, get_metadata, SpaceDo
 
 __all__ = [
     # Exceptions
-    "AudioGrabError",
+    "SiftError",
     "XDownloaderError",
+    "AudioGrabError",
     "AuthenticationError",
     "ContentNotFoundError",
     "SpaceNotFoundError",
