@@ -1,6 +1,7 @@
 export type DownloadStatus = 'idle' | 'loading' | 'success' | 'error'
 export type Platform = 'x_spaces' | 'apple_podcasts' | 'spotify' | 'youtube' | 'xiaoyuzhou' | 'x_video' | 'youtube_video' | 'instagram' | 'xiaohongshu'
 export type MediaType = 'audio' | 'video' | 'transcribe' | 'clips'
+export type TranscriptionEngineType = 'auto' | 'whisper' | 'sensevoice' | 'apple' | 'cloud'
 export type WhisperModel = 'tiny' | 'base' | 'small' | 'medium' | 'large-v3' | 'turbo'
 export type TranscriptionFormat = 'text' | 'srt' | 'vtt' | 'json' | 'dialogue'
 export type EnhancementPreset = 'none' | 'light' | 'medium' | 'heavy'
@@ -157,6 +158,14 @@ export const PLATFORM_GUIDES: Record<Platform, { steps: string[]; tip?: string }
     ],
   },
 }
+
+export const TRANSCRIPTION_ENGINES: { value: TranscriptionEngineType; label: string; desc: string }[] = [
+  { value: 'auto', label: 'Auto', desc: 'Best available' },
+  { value: 'sensevoice', label: 'SenseVoice', desc: 'Best for zh+en' },
+  { value: 'whisper', label: 'Whisper', desc: '99 languages' },
+  { value: 'apple', label: 'Apple', desc: 'macOS built-in' },
+  { value: 'cloud', label: 'Cloud', desc: 'API (highest quality)' },
+]
 
 export const QUALITY_OPTIONS = [
   { value: 'medium', label: '480p' },

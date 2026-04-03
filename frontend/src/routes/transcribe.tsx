@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState, useEffect, useRef } from 'react'
 import {
   DownloadStatus,
+  TranscriptionEngineType,
   WhisperModel,
   TranscriptionFormat,
   EnhancementPreset,
@@ -17,6 +18,7 @@ function TranscribePage() {
   const [url, setUrl] = useState('')
   const [status, setStatus] = useState<DownloadStatus>('idle')
   const [message, setMessage] = useState('')
+  const [engine, setEngine] = useState<TranscriptionEngineType>('auto')
   const [whisperModel, setWhisperModel] = useState<WhisperModel>('base')
   const [transcriptionFormat, setTranscriptionFormat] = useState<TranscriptionFormat>('text')
   const [transcriptionResult, setTranscriptionResult] = useState<TranscriptionResult | null>(null)
@@ -80,6 +82,7 @@ function TranscribePage() {
     setTranscriptionJobId(null)
     setUrl('')
     setSelectedFile(null)
+    setEngine('auto')
     setLanguage('')
     setDiarize(false)
     setNumSpeakers(null)
@@ -159,6 +162,7 @@ function TranscribePage() {
       if (transcribeMode === 'file' && selectedFile) {
         const formData = new FormData()
         formData.append('file', selectedFile)
+        formData.append('engine', engine)
         formData.append('model', whisperModel)
         formData.append('output_format', transcriptionFormat)
         if (language) {
@@ -181,6 +185,7 @@ function TranscribePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             url,
+            engine,
             model: whisperModel,
             output_format: transcriptionFormat,
             language: language || undefined,
@@ -267,6 +272,8 @@ function TranscribePage() {
         setTranscribeMode={setTranscribeMode}
         selectedFile={selectedFile}
         setSelectedFile={setSelectedFile}
+        engine={engine}
+        setEngine={setEngine}
         whisperModel={whisperModel}
         setWhisperModel={setWhisperModel}
         transcriptionFormat={transcriptionFormat}

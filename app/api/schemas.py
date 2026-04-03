@@ -189,6 +189,16 @@ class EnhancementPreset(str, Enum):
 # ============ Transcription Schemas ============
 
 
+class TranscriptionEngineType(str, Enum):
+    """Available transcription engines."""
+
+    AUTO = "auto"
+    WHISPER = "whisper"
+    SENSEVOICE = "sensevoice"
+    APPLE = "apple"
+    CLOUD = "cloud"
+
+
 class WhisperModelSize(str, Enum):
     """Available Whisper model sizes."""
 
@@ -226,9 +236,13 @@ class TranscribeRequest(BaseModel):
         default=None,
         description="Language code (e.g., 'en', 'zh', 'ja'). Auto-detect if not specified.",
     )
+    engine: TranscriptionEngineType = Field(
+        default=TranscriptionEngineType.AUTO,
+        description="Transcription engine: auto (best available), whisper, sensevoice, apple, cloud",
+    )
     model: WhisperModelSize = Field(
         default=WhisperModelSize.BASE,
-        description="Whisper model size (larger = more accurate but slower)",
+        description="Whisper model size (only used when engine=whisper)",
     )
     output_format: TranscriptionOutputFormat = Field(
         default=TranscriptionOutputFormat.TEXT,
@@ -1080,7 +1094,7 @@ class ObsidianSettingsRequest(BaseModel):
         description="Path to the Obsidian vault directory",
     )
     subfolder: Optional[str] = Field(
-        default="AudioGrab",
+        default="Sift",
         description="Subfolder within vault for exported notes",
     )
     template: Optional[str] = Field(
@@ -1088,7 +1102,7 @@ class ObsidianSettingsRequest(BaseModel):
         description="Custom template for notes (not implemented yet)",
     )
     default_tags: Optional[list[str]] = Field(
-        default=["audiograb", "transcript"],
+        default=["sift", "transcript"],
         description="Default tags for exported notes",
     )
 

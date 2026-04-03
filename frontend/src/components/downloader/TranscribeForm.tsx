@@ -4,9 +4,11 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Loader2, AlertCircle, Mic, FileAudio, FileText, Upload, Link, Users, Sparkles, Globe, Zap, Info } from 'lucide-react'
 import {
   DownloadStatus,
+  TranscriptionEngineType,
   WhisperModel,
   TranscriptionFormat,
   EnhancementPreset,
+  TRANSCRIPTION_ENGINES,
   WHISPER_MODELS,
   TRANSCRIPTION_FORMATS,
   ENHANCEMENT_PRESETS,
@@ -20,6 +22,8 @@ interface TranscribeFormProps {
   setTranscribeMode: (mode: 'url' | 'file') => void
   selectedFile: File | null
   setSelectedFile: (file: File | null) => void
+  engine: TranscriptionEngineType
+  setEngine: (engine: TranscriptionEngineType) => void
   whisperModel: WhisperModel
   setWhisperModel: (model: WhisperModel) => void
   transcriptionFormat: TranscriptionFormat
@@ -52,6 +56,8 @@ export function TranscribeForm({
   setTranscribeMode,
   selectedFile,
   setSelectedFile,
+  engine,
+  setEngine,
   whisperModel,
   setWhisperModel,
   transcriptionFormat,
@@ -207,9 +213,36 @@ export function TranscribeForm({
         </div>
       )}
 
+      {/* Engine Selector */}
+      <div>
+        <label className="block text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
+          <Zap className="inline h-3 w-3 mr-1" />
+          Engine
+        </label>
+        <div className="flex flex-wrap gap-1">
+          {TRANSCRIPTION_ENGINES.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setEngine(opt.value)}
+              disabled={status === 'loading'}
+              className={`px-3 py-1.5 text-xs sm:text-sm font-medium border transition-colors ${
+                engine === opt.value
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/30'
+              } ${status === 'loading' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              {opt.label}
+              <span className="hidden sm:inline text-[10px] ml-1 opacity-70">({opt.desc})</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Model & Language Row */}
       <div className="grid gap-4 sm:grid-cols-2">
-        {/* Model Selector */}
+        {/* Model Selector (only for whisper engine) */}
+        {(engine === 'whisper' || engine === 'auto') && (
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
             <Mic className="inline h-4 w-4 mr-1" />
@@ -234,6 +267,7 @@ export function TranscribeForm({
             ))}
           </div>
         </div>
+        )}
 
         {/* Language Selector */}
         <div>
