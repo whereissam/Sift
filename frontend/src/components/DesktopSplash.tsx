@@ -19,7 +19,7 @@ export function DesktopSplash({ children }: { children: React.ReactNode }) {
           <div className="text-5xl">&#x26A0;</div>
           <h1 className="text-xl font-semibold text-white">Backend Failed to Start</h1>
           <p className="text-zinc-400 text-sm">
-            The AudioGrab backend process could not be reached. Please restart the app.
+            The Sift backend process could not be reached. Please restart the app.
             If the issue persists, check the logs in the app data directory.
           </p>
           <button
@@ -41,7 +41,7 @@ export function DesktopSplash({ children }: { children: React.ReactNode }) {
           <div className="absolute inset-0 rounded-full border-4 border-zinc-800" />
           <div className="absolute inset-0 rounded-full border-4 border-t-indigo-500 animate-spin" />
         </div>
-        <h1 className="text-lg font-medium text-white">Starting AudioGrab...</h1>
+        <h1 className="text-lg font-medium text-white">Starting Sift...</h1>
         <p className="text-sm text-zinc-500">Initializing backend services</p>
       </div>
     </div>

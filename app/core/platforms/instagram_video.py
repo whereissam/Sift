@@ -10,7 +10,7 @@ from typing import Optional
 
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
-from ..exceptions import AudioGrabError, ContentNotFoundError, ToolNotFoundError
+from ..exceptions import SiftError, ContentNotFoundError, ToolNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ class InstagramVideoDownloader(PlatformDownloader):
                 if "login" in error_msg.lower() or "private" in error_msg.lower():
                     raise ContentNotFoundError(f"Content is private or requires login: {content_id}")
 
-                raise AudioGrabError(f"yt-dlp failed: {error_msg[:500]}")
+                raise SiftError(f"yt-dlp failed: {error_msg[:500]}")
 
             # Parse JSON output
             output = stdout.decode().strip()
@@ -178,7 +178,7 @@ class InstagramVideoDownloader(PlatformDownloader):
                         break
 
             if not file_path or not file_path.exists():
-                raise AudioGrabError("Download completed but output file not found")
+                raise SiftError("Download completed but output file not found")
 
             file_size = file_path.stat().st_size
 
@@ -192,7 +192,7 @@ class InstagramVideoDownloader(PlatformDownloader):
                 file_size_bytes=file_size,
             )
 
-        except (ContentNotFoundError, AudioGrabError) as e:
+        except (ContentNotFoundError, SiftError) as e:
             logger.error(f"Download failed: {e}")
             return DownloadResult(
                 success=False,

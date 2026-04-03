@@ -10,7 +10,7 @@ from typing import Optional
 
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
-from ..exceptions import AudioGrabError, ContentNotFoundError, ToolNotFoundError
+from ..exceptions import SiftError, ContentNotFoundError, ToolNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ class XiaohongshuVideoDownloader(PlatformDownloader):
                 if "no video" in error_msg.lower() or "Unsupported URL" in error_msg:
                     raise ContentNotFoundError(f"No video found at this URL (may be image-only post): {url}")
 
-                raise AudioGrabError(f"yt-dlp failed: {error_msg[:500]}")
+                raise SiftError(f"yt-dlp failed: {error_msg[:500]}")
 
             # Parse JSON output
             output = stdout.decode().strip()
@@ -207,7 +207,7 @@ class XiaohongshuVideoDownloader(PlatformDownloader):
                         file_path = mp4_files[0]
 
             if not file_path or not file_path.exists():
-                raise AudioGrabError("Download completed but output file not found")
+                raise SiftError("Download completed but output file not found")
 
             file_size = file_path.stat().st_size
 
@@ -221,7 +221,7 @@ class XiaohongshuVideoDownloader(PlatformDownloader):
                 file_size_bytes=file_size,
             )
 
-        except (ContentNotFoundError, AudioGrabError) as e:
+        except (ContentNotFoundError, SiftError) as e:
             logger.error(f"Download failed: {e}")
             return DownloadResult(
                 success=False,

@@ -28,17 +28,17 @@ async def get_obsidian_settings() -> ObsidianSettingsResponse:
     if settings:
         return ObsidianSettingsResponse(
             vault_path=settings["vault_path"],
-            subfolder=settings.get("subfolder", "AudioGrab"),
+            subfolder=settings.get("subfolder", "Sift"),
             template=settings.get("template"),
-            default_tags=settings.get("default_tags", ["audiograb", "transcript"]),
+            default_tags=settings.get("default_tags", ["sift", "transcript"]),
             is_configured=True,
         )
 
     return ObsidianSettingsResponse(
         vault_path="",
-        subfolder="AudioGrab",
+        subfolder="Sift",
         template=None,
-        default_tags=["audiograb", "transcript"],
+        default_tags=["sift", "transcript"],
         is_configured=False,
     )
 
@@ -65,9 +65,9 @@ async def save_obsidian_settings(
 
     return ObsidianSettingsResponse(
         vault_path=settings["vault_path"],
-        subfolder=settings.get("subfolder", "AudioGrab"),
+        subfolder=settings.get("subfolder", "Sift"),
         template=settings.get("template"),
-        default_tags=settings.get("default_tags", ["audiograb", "transcript"]),
+        default_tags=settings.get("default_tags", ["sift", "transcript"]),
         is_configured=True,
     )
 
@@ -124,11 +124,11 @@ async def export_to_obsidian(request: ObsidianExportRequest) -> ObsidianExportRe
         title = f"Transcription {request.job_id[:8]}"
 
     # Merge tags
-    default_tags = settings.get("default_tags", ["audiograb", "transcript"])
+    default_tags = settings.get("default_tags", ["sift", "transcript"])
     tags = list(set(default_tags + (request.tags or [])))
 
     # Determine subfolder
-    subfolder = request.subfolder or settings.get("subfolder", "AudioGrab")
+    subfolder = request.subfolder or settings.get("subfolder", "Sift")
 
     # Export
     exporter = ObsidianExporter(settings["vault_path"])

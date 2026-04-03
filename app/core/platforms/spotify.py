@@ -10,7 +10,7 @@ from typing import Optional
 
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
-from ..exceptions import AudioGrabError, ContentNotFoundError, ToolNotFoundError
+from ..exceptions import SiftError, ContentNotFoundError, ToolNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ class SpotifyDownloader(PlatformDownloader):
                 logger.error(f"spotdl error: {combined_output}")
 
                 if "rate" in combined_output.lower() and "limit" in combined_output.lower():
-                    raise AudioGrabError(
+                    raise SiftError(
                         "Spotify rate limited — too many requests. "
                         "Wait 10–30 minutes before trying again. "
                         "If this persists, try a different network or use a VPN."
@@ -160,7 +160,7 @@ class SpotifyDownloader(PlatformDownloader):
                 if "no results" in combined_output.lower() or "not found" in combined_output.lower():
                     raise ContentNotFoundError(f"Could not find audio for: {url}")
 
-                raise AudioGrabError(f"spotdl failed: {combined_output[:500]}")
+                raise SiftError(f"spotdl failed: {combined_output[:500]}")
 
             # Find the downloaded file
             # spotdl outputs files in format: "Artist - Title.ext"
@@ -182,7 +182,7 @@ class SpotifyDownloader(PlatformDownloader):
                     file_path = max(matches, key=lambda p: p.stat().st_mtime)
 
             if not file_path or not file_path.exists():
-                raise AudioGrabError("Download completed but output file not found")
+                raise SiftError("Download completed but output file not found")
 
             # Convert to mp4 if needed
             if needs_conversion:
@@ -222,7 +222,7 @@ class SpotifyDownloader(PlatformDownloader):
                 file_size_bytes=file_size,
             )
 
-        except (ContentNotFoundError, AudioGrabError, ToolNotFoundError) as e:
+        except (ContentNotFoundError, SiftError, ToolNotFoundError) as e:
             logger.error(f"Download failed: {e}")
             return DownloadResult(
                 success=False,
@@ -288,7 +288,7 @@ class SpotifyDownloader(PlatformDownloader):
 
             if process.returncode != 0:
                 error_msg = stderr.decode() if stderr else "Unknown error"
-                raise AudioGrabError(f"yt-dlp failed for Spotify: {error_msg[:500]}")
+                raise SiftError(f"yt-dlp failed for Spotify: {error_msg[:500]}")
 
             # Parse JSON output
             output = stdout.decode().strip()
@@ -312,7 +312,7 @@ class SpotifyDownloader(PlatformDownloader):
                         continue
 
             if not file_path or not file_path.exists():
-                raise AudioGrabError("Download completed but output file not found")
+                raise SiftError("Download completed but output file not found")
 
             # Convert to mp4 if needed
             if needs_conversion:
@@ -335,7 +335,7 @@ class SpotifyDownloader(PlatformDownloader):
                 file_size_bytes=file_size,
             )
 
-        except (AudioGrabError,) as e:
+        except (SiftError,) as e:
             return DownloadResult(success=False, file_path=None, metadata=None, error=str(e))
         except Exception as e:
             logger.exception(f"yt-dlp fallback error: {e}")

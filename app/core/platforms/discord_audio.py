@@ -13,7 +13,7 @@ import httpx
 
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
-from ..exceptions import AudioGrabError, ContentNotFoundError
+from ..exceptions import SiftError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -155,12 +155,12 @@ class DiscordAudioDownloader(PlatformDownloader):
                     raise ContentNotFoundError(f"Discord file not found or expired: {url}")
 
                 if response.status_code == 403:
-                    raise AudioGrabError(
+                    raise SiftError(
                         "Access denied. The link may have expired or require authentication."
                     )
 
                 if response.status_code != 200:
-                    raise AudioGrabError(
+                    raise SiftError(
                         f"Failed to download from Discord: HTTP {response.status_code}"
                     )
 
@@ -209,7 +209,7 @@ class DiscordAudioDownloader(PlatformDownloader):
                 file_size_bytes=file_size,
             )
 
-        except (ContentNotFoundError, AudioGrabError) as e:
+        except (ContentNotFoundError, SiftError) as e:
             logger.error(f"Download failed: {e}")
             return DownloadResult(
                 success=False,

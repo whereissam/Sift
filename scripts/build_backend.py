@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build the AudioGrab backend into a standalone binary using Nuitka.
+Build the Sift backend into a standalone binary using Nuitka.
 
 Usage:
     uv run python scripts/build_backend.py [--target-dir PATH]
@@ -45,10 +45,10 @@ def get_target_triple() -> str:
 
 def build(target_dir: Path) -> None:
     target_triple = get_target_triple()
-    output_name = f"audiograb-backend-{target_triple}"
+    output_name = f"sift-backend-{target_triple}"
     output_dir = target_dir / "nuitka_build"
 
-    print(f"Building AudioGrab backend with Nuitka...")
+    print("Building Sift backend with Nuitka...")
     print(f"  Entry point: {APP_ENTRY}")
     print(f"  Target triple: {target_triple}")
     print(f"  Output: {target_dir / output_name}")
@@ -161,7 +161,7 @@ def build(target_dir: Path) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build AudioGrab backend with Nuitka")
+    parser = argparse.ArgumentParser(description="Build Sift backend with Nuitka")
     parser.add_argument(
         "--target-dir",
         type=Path,

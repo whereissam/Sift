@@ -1,4 +1,4 @@
-"""Telegram bot for AudioGrab — supports all platforms via DownloaderFactory."""
+"""Telegram bot for Sift — supports all platforms via DownloaderFactory."""
 
 import asyncio
 import hashlib
@@ -19,7 +19,7 @@ from telegram.ext import (
 
 from ..config import get_settings
 from ..core import (
-    AudioGrabError,
+    SiftError,
     AuthenticationError,
     ContentNotAvailableError,
     ContentNotFoundError,
@@ -69,8 +69,8 @@ def _format_duration(seconds: float) -> str:
     return f"{secs}s"
 
 
-class AudioGrabBot:
-    """Telegram bot supporting all AudioGrab platforms."""
+class SiftBot:
+    """Telegram bot supporting all Sift platforms."""
 
     def __init__(self, token: str):
         self.token = token
@@ -84,7 +84,7 @@ class AudioGrabBot:
             for p in Platform
         )
         text = (
-            "Welcome to AudioGrab Bot!\n\n"
+            "Welcome to Sift Bot!\n\n"
             "Send me a link and I'll download the audio (or video) for you.\n\n"
             f"Supported platforms:\n{platforms}\n\n"
             "Commands:\n"
@@ -277,7 +277,7 @@ class AudioGrabBot:
             await query.edit_message_text(
                 "Authentication error. Please contact the bot admin."
             )
-        except AudioGrabError as e:
+        except SiftError as e:
             logger.error(f"Download error for user {update.effective_user.id}: {e}")
             await query.edit_message_text(f"Download failed: {e}")
         except Exception as e:
@@ -523,7 +523,7 @@ class AudioGrabBot:
 
     def run_polling(self) -> None:
         application = self.build_application()
-        logger.info("Starting AudioGrab Telegram bot (polling)...")
+        logger.info("Starting Sift Telegram bot (polling)...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
     async def setup_webhook(self, webhook_url: str, secret: Optional[str] = None) -> Application:
@@ -550,7 +550,7 @@ def run_bot():
     if not settings.telegram_bot_token:
         raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
 
-    bot = AudioGrabBot(settings.telegram_bot_token)
+    bot = SiftBot(settings.telegram_bot_token)
     bot.run_polling()
 
 

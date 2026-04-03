@@ -10,7 +10,7 @@ from typing import Optional
 
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
-from ..exceptions import AudioGrabError, ContentNotAvailableError, ContentNotFoundError, ToolNotFoundError
+from ..exceptions import SiftError, ContentNotAvailableError, ContentNotFoundError, ToolNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ class YouTubeVideoDownloader(PlatformDownloader):
                         "Video is age-restricted. Cookie authentication is required."
                     )
 
-                raise AudioGrabError(f"yt-dlp failed: {error_msg[:500]}")
+                raise SiftError(f"yt-dlp failed: {error_msg[:500]}")
 
             # Parse JSON output
             output = stdout.decode().strip()
@@ -189,7 +189,7 @@ class YouTubeVideoDownloader(PlatformDownloader):
                         break
 
             if not file_path or not file_path.exists():
-                raise AudioGrabError("Download completed but output file not found")
+                raise SiftError("Download completed but output file not found")
 
             file_size = file_path.stat().st_size
 
@@ -203,7 +203,7 @@ class YouTubeVideoDownloader(PlatformDownloader):
                 file_size_bytes=file_size,
             )
 
-        except (ContentNotFoundError, AudioGrabError) as e:
+        except (ContentNotFoundError, SiftError) as e:
             logger.error(f"Download failed: {e}")
             return DownloadResult(
                 success=False,

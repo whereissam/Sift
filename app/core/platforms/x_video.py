@@ -10,7 +10,7 @@ from typing import Optional
 
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
-from ..exceptions import AudioGrabError, ContentNotFoundError, ToolNotFoundError
+from ..exceptions import SiftError, ContentNotFoundError, ToolNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ class XVideoDownloader(PlatformDownloader):
                 if "no video" in error_msg.lower():
                     raise ContentNotFoundError(f"No video in post: {post_id}")
 
-                raise AudioGrabError(f"yt-dlp failed: {error_msg[:500]}")
+                raise SiftError(f"yt-dlp failed: {error_msg[:500]}")
 
             # Parse JSON output
             output = stdout.decode().strip()
@@ -165,7 +165,7 @@ class XVideoDownloader(PlatformDownloader):
                         break
 
             if not file_path or not file_path.exists():
-                raise AudioGrabError("Download completed but output file not found")
+                raise SiftError("Download completed but output file not found")
 
             file_size = file_path.stat().st_size
 
@@ -179,7 +179,7 @@ class XVideoDownloader(PlatformDownloader):
                 file_size_bytes=file_size,
             )
 
-        except (ContentNotFoundError, AudioGrabError) as e:
+        except (ContentNotFoundError, SiftError) as e:
             logger.error(f"Download failed: {e}")
             return DownloadResult(
                 success=False,

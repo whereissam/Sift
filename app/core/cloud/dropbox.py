@@ -39,7 +39,7 @@ class DropboxProvider(OAuthProvider):
             - refresh_token: OAuth refresh token (after authorization)
 
         Config settings can contain:
-            - root_path: Default path prefix for uploads (default: /AudioGrab)
+            - root_path: Default path prefix for uploads (default: /Sift)
         """
         super().__init__(config)
         self._client = None
@@ -66,7 +66,7 @@ class DropboxProvider(OAuthProvider):
 
     @property
     def root_path(self) -> str:
-        return self.config.settings.get("root_path", "/AudioGrab")
+        return self.config.settings.get("root_path", "/Sift")
 
     def get_auth_url(self, redirect_uri: str, state: Optional[str] = None) -> str:
         """Get Dropbox OAuth authorization URL."""

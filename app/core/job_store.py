@@ -204,9 +204,9 @@ class JobStore:
                 CREATE TABLE IF NOT EXISTS obsidian_settings (
                     id INTEGER PRIMARY KEY,
                     vault_path TEXT NOT NULL,
-                    subfolder TEXT DEFAULT 'AudioGrab',
+                    subfolder TEXT DEFAULT 'Sift',
                     template TEXT,
-                    default_tags TEXT DEFAULT 'audiograb,transcript',
+                    default_tags TEXT DEFAULT 'sift,transcript',
                     is_default INTEGER DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -829,7 +829,7 @@ class JobStore:
     def save_obsidian_settings(
         self,
         vault_path: str,
-        subfolder: Optional[str] = "AudioGrab",
+        subfolder: Optional[str] = "Sift",
         template: Optional[str] = None,
         default_tags: Optional[list[str]] = None,
     ) -> dict:
@@ -847,7 +847,7 @@ class JobStore:
         now = datetime.utcnow().isoformat()
 
         # Convert tags list to comma-separated string
-        tags_str = ",".join(default_tags) if default_tags else "audiograb,transcript"
+        tags_str = ",".join(default_tags) if default_tags else "sift,transcript"
 
         with self._get_conn() as conn:
             # Check if settings exist

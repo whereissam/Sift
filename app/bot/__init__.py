@@ -1,5 +1,5 @@
-"""Telegram bot for AudioGrab."""
+"""Telegram bot for Sift."""
 
-from .bot import AudioGrabBot, run_bot
+from .bot import SiftBot, run_bot
 
-__all__ = ["AudioGrabBot", "run_bot"]
+__all__ = ["SiftBot", "run_bot"]

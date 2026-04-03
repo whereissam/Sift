@@ -10,7 +10,7 @@ import httpx
 
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
-from ..exceptions import AudioGrabError, ContentNotFoundError
+from ..exceptions import SiftError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +186,7 @@ class XiaoyuzhouDownloader(PlatformDownloader):
             if not audio_url:
                 audio_url = episode_info.get("mediaKey")
             if not audio_url:
-                raise AudioGrabError("No audio URL found in episode")
+                raise SiftError("No audio URL found in episode")
 
             # If mediaKey, construct full URL
             if audio_url and not audio_url.startswith("http"):
@@ -254,7 +254,7 @@ class XiaoyuzhouDownloader(PlatformDownloader):
                 file_size_bytes=file_size,
             )
 
-        except (ContentNotFoundError, AudioGrabError) as e:
+        except (ContentNotFoundError, SiftError) as e:
             logger.error(f"Download failed: {e}")
             return DownloadResult(
                 success=False,

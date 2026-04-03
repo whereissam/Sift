@@ -23,8 +23,8 @@ export function ObsidianSettings() {
   } | null>(null)
 
   const [vaultPath, setVaultPath] = useState('')
-  const [subfolder, setSubfolder] = useState('AudioGrab')
-  const [defaultTags, setDefaultTags] = useState('audiograb, transcript')
+  const [subfolder, setSubfolder] = useState('Sift')
+  const [defaultTags, setDefaultTags] = useState('sift, transcript')
   const [isConfigured, setIsConfigured] = useState(false)
 
   // Fetch current settings on mount
@@ -38,8 +38,8 @@ export function ObsidianSettings() {
       if (response.ok) {
         const data: ObsidianSettings = await response.json()
         setVaultPath(data.vault_path || '')
-        setSubfolder(data.subfolder || 'AudioGrab')
-        setDefaultTags(data.default_tags?.join(', ') || 'audiograb, transcript')
+        setSubfolder(data.subfolder || 'Sift')
+        setDefaultTags(data.default_tags?.join(', ') || 'sift, transcript')
         setIsConfigured(data.is_configured)
       }
     } catch (err) {
@@ -102,7 +102,7 @@ export function ObsidianSettings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vault_path: vaultPath,
-          subfolder: subfolder || 'AudioGrab',
+          subfolder: subfolder || 'Sift',
           default_tags: tags,
         }),
       })
@@ -179,7 +179,7 @@ export function ObsidianSettings() {
           type="text"
           value={subfolder}
           onChange={(e) => setSubfolder(e.target.value)}
-          placeholder="AudioGrab"
+          placeholder="Sift"
           className="h-10"
         />
         <p className="text-xs text-muted-foreground mt-1">
@@ -196,7 +196,7 @@ export function ObsidianSettings() {
           type="text"
           value={defaultTags}
           onChange={(e) => setDefaultTags(e.target.value)}
-          placeholder="audiograb, transcript"
+          placeholder="sift, transcript"
           className="h-10"
         />
         <p className="text-xs text-muted-foreground mt-1">

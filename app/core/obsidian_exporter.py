@@ -41,7 +41,7 @@ class ObsidianExporter:
             return False, f"Vault path is not a directory: {self.vault_path}"
 
         # Check if writable by attempting to create a test file
-        test_file = self.vault_path / ".audiograb_write_test"
+        test_file = self.vault_path / ".sift_write_test"
         try:
             test_file.touch()
             test_file.unlink()

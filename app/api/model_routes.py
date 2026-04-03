@@ -8,7 +8,7 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 # Default model storage location (inside user data dir)
-MODELS_DIR = Path.home() / ".audiograb" / "models"
+MODELS_DIR = Path.home() / ".sift" / "models"
 
 WHISPER_MODELS = {
     "tiny": {"size_mb": 75, "description": "Fastest, lowest accuracy"},

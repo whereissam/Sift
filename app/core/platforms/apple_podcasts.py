@@ -12,7 +12,7 @@ import feedparser
 
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
-from ..exceptions import AudioGrabError, ContentNotFoundError
+from ..exceptions import SiftError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ class ApplePodcastsDownloader(PlatformDownloader):
             feed_url = podcast_info.get("feedUrl")
 
             if not feed_url:
-                raise AudioGrabError("Podcast does not have a public RSS feed")
+                raise SiftError("Podcast does not have a public RSS feed")
 
             logger.info(f"Fetching RSS feed: {feed_url}")
 
@@ -225,7 +225,7 @@ class ApplePodcastsDownloader(PlatformDownloader):
             # Get audio URL
             audio_url = self._get_audio_url(entry)
             if not audio_url:
-                raise AudioGrabError("No audio URL found in episode")
+                raise SiftError("No audio URL found in episode")
 
             # Create metadata
             show_name = feed.feed.get("title", podcast_info.get("collectionName", "Unknown"))
@@ -289,7 +289,7 @@ class ApplePodcastsDownloader(PlatformDownloader):
                 file_size_bytes=file_size,
             )
 
-        except (ContentNotFoundError, AudioGrabError) as e:
+        except (ContentNotFoundError, SiftError) as e:
             logger.error(f"Download failed: {e}")
             return DownloadResult(
                 success=False,

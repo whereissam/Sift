@@ -6,7 +6,7 @@
 
 # Full desktop build: Tauri compiles Rust backend + bundles frontend
 desktop:
-	@echo "Building AudioGrab desktop app..."
+	@echo "Building Sift desktop app..."
 	cd frontend && bun install && bunx @tauri-apps/cli build
 	@echo ""
 	@echo "Desktop app built successfully!"
@@ -24,11 +24,11 @@ dev:
 
 # Web mode — Python backend + Vite frontend (original workflow)
 dev-web:
-	uv run audiograb-api & cd frontend && bun run dev
+	uv run sift-api & cd frontend && bun run dev
 
 # Run Python backend only (for web mode)
 dev-backend:
-	uv run audiograb-api
+	uv run sift-api
 
 # Run frontend only (for web mode)
 dev-frontend:

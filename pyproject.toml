@@ -1,5 +1,5 @@
 [project]
-name = "audiograb"
+name = "sift"
 version = "0.2.0"
 description = "Download audio from X Spaces, Apple Podcasts, and Spotify"
 readme = "README.md"
@@ -61,9 +61,9 @@ cloud = [
 ]
 
 [project.scripts]
-audiograb = "app.cli:cli"
-audiograb-api = "app.main:main"
-audiograb-bot = "app.bot:run_bot"
+sift = "app.cli:cli"
+sift-api = "app.main:main"
+sift-bot = "app.bot:run_bot"
 # Backward compatibility aliases
 xdownloader = "app.cli:cli"
 xdownloader-api = "app.main:main"

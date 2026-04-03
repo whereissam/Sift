@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: audiograb-api
+    container_name: sift-api
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -49,7 +49,7 @@ services:
     build:
       context: ./faster-whisper/docker
       dockerfile: Dockerfile.service
-    container_name: audiograb-whisper
+    container_name: sift-whisper
     ports:
       - "${WHISPER_PORT:-8001}:8001"
     volumes:
@@ -78,7 +78,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: audiograb-frontend
+    container_name: sift-frontend
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     environment:
@@ -94,7 +94,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    container_name: audiograb-ollama
+    container_name: sift-ollama
     volumes:
       - ollama-models:/root/.ollama
     ports:
@@ -111,6 +111,6 @@ services:
 
 volumes:
   whisper-models:
-    name: audiograb-whisper-models
+    name: sift-whisper-models
   ollama-models:
-    name: audiograb-ollama-models
+    name: sift-ollama-models

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AudioGrab",
+  "productName": "Sift",
   "version": "0.2.0",
-  "identifier": "com.audiograb.app",
+  "identifier": "com.sift.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "AudioGrab",
+        "title": "Sift",
         "width": 1200,
         "height": 800,
         "minWidth": 900,

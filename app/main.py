@@ -36,7 +36,7 @@ if _settings.sentry_dsn:
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     settings = get_settings()
-    logger.info("Starting AudioGrab API")
+    logger.info("Starting Sift API")
     logger.info(f"Server: {settings.host}:{settings.port}")
     logger.info(f"API auth: {'enabled (X-API-Key required)' if settings.api_key else 'disabled (open access)'}")
     logger.info(f"Twitter auth: {settings.has_auth}")
@@ -94,14 +94,14 @@ async def lifespan(app: FastAPI):
     telegram_app = None
     if settings.telegram_bot_token and settings.telegram_bot_mode == "webhook":
         try:
-            from .bot import AudioGrabBot
+            from .bot import SiftBot
             from .bot.webhook import setup_webhook_mode
 
             webhook_url = settings.telegram_webhook_url
             if not webhook_url:
                 logger.error("TELEGRAM_WEBHOOK_URL is required for webhook mode")
             else:
-                bot = AudioGrabBot(settings.telegram_bot_token)
+                bot = SiftBot(settings.telegram_bot_token)
                 telegram_app = await bot.setup_webhook(
                     webhook_url=webhook_url,
                     secret=settings.telegram_webhook_secret,
@@ -151,7 +151,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to stop subscription worker: {e}")
 
     # Cleanup on shutdown
-    logger.info("Shutting down AudioGrab API")
+    logger.info("Shutting down Sift API")
     try:
         from .core.job_store import get_job_store
         from .core.checkpoint import CheckpointManager
@@ -170,7 +170,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="AudioGrab API",
+    title="Sift API",
     description="API for downloading audio from X Spaces, Apple Podcasts, and Spotify",
     version="0.2.0",
     lifespan=lifespan,
@@ -226,7 +226,7 @@ app.include_router(telegram_router)
 async def root():
     """Root endpoint with API information."""
     return {
-        "name": "AudioGrab API",
+        "name": "Sift API",
         "version": "0.2.0",
         "docs": "/docs",
         "health": "/api/health",

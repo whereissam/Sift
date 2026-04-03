@@ -9,8 +9,8 @@ fn default_download_dir() -> PathBuf {
 }
 
 fn dirs_next() -> Option<PathBuf> {
-    // Use ~/AudioGrab as the default download location
-    dirs::home_dir().map(|h| h.join("AudioGrab").join("output"))
+    // Use ~/Sift as the default download location
+    dirs::home_dir().map(|h| h.join("Sift").join("output"))
 }
 
 #[tauri::command]
@@ -76,5 +76,5 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running AudioGrab");
+        .expect("error while running Sift");
 }
