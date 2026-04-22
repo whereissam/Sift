@@ -674,8 +674,8 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 ### Schema (Pydantic models)
 
 - [ ] **Claim** — `claim_id` (stable hash for cross-job dedup), `episode_id`, `text`, `speaker`, `timestamp_start/end`, `claim_type` (fact / opinion / prediction / question / recommendation), `confidence`, `evidence_excerpt`, `entity_ids[]`, `topic_ids[]`, `extraction_version`, `schema_version`, `source_url`
-- [ ] **Entity** — `entity_id` (canonical, e.g. `person:vitalik-buterin`), `name`, `entity_type` (person / company / ticker / project / product / place), `aliases[]`. Embedding lives in the generic `embeddings` table, **not** inline.
-- [ ] **EntityMention** — `entity_id`, `episode_id`, `timestamp`, `speaker`, `raw_text` (how it was actually said in the transcript)
+- [ ] **Entity** — `entity_id` (stable short-hash PK, e.g. `ent_8f3a91c2`), `slug` (human-readable label, e.g. `person:vitalik-buterin`, UNIQUE, mutable/regenerable), `name`, `entity_type` (person / company / ticker / project / product / place), `aliases[]`, `confidence` (LLM self-reported), `created_at`. Embedding lives in the generic `embeddings` table, **not** inline. Claims and mentions reference `entity_id`, never `slug` — merges become pointer updates, not rewrites.
+- [ ] **EntityMention** — `entity_id`, `episode_id`, `claim_id` (nullable — entities can exist without a claim reference), `chunk_id`, `raw_text` (surface form as the speaker said it), `start_char`/`end_char` (optional offsets into chunk text for UI highlighting), `timestamp`, `speaker`
 - [ ] **Topic** — `topic_id`, `name`, `segments[]` (episode_id + time range), `sentiment_summary`, `frequency_over_time`
 - [ ] **Prediction** (extends Claim) — `target_horizon`, `conditions`, `falsifiable_by`, `resolution` (pending / true / false / unresolvable), `resolved_at`
 - [ ] **Embedding** (generic, separate table) — `object_type` (episode / segment / claim / entity), `object_id`, `model`, `dim`, `vector_blob` (numpy float32 bytes), `norm` (cached for cosine speed)
@@ -728,19 +728,70 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 ### Phased rollout (within P18)
 
 1. **Phase A — Claims-only MVP** ✅ **SHIPPED**: schema + extractor + `claims` / `embeddings` / `extraction_failures` tables + task preset registry + `POST /jobs/{id}/extract-knowledge` + `GET /jobs/{id}/knowledge` + `GET /api/claims`. New jobs only (manual trigger; backfill in Phase C). 45 new tests, all passing.
-2. **Phase B — Entities + canonicalization** (~2-3 days): embedding-cosine matching using the existing `embedding_store.py` interface, mentions table, entity API.
-3. **Phase C — Topics + Predictions + backfill worker** (~2 days): topics table, prediction subtype, lazy backfill priority queue, on-demand cache path.
+2. **Phase B — Entities + canonicalization** ✅ **SHIPPED**: filled `embedding_store.embed()` (sentence-transformers lazy-loaded, module cache, `to_thread` batch), added `entities` + `entity_mentions` tables (dual-ID: `ent_<hash>` PK + UNIQUE slug), shipped `entity_canonicalizer.py` (normalize → cache → cosine ≥0.85 reuse → else mint with slug-collision sequence suffix), extended `LLM_RESPONSE_SCHEMA` to `{claims, entities}` with per-claim `entity_refs`, shipped `GET /api/entities*`. Entities + mentions ride in the same tx as claims. **56 new tests**, 154/154 total green.
+3. **Phase C — Topics + Predictions + backfill worker** (~2 days, **NEXT**): topics table, prediction subtype, lazy backfill priority queue, on-demand cache path.
 4. **Phase D — Pipeline auto-run + tests + docs** (~1 day): hook into `workflow.py`, write `docs/knowledge-schema.md`, raise coverage to 80%+.
 
 ### Phase A — what shipped
 
-- `app/core/knowledge_schema.py` — `Claim`, `ClaimDraft`, `ExtractionRunResult`, `compute_claim_id`, `LLM_RESPONSE_SCHEMA`, `ClaimType` enum, `SCHEMA_VERSION`/`EXTRACTION_VERSION` constants
-- `app/core/llm_presets.py` — `TaskType`, `get_provider_for_task`, `_DEFAULT_PRESETS` (extract/summarize/synthesize/chat); resolves overrides from new `ai_settings.task_presets` JSON column
-- `app/core/knowledge_extractor.py` — segment chunking (~3000 tokens, 200 overlap), JSON-mode prompting, defensive parsing (markdown fences + prose-wrapped JSON), per-chunk failure isolation, claim_id-based dedup across overlapping chunks, storage floor 0.1
-- `app/core/embedding_store.py` — `EmbeddingStore` (upsert/get/cosine), behind a thin interface so Chroma/pgvector swap is one-file later; sentinel `DEFAULT_TEXT_MODEL`
-- `app/core/job_store.py` — `claims` / `embeddings` / `extraction_failures` tables; `knowledge_status` column on jobs; `ai_settings.task_presets` column; `upsert_claims`, `get_claims_for_job`, `query_claims`, `delete_claims_for_job`, `set_/get_knowledge_status`, `record_extraction_failure`
-- `app/api/knowledge_routes.py` — `POST /api/jobs/{id}/extract-knowledge`, `GET /api/jobs/{id}/knowledge`, `GET /api/claims` with `min_confidence` filter (defaults: 0.5 for both job + library queries)
-- `tests/` — `test_knowledge_schema.py` (11), `test_knowledge_store.py` (13), `test_knowledge_extractor.py` (14), `test_llm_presets.py` (7) — 45 new tests, all green
+- `app/core/knowledge_schema.py` — `Claim`, `ClaimDraft`, `ExtractionRunResult`, `ChunkFailure`, `compute_claim_id`, `LLM_RESPONSE_SCHEMA`, `ClaimType` enum, `SCHEMA_VERSION`/`EXTRACTION_VERSION` constants
+- `app/core/llm_presets.py` — `TaskType`, `get_provider_for_task` (DB → env → default-preset → user-provider resolution chain), `_DEFAULT_PRESETS` (extract/summarize/synthesize/chat); resolves overrides from new `ai_settings.task_presets` JSON column with `_encrypt_secret`/`_decrypt_secret` round-trip on nested `api_key`s
+- `app/core/knowledge_extractor.py` — segment chunking (~3000 tokens, 200 overlap), JSON-mode prompting, defensive parsing (markdown fences + prose-wrapped JSON), per-chunk failure isolation with `raw_output` capture, claim_id-based dedup across overlapping chunks, storage floor 0.1; `success=False` when every chunk fails so callers don't wipe prior data
+- `app/core/embedding_store.py` — `EmbeddingStore` (upsert/get/cosine), behind a thin interface so Chroma/pgvector swap is one-file later; sentinel `DEFAULT_TEXT_MODEL`. Phase B fills in `embed()` + `query_topk`.
+- `app/core/job_store.py` — `claims` / `embeddings` / `extraction_failures` tables; `knowledge_status` column on jobs; `ai_settings.task_presets` column; `upsert_claims`, `replace_claims_for_job` (atomic delete+insert in one tx), `get_claims_for_job`, `query_claims`, `delete_claims_for_job`, `set_/get_knowledge_status`, `record_extraction_failure`, `get_/set_task_presets` (api_key encryption)
+- `app/api/knowledge_routes.py` — `POST /api/jobs/{id}/extract-knowledge`, `GET /api/jobs/{id}/knowledge`, `GET /api/claims` with `min_confidence` filter (defaults: 0.5 for both job + library queries); persists per-chunk failures to `extraction_failures` quarantine table on every run
+- `tests/` — `test_knowledge_schema.py` (11), `test_knowledge_store.py` (21), `test_knowledge_extractor.py` (15), `test_llm_presets.py` (12) — **59 new tests**, all green
+
+### Phase B — what shipped
+
+- `app/core/knowledge_schema.py` — `Entity`, `EntityDraft`, `EntityMention`, `EntityType` enum; `compute_entity_id` (stable `ent_<8-char hash>`); `normalize_entity_name`, `slugify_entity_name`; `ClaimDraft.entity_refs` list; extended `LLM_RESPONSE_SCHEMA` to `{claims, entities}` with per-claim `entity_refs` strings; `ExtractionRunResult` now carries `entities` + `mentions`
+- `app/core/embedding_store.py` — `normalize_for_embedding` (lowercase + collapse whitespace); lazy module-level model load w/ thread-lock; module-level `embed()` + `embed_async()` with in-memory FIFO cache (~10k entries, keyed by normalized text); `EmbeddingStore.query_topk` (type-scoped candidate filter, tolerates stale dim mismatches); opt-in `warmup()`
+- `app/core/entity_canonicalizer.py` — `EntityCanonicalizer` (run-cached); `canonicalize(name, type, confidence)` pipeline: normalize → embed-async → cosine match against same-type candidates (≥0.85 reuse) → else mint `compute_entity_id` + type-prefixed kebab slug with sequence-suffix on slug collision; alias merging on reuse; persists embedding to the generic `embeddings` table under `object_type="entity"`
+- `app/core/job_store.py` — new `entities` (PK `entity_id`, UNIQUE `slug`, indexed on `entity_type`) + `entity_mentions` (FK entity_id, indexed on entity_id + episode_id) tables; `upsert_entity` (merges aliases), `get_entity_by_id`, `get_entity_by_slug`, `slug_exists`, `list_entities`, `find_entity_ids_by_type`, `add_entity_mention`, `get_mentions_for_entity`, `delete_mentions_for_episode`; `replace_claims_for_job(...)` extended to accept optional `entities` + `mentions` and rewrite them inside the same tx
+- `app/core/knowledge_extractor.py` — `KnowledgeExtractor` accepts a `canonicalizer`; chunk loop now parses `{claims, entities}`, canonicalizes entities first, resolves `entity_refs` → `entity_ids` through a name→id map (with fallback canonicalization for weak-signal names the LLM didn't also list), emits claim-anchored mentions + chunk-level mentions for unreferenced entities, best-effort `start_char`/`end_char` via `_find_char_span`; overlap dedup now merges `entity_ids` across copies
+- `app/api/entity_routes.py` — `GET /api/entities` (filter by type/since/slug), `GET /api/entities/{id_or_slug}` (accepts hash id or slug), `GET /api/entities/{id_or_slug}/mentions`
+- `app/api/knowledge_routes.py` — `POST /jobs/{id}/extract-knowledge` now passes entities + mentions into the transactional `replace_claims_for_job`
+- `app/api/__init__.py` — entity router wired up
+- `pyproject.toml` — `sentence-transformers>=3.0` dependency
+- `tests/` — `test_entity_canonicalizer.py` (8), `test_embedding_store_search.py` (11), `test_entity_api.py` (9), +5 Phase B tests in `test_knowledge_extractor.py`, +9 Phase B tests in `test_knowledge_store.py`, +14 Phase B tests in `test_knowledge_schema.py` — **56 new tests**, 154/154 suite green
+
+### Phase B — locked decisions (review-refined)
+
+Defaults from the original proposal, tightened after external review (weak-signal handling, dual-ID, cache, warmup, spans):
+
+1. **One LLM call per chunk — entities treated as weak signals.** Extend `LLM_RESPONSE_SCHEMA` to `{claims, entities}`. Each entity carries its own `confidence`; each claim carries `entity_refs: [name]` (strings, not IDs) resolved post-extraction by name → canonical `entity_id`. Entities may appear without any claim referring to them (LLMs miss/hallucinate refs). Cheaper (1 call/chunk), revertible to two calls if recall drops. *Why weak-signal*: entities are lower-entropy but higher-precision-sensitive than claims — canonicalization (not the LLM) is the source of truth.
+2. **Dual identity: stable `entity_id` (PK) + mutable `slug` (label).** `entity_id` = `ent_<8-char hash>` — collision-free, opaque, what claims and mentions reference. `slug` = type-prefixed kebab (`person:vitalik-buterin`) for debug and API surface, UNIQUE, sequence-suffix on slug collision only. No suffix hell on `entity_id`; merges = pointer updates. Rejects the original single-slug-as-PK plan.
+3. **Normalize → batch → embed off the event loop, with cache.** `normalize_for_embedding(text)` (lowercase, strip, collapse whitespace) runs before embedding. One `model.encode([normalized_names])` per chunk wrapped in `asyncio.to_thread`. Module-level `embedding_cache[normalized_name] → vector` skips recomputation across chunks/jobs (same entities recur constantly). Amortizes the model invocation cost and kills per-entity overhead.
+4. **Lazy model load + optional warmup hook.** `sentence-transformers/all-MiniLM-L6-v2` (~80MB) loaded on first `embed()` call, cached at module level. Optional opt-in `warmup()` hook (env flag or settings toggle) fires a background preload after app boot to dodge the first-request ~1-3s latency spike. Default OFF — don't slow boot for users who never trigger extraction.
+5. **Same-transaction persistence.** Entity rows + mention rows + claim updates land inside the existing `replace_claims_for_job` transaction (extended) so a partial failure rolls back together — never leaves orphan mentions pointing at non-existent claims.
+6. **Mention-level char spans (best-effort).** `EntityMention` stores `chunk_id`, `raw_text`, and optional `start_char`/`end_char` (populated via string search in the chunk when resolvable, NULL otherwise) in addition to `(entity_id, episode_id, claim_id?, timestamp, speaker)`. Powers future UI highlighting, debug trails, and downstream agent context selection. Timestamp stays the primary anchor; offsets are a bonus when cheap.
+
+### Deferred to later phases (flagged by review, not blocking Phase B)
+
+- **Alias table** + type-aware disambiguation (Apple the company vs. the fruit; Base the chain vs. the word) — Phase C or P13.
+- **Rule-based overrides** for known sticky cases (`ETH` ↔ `Ethereum` ↔ `Ether`) — add as a small seed dictionary if cosine proves insufficient; do not design around it yet.
+- **Cross-episode entity evolution / role graphs** — P19 MCP territory.
+
+### Phase B — files to ship
+
+**New:**
+- `app/core/entity_canonicalizer.py` — `canonicalize(name, entity_type) → entity_id`; pipeline: normalize → cache lookup → embed on miss → `query_topk(object_type="entity", filter by entity_type)` → ≥0.85 cosine reuses (adds surface form to aliases if novel) → else mint new `ent_<8-char hash>` + generate slug (type-prefix + kebab of normalized name, sequence-suffix on slug collision only). Stores normalized form + vector in `embeddings` table keyed by `entity_id`.
+- `app/api/entity_routes.py` — `GET /api/entities` (filter by `entity_type`, `since`, `slug`), `GET /api/entities/{id_or_slug}` (accepts either `entity_id` or slug), `GET /api/entities/{id_or_slug}/mentions`
+
+**Extend:**
+- `app/core/knowledge_schema.py` — add `Entity` (dual-ID: `entity_id` PK + `slug`), `EntityMention` (with `chunk_id`, `raw_text`, optional `start_char`/`end_char`, nullable `claim_id`), `EntityDraft`, `EntityType` enum; extend `LLM_RESPONSE_SCHEMA` to `{claims, entities}` — each entity has its own `confidence`; claims ref entities by string name via `entity_refs: [name]` (weak-signal, resolved post-extraction)
+- `app/core/embedding_store.py` — add `normalize_for_embedding(text)` helper (lowercase, strip, collapse whitespace); fill `embed(texts: list[str]) -> list[list[float]]` (sentence-transformers/all-MiniLM-L6-v2, lazy + module-cached model, off event loop via `to_thread`, batched across the input list); module-level `embedding_cache[normalized_text] → vector`; `query_topk(object_type, model, vector, k=1, filter: dict | None)` for cosine search with type-scoped candidate set; optional `warmup()` entrypoint for opt-in background preload
+- `app/core/job_store.py` — `entities` (PK `entity_id`, UNIQUE `slug`, indexed on `entity_type`) + `entity_mentions` (char offsets, nullable `claim_id`, indexed on `entity_id` and `episode_id`) tables; `upsert_entity`, `get_entity_by_id`, `get_entity_by_slug`, `list_entities` (type/since filters), `find_entities_by_type` (powers cosine candidate set for canonicalizer), `add_entity_mention`, `get_mentions_for_entity`
+- `app/core/knowledge_extractor.py` — after claims validate, walk extracted entities (independently of claim.entity_refs) → canonicalizer → build `name → entity_id` map for the chunk → resolve each claim's `entity_refs` through it to populate `Claim.entity_ids` → emit `EntityMention` rows with chunk span data (best-effort string search for char offsets). Unreferenced entities still persist. Route entities + mentions + claims through the extended `replace_claims_for_job` in one transaction.
+- `app/api/__init__.py` — register entity router
+- `pyproject.toml` — add `sentence-transformers>=3.0` dependency (pulls torch on first install; ~500MB disk)
+
+**Tests:**
+- `tests/test_entity_canonicalizer.py` — normalization; embedding cache hit/miss; cosine ≥0.85 reuse (adds novel surface as alias); below-threshold creates new; slug collision → sequence suffix on slug only; `entity_id` stays hash-based (mock encoder for determinism)
+- `tests/test_embedding_store_search.py` — `query_topk` correctness over real numpy vectors; type-scoped filter; normalize_for_embedding helper; cache round-trip
+- `tests/test_entity_api.py` — list (by type/since), get by `entity_id`, get by slug, mentions listing
+- Extend `tests/test_knowledge_extractor.py` — `{claims, entities}` LLM response → `entity_ids` resolved on claims, mentions written with char offsets when findable; entity-only (no claim ref) path persists; weak-signal tolerance (claim references a name the LLM didn't list as an entity — skip gracefully)
+- Extend `tests/test_knowledge_store.py` — entity + mention CRUD; dual-ID lookup (by `entity_id` and by slug); transactional replace including entities + mentions rolls back together
 
 ---
 

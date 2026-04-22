@@ -198,8 +198,19 @@ async def extract_knowledge(request: Request, job_id: str):
     # stable so repeated runs at the same version don't churn. Single
     # transaction means a concurrent reader never sees a window of zero
     # claims and a crash mid-write doesn't lose them.
-    rows = [c.model_dump(mode="json") for c in result.claims]
-    job_store.replace_claims_for_job(job_id, rows)
+    #
+    # Phase B: entities and mentions ride in the same transaction so a
+    # partial write can never leave the episode with orphan mentions
+    # pointing at vanished claims (or vice versa).
+    claim_rows = [c.model_dump(mode="json") for c in result.claims]
+    entity_rows = [e.model_dump(mode="json") for e in result.entities]
+    mention_rows = [m.model_dump(mode="json") for m in result.mentions]
+    job_store.replace_claims_for_job(
+        job_id,
+        claim_rows,
+        entities=entity_rows,
+        mentions=mention_rows,
+    )
     job_store.set_knowledge_status(job_id, "complete")
 
     return ExtractKnowledgeResponse(

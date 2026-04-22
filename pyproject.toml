@@ -33,6 +33,7 @@ dependencies = [
     "ctranslate2>=4.6.3",
     "onnxruntime>=1.23.2",
     "spotdl>=3.9.6",
+    "sentence-transformers>=3.0",
 ]
 
 [project.optional-dependencies]

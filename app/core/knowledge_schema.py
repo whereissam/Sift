@@ -1,17 +1,24 @@
 """Canonical Pydantic schema for the AI-friendly knowledge layer (P18).
 
-Phase A scope: Claim only. Entity / Topic / Prediction land in Phase B/C but
-the field hooks (entity_ids, topic_ids) already exist on Claim so the storage
-layer doesn't change shape later.
+Phase A scope: Claim only. Phase B adds Entity + EntityMention. Topic /
+Prediction land in Phase C but the field hooks (entity_ids, topic_ids)
+already exist on Claim so the storage layer doesn't change shape later.
 
 A Claim is a discrete, citable, timestamped, speaker-attributed statement
 extracted from a transcript. Every downstream system (MCP, Digest, RAG,
 Search) reads from this same object.
+
+Entities use dual identity: `entity_id` is a stable opaque PK
+(`ent_<8-char hash>`) that claims and mentions reference, and `slug` is a
+mutable human-readable label (`person:vitalik-buterin`) kept for
+debug/API-surface ergonomics. Merges are pointer updates on `entity_id`,
+never slug rewrites.
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -35,6 +42,68 @@ class ClaimType(str, Enum):
     PREDICTION = "prediction"
     QUESTION = "question"
     RECOMMENDATION = "recommendation"
+
+
+class EntityType(str, Enum):
+    """Discrete entity categories. Kept small — add types deliberately so
+    downstream filters stay well-defined."""
+
+    PERSON = "person"
+    COMPANY = "company"
+    TICKER = "ticker"
+    PROJECT = "project"
+    PRODUCT = "product"
+    PLACE = "place"
+    OTHER = "other"
+
+
+_SLUG_STRIP_RE = re.compile(r"[^a-z0-9\s-]+")
+_SLUG_SPACE_RE = re.compile(r"[\s_]+")
+
+
+def normalize_entity_name(name: str) -> str:
+    """Canonical form for cache keys and cosine comparisons.
+
+    Lowercase, strip surrounding whitespace, collapse internal whitespace
+    runs. Intentionally conservative — anything more aggressive (stop-word
+    removal, stemming) starts destroying signal the embedding model needs.
+    """
+    if not name:
+        return ""
+    return _SLUG_SPACE_RE.sub(" ", name.strip().lower())
+
+
+def slugify_entity_name(name: str) -> str:
+    """Kebab-case label fragment used in `slug` (after the type prefix).
+
+    Only ASCII letters, digits, and single hyphens. Falls back to `unknown`
+    for names that normalize to empty so we never produce `type:` with a
+    blank tail.
+    """
+    base = normalize_entity_name(name)
+    if not base:
+        return "unknown"
+    base = _SLUG_STRIP_RE.sub("", base)
+    base = _SLUG_SPACE_RE.sub(" ", base).strip()
+    parts = [p for p in base.split(" ") if p]
+    return "-".join(parts) or "unknown"
+
+
+def compute_entity_id(
+    *, name: str, entity_type: "EntityType | str"
+) -> str:
+    """Stable opaque ID derived from normalized name + type.
+
+    Same input → same `entity_id`, different inputs → different IDs with
+    overwhelming probability. The hash collision boundary is not where we
+    enforce cross-entity merging — the canonicalizer does that via cosine
+    similarity on the embedding. This id exists to give every entity a
+    readable-but-opaque PK that survives slug renames and merges.
+    """
+    etype = entity_type.value if isinstance(entity_type, EntityType) else entity_type
+    payload = f"{etype}|{normalize_entity_name(name)}"
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"ent_{digest[:8]}"
 
 
 class Claim(BaseModel):
@@ -106,6 +175,12 @@ class ClaimDraft(BaseModel):
 
     Extractor receives this from JSON mode, then promotes to Claim by computing
     the stable claim_id and attaching episode_id / source_url / version fields.
+
+    `entity_refs` carries entity names *as strings* (not IDs). The LLM doesn't
+    know our canonical `entity_id`s — we resolve names to IDs post-extraction
+    through the canonicalizer. Entities are treated as weak signals: the LLM
+    may reference a name it didn't also list in the top-level `entities`
+    array, and the entity canonicalizer is the source of truth.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -117,6 +192,89 @@ class ClaimDraft(BaseModel):
     claim_type: ClaimType
     confidence: float = Field(ge=0.0, le=1.0)
     evidence_excerpt: str
+    entity_refs: list[str] = Field(
+        default_factory=list,
+        description="Entity names referenced by this claim. Resolved to entity_ids post-extraction.",
+    )
+
+
+class Entity(BaseModel):
+    """A canonical person / company / ticker / project / product / place.
+
+    Identity is dual: `entity_id` is the stable hash-based PK used as a
+    foreign key on claims and mentions; `slug` is a mutable human-readable
+    label (with a type prefix and kebab-cased name) regenerable on rename.
+    Embedding of the name/aliases lives in the generic `embeddings` table,
+    never inline, so the canonicalizer can swap backends later.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    entity_id: str = Field(description="Stable `ent_<8-char hash>` PK.")
+    slug: str = Field(
+        description="Human-readable label, e.g. `person:vitalik-buterin`. UNIQUE, mutable."
+    )
+    name: str = Field(description="Display form of the entity name.")
+    entity_type: EntityType = Field(description="Entity category.")
+    aliases: list[str] = Field(
+        default_factory=list,
+        description="Observed surface forms (raw strings) collected from mentions.",
+    )
+    confidence: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence from the original extraction (LLM self-reported).",
+    )
+    created_at: Optional[datetime] = Field(
+        default=None, description="Persisted by the store layer."
+    )
+
+
+class EntityDraft(BaseModel):
+    """Raw shape returned by the LLM for a single entity.
+
+    Entities are lower-entropy but higher-precision-sensitive than claims.
+    The canonicalizer (not the LLM) is the source of truth for identity —
+    this draft just carries the LLM's observation forward.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    entity_type: EntityType
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+
+
+class EntityMention(BaseModel):
+    """One observation of an entity inside a transcript.
+
+    Timestamp is the primary anchor; char offsets are best-effort (populated
+    via string search in the chunk when resolvable). `claim_id` is nullable
+    because entities can appear without being tied to a specific claim.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    entity_id: str
+    episode_id: str
+    claim_id: Optional[str] = None
+    chunk_id: Optional[str] = Field(
+        default=None,
+        description="Opaque id of the chunk the mention came from (e.g. `<episode>:chunk:<idx>`).",
+    )
+    raw_text: str = Field(
+        description="Surface form as observed in the transcript (pre-normalization)."
+    )
+    start_char: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Offset into the chunk text; NULL when unresolvable.",
+    )
+    end_char: Optional[int] = Field(default=None, ge=0)
+    timestamp: Optional[float] = Field(default=None, ge=0.0)
+    speaker: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class ChunkFailure(BaseModel):
@@ -135,6 +293,14 @@ class ExtractionRunResult(BaseModel):
     job_id: str
     success: bool
     claims: list[Claim] = Field(default_factory=list)
+    entities: list[Entity] = Field(
+        default_factory=list,
+        description="Canonical entities discovered (or matched to existing) during this run.",
+    )
+    mentions: list[EntityMention] = Field(
+        default_factory=list,
+        description="Per-chunk entity mentions to persist alongside claims.",
+    )
     chunks_processed: int = 0
     chunks_failed: int = 0
     failures: list[ChunkFailure] = Field(
@@ -170,6 +336,13 @@ def compute_claim_id(
 # JSON Schema fragment fed to the LLM via response_format / function calling.
 # Kept as a literal so the prompt and the validator can never drift apart
 # silently — both reference this dict.
+#
+# Phase B extends Phase A with an `entities` array and per-claim `entity_refs`.
+# The LLM returns entity names as strings; post-extraction we resolve each
+# unique (name, type) pair through the canonicalizer into the opaque
+# `entity_id`. Entities are treated as weak signals — a claim may reference
+# a name the LLM didn't also list, or vice versa, and both paths are handled
+# gracefully.
 LLM_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -192,6 +365,11 @@ LLM_RESPONSE_SCHEMA = {
                         "maximum": 1.0,
                     },
                     "evidence_excerpt": {"type": "string"},
+                    "entity_refs": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Entity names referenced by this claim (strings, not IDs).",
+                    },
                 },
                 "required": [
                     "text",
@@ -202,7 +380,26 @@ LLM_RESPONSE_SCHEMA = {
                     "evidence_excerpt",
                 ],
             },
-        }
+        },
+        "entities": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "entity_type": {
+                        "type": "string",
+                        "enum": [e.value for e in EntityType],
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                    },
+                },
+                "required": ["name", "entity_type"],
+            },
+        },
     },
     "required": ["claims"],
 }

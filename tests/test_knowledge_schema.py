@@ -10,8 +10,15 @@ from app.core.knowledge_schema import (
     Claim,
     ClaimDraft,
     ClaimType,
+    Entity,
+    EntityDraft,
+    EntityMention,
+    EntityType,
     LLM_RESPONSE_SCHEMA,
     compute_claim_id,
+    compute_entity_id,
+    normalize_entity_name,
+    slugify_entity_name,
 )
 
 
@@ -152,3 +159,96 @@ class TestLLMSchema:
             "properties"
         ]["claim_type"]["enum"]
         assert set(enum_in_schema) == {c.value for c in ClaimType}
+
+    def test_lists_all_entity_types(self):
+        enum_in_schema = LLM_RESPONSE_SCHEMA["properties"]["entities"]["items"][
+            "properties"
+        ]["entity_type"]["enum"]
+        assert set(enum_in_schema) == {e.value for e in EntityType}
+
+    def test_claims_item_has_entity_refs(self):
+        props = LLM_RESPONSE_SCHEMA["properties"]["claims"]["items"]["properties"]
+        assert "entity_refs" in props
+        assert props["entity_refs"]["type"] == "array"
+
+
+class TestEntityNameHelpers:
+    def test_normalize_lowercases_and_strips(self):
+        assert normalize_entity_name("  Vitalik Buterin  ") == "vitalik buterin"
+
+    def test_normalize_collapses_whitespace(self):
+        assert normalize_entity_name("Vitalik\t\tButerin") == "vitalik buterin"
+
+    def test_slugify_kebab_cases(self):
+        assert slugify_entity_name("Vitalik Buterin") == "vitalik-buterin"
+
+    def test_slugify_strips_punctuation(self):
+        assert slugify_entity_name("OpenAI, Inc.") == "openai-inc"
+
+    def test_slugify_empty_falls_back(self):
+        assert slugify_entity_name("   ") == "unknown"
+        assert slugify_entity_name("") == "unknown"
+
+
+class TestEntityIdStability:
+    def test_same_input_same_id(self):
+        a = compute_entity_id(name="Vitalik Buterin", entity_type=EntityType.PERSON)
+        b = compute_entity_id(name="vitalik buterin", entity_type=EntityType.PERSON)
+        # Normalization means casing doesn't change the id
+        assert a == b
+        assert a.startswith("ent_")
+        assert len(a) == len("ent_") + 8
+
+    def test_type_distinguishes(self):
+        a = compute_entity_id(name="Apple", entity_type=EntityType.COMPANY)
+        b = compute_entity_id(name="Apple", entity_type=EntityType.PRODUCT)
+        assert a != b
+
+
+class TestEntityModel:
+    def test_minimum_valid_entity(self):
+        e = Entity(
+            entity_id="ent_12345678",
+            slug="person:alice",
+            name="Alice",
+            entity_type=EntityType.PERSON,
+        )
+        assert e.aliases == []
+        assert e.confidence == 1.0
+
+    def test_entity_draft_requires_name_and_type(self):
+        with pytest.raises(Exception):
+            EntityDraft()  # type: ignore[call-arg]
+
+    def test_entity_mention_defaults(self):
+        m = EntityMention(
+            entity_id="ent_12345678", episode_id="ep-1", raw_text="Alice"
+        )
+        assert m.claim_id is None
+        assert m.start_char is None
+        assert m.timestamp is None
+
+
+class TestClaimDraftEntityRefs:
+    def test_entity_refs_default_empty(self):
+        d = ClaimDraft(
+            text="x",
+            timestamp_start=0.0,
+            timestamp_end=1.0,
+            claim_type=ClaimType.FACT,
+            confidence=0.9,
+            evidence_excerpt="x",
+        )
+        assert d.entity_refs == []
+
+    def test_entity_refs_roundtrip(self):
+        d = ClaimDraft(
+            text="x",
+            timestamp_start=0.0,
+            timestamp_end=1.0,
+            claim_type=ClaimType.FACT,
+            confidence=0.9,
+            evidence_excerpt="x",
+            entity_refs=["ETH", "BTC"],
+        )
+        assert d.entity_refs == ["ETH", "BTC"]

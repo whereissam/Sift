@@ -305,6 +305,43 @@ class JobStore:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_type ON embeddings(object_type)")
 
+            # P18 Phase B: Entities + mentions. Dual-ID (`entity_id` PK +
+            # UNIQUE `slug`) lets us rename slugs on demand without breaking
+            # references. Mentions carry an optional `claim_id` so entities
+            # can exist without a specific claim reference.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS entities (
+                    entity_id TEXT PRIMARY KEY,
+                    slug TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    aliases TEXT DEFAULT '[]',  -- JSON array of surface forms
+                    confidence REAL DEFAULT 1.0,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_entities_slug ON entities(slug)")
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS entity_mentions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_id TEXT NOT NULL,
+                    episode_id TEXT NOT NULL,
+                    claim_id TEXT,
+                    chunk_id TEXT,
+                    raw_text TEXT NOT NULL,
+                    start_char INTEGER,
+                    end_char INTEGER,
+                    timestamp REAL,
+                    speaker TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (entity_id) REFERENCES entities(entity_id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_mentions_entity ON entity_mentions(entity_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_mentions_episode ON entity_mentions(episode_id)")
+
             # Quarantine for malformed extraction outputs — keep raw response
             # and error so we can debug prompt drift without crashing the
             # pipeline.
@@ -1134,7 +1171,13 @@ class JobStore:
             cur = conn.execute("DELETE FROM claims WHERE episode_id = ?", (job_id,))
             return cur.rowcount
 
-    def replace_claims_for_job(self, job_id: str, claims: list[dict]) -> int:
+    def replace_claims_for_job(
+        self,
+        job_id: str,
+        claims: list[dict],
+        entities: Optional[list[dict]] = None,
+        mentions: Optional[list[dict]] = None,
+    ) -> int:
         """Atomically replace all claims for an episode (delete + insert in one tx).
 
         Closes the data-integrity hole where a separate delete + upsert
@@ -1142,10 +1185,24 @@ class JobStore:
         a race or the process crashed in between. The whole operation
         commits or rolls back as a unit because both statements share a
         single connection inside one `_get_conn()` context.
+
+        Phase B extension: optionally upsert discovered entities and replace
+        entity_mentions for this episode in the same transaction. Entities
+        are global (PK on `entity_id`) — we upsert, never wipe — but an
+        episode's mentions are episode-scoped so we delete-then-insert them
+        alongside the claims.
         """
         now = datetime.utcnow().isoformat()
         with self._get_conn() as conn:
             conn.execute("DELETE FROM claims WHERE episode_id = ?", (job_id,))
+            if mentions is not None:
+                conn.execute(
+                    "DELETE FROM entity_mentions WHERE episode_id = ?",
+                    (job_id,),
+                )
+            if entities:
+                for e in entities:
+                    self._upsert_entity_row(conn, e, now)
             for c in claims:
                 conn.execute(
                     """
@@ -1174,7 +1231,182 @@ class JobStore:
                         c.get("created_at") or now,
                     ),
                 )
+            if mentions:
+                for m in mentions:
+                    self._insert_mention_row(conn, m, now)
         return len(claims)
+
+    # ===== P18 Phase B: Entity + Mention accessors =====
+
+    @staticmethod
+    def _upsert_entity_row(conn: sqlite3.Connection, e: dict, now: str) -> None:
+        """Internal: upsert an entity on an existing connection.
+
+        Merge semantics: on conflict on `entity_id` we update `name` +
+        `confidence` (latest wins) and union the `aliases` list so novel
+        surface forms accumulate across episodes.
+        """
+        row = conn.execute(
+            "SELECT aliases FROM entities WHERE entity_id = ?",
+            (e["entity_id"],),
+        ).fetchone()
+        existing_aliases: list[str] = []
+        if row and row["aliases"]:
+            try:
+                existing_aliases = json.loads(row["aliases"])
+            except (TypeError, json.JSONDecodeError):
+                existing_aliases = []
+        incoming = e.get("aliases", []) or []
+        merged: list[str] = list(existing_aliases)
+        for a in incoming:
+            if a and a not in merged:
+                merged.append(a)
+        conn.execute(
+            """
+            INSERT INTO entities (
+                entity_id, slug, name, entity_type, aliases, confidence, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(entity_id) DO UPDATE SET
+                name = excluded.name,
+                entity_type = excluded.entity_type,
+                aliases = excluded.aliases,
+                confidence = excluded.confidence
+            """,
+            (
+                e["entity_id"],
+                e["slug"],
+                e["name"],
+                e["entity_type"],
+                json.dumps(merged),
+                e.get("confidence", 1.0),
+                e.get("created_at") or now,
+            ),
+        )
+
+    @staticmethod
+    def _insert_mention_row(conn: sqlite3.Connection, m: dict, now: str) -> None:
+        conn.execute(
+            """
+            INSERT INTO entity_mentions (
+                entity_id, episode_id, claim_id, chunk_id, raw_text,
+                start_char, end_char, timestamp, speaker, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                m["entity_id"],
+                m["episode_id"],
+                m.get("claim_id"),
+                m.get("chunk_id"),
+                m["raw_text"],
+                m.get("start_char"),
+                m.get("end_char"),
+                m.get("timestamp"),
+                m.get("speaker"),
+                m.get("created_at") or now,
+            ),
+        )
+
+    def upsert_entity(self, entity: dict) -> None:
+        """Upsert a single entity."""
+        now = datetime.utcnow().isoformat()
+        with self._get_conn() as conn:
+            self._upsert_entity_row(conn, entity, now)
+
+    def get_entity_by_id(self, entity_id: str) -> Optional[dict]:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM entities WHERE entity_id = ?", (entity_id,)
+            ).fetchone()
+            return self._entity_row_to_dict(row) if row else None
+
+    def get_entity_by_slug(self, slug: str) -> Optional[dict]:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM entities WHERE slug = ?", (slug,)
+            ).fetchone()
+            return self._entity_row_to_dict(row) if row else None
+
+    def slug_exists(self, slug: str) -> bool:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM entities WHERE slug = ?", (slug,)
+            ).fetchone()
+            return row is not None
+
+    def list_entities(
+        self,
+        *,
+        entity_type: Optional[str] = None,
+        slug: Optional[str] = None,
+        since: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        clauses: list[str] = []
+        params: list = []
+        if entity_type:
+            clauses.append("entity_type = ?")
+            params.append(entity_type)
+        if slug:
+            clauses.append("slug = ?")
+            params.append(slug)
+        if since:
+            clauses.append("created_at >= ?")
+            params.append(since)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.extend([limit, offset])
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM entities {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                params,
+            ).fetchall()
+        return [self._entity_row_to_dict(r) for r in rows]
+
+    def find_entity_ids_by_type(self, entity_type: str) -> list[str]:
+        """Candidate set for the canonicalizer's cosine scan."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT entity_id FROM entities WHERE entity_type = ?",
+                (entity_type,),
+            ).fetchall()
+        return [r["entity_id"] for r in rows]
+
+    def add_entity_mention(self, mention: dict) -> None:
+        now = datetime.utcnow().isoformat()
+        with self._get_conn() as conn:
+            self._insert_mention_row(conn, mention, now)
+
+    def get_mentions_for_entity(
+        self, entity_id: str, limit: int = 100, offset: int = 0
+    ) -> list[dict]:
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM entity_mentions
+                WHERE entity_id = ?
+                ORDER BY episode_id ASC, timestamp ASC
+                LIMIT ? OFFSET ?
+                """,
+                (entity_id, limit, offset),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_mentions_for_episode(self, episode_id: str) -> int:
+        with self._get_conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM entity_mentions WHERE episode_id = ?", (episode_id,)
+            )
+            return cur.rowcount
+
+    @staticmethod
+    def _entity_row_to_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        raw = d.get("aliases")
+        try:
+            d["aliases"] = json.loads(raw) if raw else []
+        except (TypeError, json.JSONDecodeError):
+            d["aliases"] = []
+        return d
 
     def get_task_presets(self) -> dict[str, dict]:
         """Read `ai_settings.task_presets`, decrypting any nested api_keys.

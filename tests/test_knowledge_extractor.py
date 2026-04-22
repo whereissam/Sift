@@ -1,8 +1,9 @@
-"""Tests for the knowledge extractor (P18 Phase A) — mocked LLM."""
+"""Tests for the knowledge extractor (P18 Phase A + B) — mocked LLM."""
 
 from __future__ import annotations
 
 import json
+from typing import Optional
 
 import pytest
 
@@ -13,7 +14,54 @@ from app.core.knowledge_extractor import (
     _format_segments_for_prompt,
     _parse_llm_json,
 )
-from app.core.knowledge_schema import ClaimType
+from app.core.knowledge_schema import ClaimType, Entity, EntityType
+
+
+class _FakeCanonicalizer:
+    """Deterministic canonicalizer for extractor tests.
+
+    Assigns a stable `ent_fake_<n>` id per (normalized_name, type) and
+    returns the same entity on every lookup so the extractor can be
+    tested without embedding/DB round-trips.
+    """
+
+    def __init__(self):
+        self._entities: dict[tuple[str, str], Entity] = {}
+        self.calls: list[tuple[str, str]] = []
+
+    async def canonicalize(self, *, name: str, entity_type, confidence: float = 1.0):
+        from app.core.entity_canonicalizer import CanonicalizedEntity
+        from app.core.knowledge_schema import normalize_entity_name
+
+        etype = (
+            entity_type
+            if isinstance(entity_type, EntityType)
+            else EntityType(entity_type)
+        )
+        key = (normalize_entity_name(name), etype.value)
+        if not key[0]:
+            return None
+        if key in self._entities:
+            entity = self._entities[key]
+            if name.strip() and name.strip() not in entity.aliases:
+                entity.aliases.append(name.strip())
+            return CanonicalizedEntity(
+                entity=entity, is_new=False, surface_form=name
+            )
+        entity_id = f"ent_fake_{len(self._entities):04d}"
+        entity = Entity(
+            entity_id=entity_id,
+            slug=f"{etype.value}:{key[0].replace(' ', '-')}",
+            name=name.strip(),
+            entity_type=etype,
+            aliases=[name.strip()],
+            confidence=confidence,
+        )
+        self._entities[key] = entity
+        self.calls.append(key)
+        return CanonicalizedEntity(
+            entity=entity, is_new=True, surface_form=name
+        )
 
 
 class _FakeProvider:
@@ -331,3 +379,172 @@ async def test_extract_dedupes_overlapping_chunks():
     assert result.chunks_processed >= 2
     # …but after dedup we keep just one claim
     assert len(result.claims) == 1
+
+
+# ---------- Phase B: entities + mentions ----------
+
+
+@pytest.mark.asyncio
+async def test_extract_populates_entity_ids_on_claims():
+    """Entities returned alongside claims should resolve into claim.entity_ids."""
+    response = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": "ETH may outperform BTC",
+                    "speaker": "Host A",
+                    "timestamp_start": 1.0,
+                    "timestamp_end": 2.0,
+                    "claim_type": "prediction",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "ETH may outperform BTC",
+                    "entity_refs": ["ETH", "BTC"],
+                }
+            ],
+            "entities": [
+                {"name": "ETH", "entity_type": "ticker", "confidence": 0.95},
+                {"name": "BTC", "entity_type": "ticker", "confidence": 0.95},
+            ],
+        }
+    )
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response),
+        canonicalizer=_FakeCanonicalizer(),
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1",
+        segments=_segs((1.0, 2.0, "ETH may outperform BTC soon.", "Host A")),
+    )
+    assert len(result.claims) == 1
+    claim = result.claims[0]
+    assert len(claim.entity_ids) == 2
+    # The canonicalizer mints `ent_fake_xxxx` ids
+    assert all(eid.startswith("ent_fake_") for eid in claim.entity_ids)
+    # Entities + mentions surface in the run result too
+    assert len(result.entities) == 2
+    assert len(result.mentions) >= 2  # one mention per claim-entity pair
+
+
+@pytest.mark.asyncio
+async def test_extract_entity_without_claim_still_persists():
+    """An entity in the LLM response with no claim pointing at it should still
+    appear in result.entities and get a chunk-level mention."""
+    response = json.dumps(
+        {
+            "claims": [],
+            "entities": [
+                {"name": "OpenAI", "entity_type": "company", "confidence": 0.8},
+            ],
+        }
+    )
+    canon = _FakeCanonicalizer()
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response), canonicalizer=canon
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1",
+        segments=_segs((1.0, 2.0, "OpenAI released a new model.", None)),
+    )
+    assert len(result.entities) == 1
+    assert result.entities[0].name == "OpenAI"
+    # One chunk-level mention with claim_id=None
+    unclaimed = [m for m in result.mentions if m.claim_id is None]
+    assert len(unclaimed) == 1
+
+
+@pytest.mark.asyncio
+async def test_extract_claim_refs_name_not_in_entities_list():
+    """Weak-signal tolerance: a claim references an entity the LLM didn't list
+    in the top-level `entities` array. The canonicalizer should still resolve
+    it (via `other` type fallback) instead of silently dropping the link."""
+    response = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": "ElevenLabs has great TTS",
+                    "speaker": None,
+                    "timestamp_start": 1.0,
+                    "timestamp_end": 2.0,
+                    "claim_type": "opinion",
+                    "confidence": 0.8,
+                    "evidence_excerpt": "ElevenLabs is fantastic",
+                    "entity_refs": ["ElevenLabs"],
+                }
+            ],
+            "entities": [],  # LLM forgot to list it
+        }
+    )
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response), canonicalizer=_FakeCanonicalizer()
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1",
+        segments=_segs((1.0, 2.0, "ElevenLabs is great.", None)),
+    )
+    assert len(result.claims) == 1
+    # Fallback canonicalizer assigned an id
+    assert len(result.claims[0].entity_ids) == 1
+
+
+@pytest.mark.asyncio
+async def test_extract_tolerates_missing_entities_field():
+    """Phase A LLM output (no `entities` field) must still work — entities
+    are a weak signal, not required."""
+    response = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": "anything",
+                    "timestamp_start": 0.0,
+                    "timestamp_end": 1.0,
+                    "claim_type": "fact",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "...",
+                }
+            ]
+            # no `entities` key
+        }
+    )
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response), canonicalizer=_FakeCanonicalizer()
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1", segments=_segs((0.0, 1.0, "x", None))
+    )
+    assert result.success is True
+    assert len(result.claims) == 1
+    assert result.entities == []
+
+
+@pytest.mark.asyncio
+async def test_extract_without_canonicalizer_keeps_phase_a_behavior():
+    """When canonicalizer is None (Phase A caller), entity_refs are silently
+    discarded and the run still succeeds with claims populated."""
+    response = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": "something",
+                    "timestamp_start": 0.0,
+                    "timestamp_end": 1.0,
+                    "claim_type": "fact",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "...",
+                    "entity_refs": ["X", "Y"],
+                }
+            ],
+            "entities": [
+                {"name": "X", "entity_type": "other", "confidence": 0.8},
+            ],
+        }
+    )
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response), canonicalizer=None
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1", segments=_segs((0.0, 1.0, "x", None))
+    )
+    assert len(result.claims) == 1
+    assert result.claims[0].entity_ids == []
+    assert result.entities == []
+    assert result.mentions == []

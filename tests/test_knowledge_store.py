@@ -258,6 +258,151 @@ class TestReplaceClaimsForJob:
         assert {r["text"] for r in ep2} == {"b"}
 
 
+class TestEntityStore:
+    """Phase B: entity + mention CRUD and dual-ID lookup."""
+
+    def _make_entity(self, *, entity_id: str = "ent_aaaaaaaa", slug: str = "person:alice", name: str = "Alice") -> dict:
+        return {
+            "entity_id": entity_id,
+            "slug": slug,
+            "name": name,
+            "entity_type": "person",
+            "aliases": [name],
+            "confidence": 0.9,
+        }
+
+    def test_upsert_and_get_by_id(self, store: JobStore):
+        store.upsert_entity(self._make_entity())
+        row = store.get_entity_by_id("ent_aaaaaaaa")
+        assert row is not None
+        assert row["name"] == "Alice"
+        assert row["aliases"] == ["Alice"]
+
+    def test_get_by_slug(self, store: JobStore):
+        store.upsert_entity(self._make_entity())
+        row = store.get_entity_by_slug("person:alice")
+        assert row is not None
+        assert row["entity_id"] == "ent_aaaaaaaa"
+
+    def test_upsert_merges_aliases(self, store: JobStore):
+        e1 = self._make_entity()
+        e1["aliases"] = ["Alice"]
+        store.upsert_entity(e1)
+        e2 = self._make_entity()
+        e2["aliases"] = ["Alice", "Ali"]
+        store.upsert_entity(e2)
+        row = store.get_entity_by_id("ent_aaaaaaaa")
+        assert set(row["aliases"]) == {"Alice", "Ali"}
+
+    def test_slug_exists(self, store: JobStore):
+        assert store.slug_exists("person:alice") is False
+        store.upsert_entity(self._make_entity())
+        assert store.slug_exists("person:alice") is True
+
+    def test_list_and_filter(self, store: JobStore):
+        store.upsert_entity(self._make_entity())
+        store.upsert_entity(
+            self._make_entity(
+                entity_id="ent_bbbbbbbb", slug="company:openai", name="OpenAI"
+            )
+            | {"entity_type": "company"}
+        )
+        rows = store.list_entities(entity_type="company")
+        assert len(rows) == 1
+        assert rows[0]["slug"] == "company:openai"
+
+    def test_find_entity_ids_by_type(self, store: JobStore):
+        store.upsert_entity(self._make_entity())
+        store.upsert_entity(
+            self._make_entity(
+                entity_id="ent_bbbbbbbb", slug="company:openai", name="OpenAI"
+            )
+            | {"entity_type": "company"}
+        )
+        ids = store.find_entity_ids_by_type("person")
+        assert ids == ["ent_aaaaaaaa"]
+
+    def test_mention_crud(self, store: JobStore):
+        store.upsert_entity(self._make_entity())
+        store.add_entity_mention(
+            {
+                "entity_id": "ent_aaaaaaaa",
+                "episode_id": "ep-1",
+                "claim_id": None,
+                "chunk_id": "ep-1:chunk:0",
+                "raw_text": "Alice",
+                "start_char": 0,
+                "end_char": 5,
+                "timestamp": 1.0,
+                "speaker": "Host",
+            }
+        )
+        rows = store.get_mentions_for_entity("ent_aaaaaaaa")
+        assert len(rows) == 1
+        assert rows[0]["raw_text"] == "Alice"
+
+
+class TestReplaceClaimsIncludesEntities:
+    """Phase B: the transaction replaces claims AND entity mentions atomically."""
+
+    def test_entities_upserted_alongside_claims(self, store: JobStore):
+        entity = {
+            "entity_id": "ent_aaaaaaaa",
+            "slug": "person:alice",
+            "name": "Alice",
+            "entity_type": "person",
+            "aliases": ["Alice"],
+            "confidence": 0.9,
+        }
+        claim = _make_claim(text="Alice said hi", timestamp_start=1.0)
+        claim["entity_ids"] = ["ent_aaaaaaaa"]
+        mention = {
+            "entity_id": "ent_aaaaaaaa",
+            "episode_id": "ep-1",
+            "claim_id": claim["claim_id"],
+            "chunk_id": "ep-1:chunk:0",
+            "raw_text": "Alice",
+            "start_char": 0,
+            "end_char": 5,
+            "timestamp": 1.0,
+            "speaker": None,
+        }
+        store.replace_claims_for_job("ep-1", [claim], entities=[entity], mentions=[mention])
+        assert store.get_entity_by_id("ent_aaaaaaaa") is not None
+        rows = store.get_claims_for_job("ep-1")
+        assert rows[0]["entity_ids"] == ["ent_aaaaaaaa"]
+        assert store.get_mentions_for_entity("ent_aaaaaaaa")
+
+    def test_replacing_replaces_mentions_too(self, store: JobStore):
+        """Second call must wipe prior episode mentions, not duplicate them."""
+        entity = {
+            "entity_id": "ent_aaaaaaaa",
+            "slug": "person:alice",
+            "name": "Alice",
+            "entity_type": "person",
+            "aliases": ["Alice"],
+            "confidence": 0.9,
+        }
+        claim = _make_claim(text="Alice said hi", timestamp_start=1.0)
+        mention = {
+            "entity_id": "ent_aaaaaaaa",
+            "episode_id": "ep-1",
+            "claim_id": claim["claim_id"],
+            "chunk_id": "ep-1:chunk:0",
+            "raw_text": "Alice",
+            "timestamp": 1.0,
+        }
+        store.replace_claims_for_job(
+            "ep-1", [claim], entities=[entity], mentions=[mention]
+        )
+        store.replace_claims_for_job(
+            "ep-1", [claim], entities=[entity], mentions=[mention]
+        )
+        # Still only one mention for this episode — second call replaced, not appended.
+        rows = store.get_mentions_for_entity("ent_aaaaaaaa")
+        assert len(rows) == 1
+
+
 class TestTaskPresets:
     """get_task_presets / set_task_presets round-trip with api_key encryption."""
 
