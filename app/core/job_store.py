@@ -258,6 +258,70 @@ class JobStore:
                 )
             """)
 
+            # P18: Knowledge layer (claims). Entities/topics/predictions land
+            # in Phase B/C — but the join columns (entity_ids, topic_ids) are
+            # already on Claim records as JSON arrays so the schema is forward-
+            # compatible.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS claims (
+                    claim_id TEXT PRIMARY KEY,
+                    episode_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    speaker TEXT,
+                    timestamp_start REAL NOT NULL,
+                    timestamp_end REAL NOT NULL,
+                    claim_type TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    evidence_excerpt TEXT NOT NULL,
+                    entity_ids TEXT DEFAULT '[]',  -- JSON array
+                    topic_ids TEXT DEFAULT '[]',   -- JSON array
+                    source_url TEXT,
+                    extraction_version INTEGER NOT NULL,
+                    schema_version INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_episode ON claims(episode_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_type ON claims(claim_type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_speaker ON claims(speaker)")
+
+            # Generic embeddings table — keyed by (object_type, object_id, model)
+            # so we can embed segments / claims / entities / episodes uniformly.
+            # Phase A creates the table; population starts in Phase B (entity
+            # canonicalization) and P10 (semantic search). Behind a thin
+            # interface in embedding_store.py so the SQLite→Chroma swap is a
+            # one-file change later.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS embeddings (
+                    object_type TEXT NOT NULL,
+                    object_id TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    dim INTEGER NOT NULL,
+                    vector_blob BLOB NOT NULL,
+                    norm REAL NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (object_type, object_id, model)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_type ON embeddings(object_type)")
+
+            # Quarantine for malformed extraction outputs — keep raw response
+            # and error so we can debug prompt drift without crashing the
+            # pipeline.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS extraction_failures (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    episode_id TEXT NOT NULL,
+                    chunk_index INTEGER,
+                    raw_output TEXT,
+                    error TEXT NOT NULL,
+                    extraction_version INTEGER,
+                    model TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_failures_episode ON extraction_failures(episode_id)")
+
             # Run migrations for existing databases
             self._migrate_schema(conn)
 
@@ -273,6 +337,9 @@ class JobStore:
             ("batch_id", "TEXT"),
             ("scheduled_at", "TEXT"),
             ("webhook_url", "TEXT"),
+            # P18: knowledge layer status. Values: none|pending|extracting|complete|failed.
+            # 'none' = never attempted; 'pending' = queued for backfill or on-demand.
+            ("knowledge_status", "TEXT DEFAULT 'none'"),
         ]
 
         for col_name, col_type in migrations:
@@ -282,6 +349,16 @@ class JobStore:
                     logger.info(f"Added column {col_name} to jobs table")
                 except sqlite3.OperationalError:
                     pass  # Column might already exist
+
+        # ai_settings.task_presets — JSON map of TaskType -> {provider,model,...}
+        cursor = conn.execute("PRAGMA table_info(ai_settings)")
+        ai_existing = {row[1] for row in cursor.fetchall()}
+        if "task_presets" not in ai_existing:
+            try:
+                conn.execute("ALTER TABLE ai_settings ADD COLUMN task_presets TEXT")
+                logger.info("Added column task_presets to ai_settings")
+            except sqlite3.OperationalError:
+                pass
 
     def create_job(
         self,
@@ -923,6 +1000,293 @@ class JobStore:
 
         logger.info(f"Saved Obsidian settings: vault_path={vault_path}, subfolder={subfolder}")
         return self.get_obsidian_settings()
+
+    # ===== P18: Knowledge layer accessors =====
+
+    def set_knowledge_status(self, job_id: str, status: str) -> None:
+        """Set the knowledge_status on a job.
+
+        Valid values: 'none' | 'pending' | 'extracting' | 'complete' | 'failed'.
+        Used by the extractor and the (Phase C) backfill worker.
+        """
+        with self._get_conn() as conn:
+            conn.execute(
+                "UPDATE jobs SET knowledge_status = ?, updated_at = ? WHERE job_id = ?",
+                (status, datetime.utcnow().isoformat(), job_id),
+            )
+
+    def get_knowledge_status(self, job_id: str) -> Optional[str]:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT knowledge_status FROM jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            return row["knowledge_status"] if row else None
+
+    def upsert_claims(self, claims: list[dict]) -> int:
+        """Upsert a batch of claim dicts. Returns the number of rows written.
+
+        Each dict must contain the full Claim shape. We upsert by claim_id so
+        re-extracting the same episode is idempotent — same input produces the
+        same id, no duplicates.
+        """
+        if not claims:
+            return 0
+
+        now = datetime.utcnow().isoformat()
+        with self._get_conn() as conn:
+            for c in claims:
+                conn.execute(
+                    """
+                    INSERT INTO claims (
+                        claim_id, episode_id, text, speaker, timestamp_start,
+                        timestamp_end, claim_type, confidence, evidence_excerpt,
+                        entity_ids, topic_ids, source_url, extraction_version,
+                        schema_version, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(claim_id) DO UPDATE SET
+                        text = excluded.text,
+                        speaker = excluded.speaker,
+                        timestamp_start = excluded.timestamp_start,
+                        timestamp_end = excluded.timestamp_end,
+                        claim_type = excluded.claim_type,
+                        confidence = excluded.confidence,
+                        evidence_excerpt = excluded.evidence_excerpt,
+                        entity_ids = excluded.entity_ids,
+                        topic_ids = excluded.topic_ids,
+                        source_url = excluded.source_url,
+                        extraction_version = excluded.extraction_version,
+                        schema_version = excluded.schema_version
+                    """,
+                    (
+                        c["claim_id"],
+                        c["episode_id"],
+                        c["text"],
+                        c.get("speaker"),
+                        c["timestamp_start"],
+                        c["timestamp_end"],
+                        c["claim_type"],
+                        c["confidence"],
+                        c["evidence_excerpt"],
+                        json.dumps(c.get("entity_ids", [])),
+                        json.dumps(c.get("topic_ids", [])),
+                        c.get("source_url"),
+                        c["extraction_version"],
+                        c["schema_version"],
+                        c.get("created_at") or now,
+                    ),
+                )
+        return len(claims)
+
+    def get_claims_for_job(
+        self, job_id: str, min_confidence: float = 0.0
+    ) -> list[dict]:
+        """Return all claims for an episode, ordered by timestamp."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM claims
+                WHERE episode_id = ? AND confidence >= ?
+                ORDER BY timestamp_start ASC
+                """,
+                (job_id, min_confidence),
+            ).fetchall()
+            return [self._claim_row_to_dict(r) for r in rows]
+
+    def query_claims(
+        self,
+        *,
+        claim_type: Optional[str] = None,
+        speaker: Optional[str] = None,
+        min_confidence: float = 0.0,
+        since: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Library-wide claim query with filters."""
+        clauses: list[str] = ["confidence >= ?"]
+        params: list = [min_confidence]
+        if claim_type:
+            clauses.append("claim_type = ?")
+            params.append(claim_type)
+        if speaker:
+            clauses.append("speaker = ?")
+            params.append(speaker)
+        if since:
+            clauses.append("created_at >= ?")
+            params.append(since)
+        where = " AND ".join(clauses)
+        params.extend([limit, offset])
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM claims
+                WHERE {where}
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                params,
+            ).fetchall()
+            return [self._claim_row_to_dict(r) for r in rows]
+
+    def delete_claims_for_job(self, job_id: str) -> int:
+        """Wipe claims for an episode (used before re-extraction)."""
+        with self._get_conn() as conn:
+            cur = conn.execute("DELETE FROM claims WHERE episode_id = ?", (job_id,))
+            return cur.rowcount
+
+    def replace_claims_for_job(self, job_id: str, claims: list[dict]) -> int:
+        """Atomically replace all claims for an episode (delete + insert in one tx).
+
+        Closes the data-integrity hole where a separate delete + upsert
+        could leave the episode with zero claims if the second call lost
+        a race or the process crashed in between. The whole operation
+        commits or rolls back as a unit because both statements share a
+        single connection inside one `_get_conn()` context.
+        """
+        now = datetime.utcnow().isoformat()
+        with self._get_conn() as conn:
+            conn.execute("DELETE FROM claims WHERE episode_id = ?", (job_id,))
+            for c in claims:
+                conn.execute(
+                    """
+                    INSERT INTO claims (
+                        claim_id, episode_id, text, speaker, timestamp_start,
+                        timestamp_end, claim_type, confidence, evidence_excerpt,
+                        entity_ids, topic_ids, source_url, extraction_version,
+                        schema_version, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        c["claim_id"],
+                        c["episode_id"],
+                        c["text"],
+                        c.get("speaker"),
+                        c["timestamp_start"],
+                        c["timestamp_end"],
+                        c["claim_type"],
+                        c["confidence"],
+                        c["evidence_excerpt"],
+                        json.dumps(c.get("entity_ids", [])),
+                        json.dumps(c.get("topic_ids", [])),
+                        c.get("source_url"),
+                        c["extraction_version"],
+                        c["schema_version"],
+                        c.get("created_at") or now,
+                    ),
+                )
+        return len(claims)
+
+    def get_task_presets(self) -> dict[str, dict]:
+        """Read `ai_settings.task_presets`, decrypting any nested api_keys.
+
+        Mirrors the encryption boundary that `ai_settings.api_key` already
+        enforces — secrets stored inside the JSON column round-trip through
+        `_decrypt_secret` so an attacker dumping the raw column doesn't
+        recover usable provider credentials.
+        """
+        settings = self.get_ai_settings()
+        if not settings:
+            return {}
+        raw = settings.get("task_presets")
+        if not raw:
+            return {}
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.warning("task_presets contained invalid JSON; ignoring")
+                return {}
+        if not isinstance(raw, dict):
+            return {}
+        out: dict[str, dict] = {}
+        for task, preset in raw.items():
+            if not isinstance(preset, dict):
+                # Defensive: drop malformed entries instead of crashing every
+                # call to get_provider_for_task() that touches them.
+                logger.warning("task_presets[%s] is not a dict; skipping", task)
+                continue
+            preset = dict(preset)  # copy so we don't mutate the cached row
+            api_key = preset.get("api_key")
+            if api_key:
+                preset["api_key"] = _decrypt_secret(api_key)
+            out[task] = preset
+        return out
+
+    def set_task_presets(self, presets: dict[str, dict]) -> None:
+        """Write `ai_settings.task_presets`, encrypting any nested api_keys.
+
+        Caller must ensure an `ai_settings` row exists (typically by calling
+        `save_ai_settings(...)` first); this method only updates the JSON
+        column on the existing default row.
+        """
+        encrypted: dict[str, dict] = {}
+        for task, preset in presets.items():
+            if not isinstance(preset, dict):
+                continue
+            p = dict(preset)
+            api_key = p.get("api_key")
+            if api_key:
+                p["api_key"] = _encrypt_secret(api_key)
+            encrypted[task] = p
+
+        now = datetime.utcnow().isoformat()
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM ai_settings WHERE is_default = 1 LIMIT 1"
+            ).fetchone()
+            if not row:
+                logger.warning(
+                    "set_task_presets: no default ai_settings row; "
+                    "call save_ai_settings(...) first"
+                )
+                return
+            conn.execute(
+                "UPDATE ai_settings SET task_presets = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(encrypted), now, row["id"]),
+            )
+
+    @staticmethod
+    def _claim_row_to_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        # JSON-array columns
+        for k in ("entity_ids", "topic_ids"):
+            raw = d.get(k)
+            try:
+                d[k] = json.loads(raw) if raw else []
+            except (TypeError, json.JSONDecodeError):
+                d[k] = []
+        return d
+
+    def record_extraction_failure(
+        self,
+        *,
+        episode_id: str,
+        chunk_index: Optional[int],
+        error: str,
+        raw_output: Optional[str] = None,
+        extraction_version: Optional[int] = None,
+        model: Optional[str] = None,
+    ) -> None:
+        """Quarantine a malformed extractor response so the pipeline never
+        crashes on bad LLM output."""
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO extraction_failures
+                    (episode_id, chunk_index, raw_output, error,
+                     extraction_version, model, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    episode_id,
+                    chunk_index,
+                    raw_output,
+                    error,
+                    extraction_version,
+                    model,
+                    datetime.utcnow().isoformat(),
+                ),
+            )
 
 
 # Global instance

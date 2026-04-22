@@ -55,6 +55,19 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 | Intelligent Webhooks & Agentic Notifications | Low | High | P16 |
 | Structured Data Extraction | Medium | High | P17 |
 
+### v2.5 — Capability Surface & Knowledge Pipeline (Planned)
+
+> The shift: from "an app that ships connectors" to "a capability surface". Obsidian, Notion, Logseq become *agent-side targets*, not Sift-side integrations. Single-episode summary becomes a *feature*; continuous cross-source knowledge monitoring becomes the *product*.
+
+| Feature | Difficulty | Impact | Priority |
+|---------|------------|--------|----------|
+| AI-Friendly Knowledge Schema (Claims, Entities, Predictions) | Medium | Very High | P18 |
+| Sift MCP Server (Capability Surface) | Medium | Very High | P19 |
+| Subscription Digest Pipeline (Cross-Episode Synthesis) | High | Very High | P20 |
+| Vault & Note-App Export Channels (Obsidian / Notion / Logseq) | Low | High | P21 |
+
+**Dependency order:** P18 is the substrate (canonical schema). P19 (MCP) and P20 (Digest) both read from it. P21 (Vault Export) consumes from P19 and P20.
+
 ---
 
 ## P0: Smart Metadata & Tagging ✅ COMPLETED
@@ -639,6 +652,235 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 
 ---
 
+## P18: AI-Friendly Knowledge Schema
+
+**Goal:** Standardize a canonical, machine-readable schema for everything Sift extracts, so every downstream system (MCP, Digest, RAG, search, webhooks) reads from the same substrate. AI-friendly is not "output JSON" — it's *citable, timestamped, speaker-attributed, confidence-scored* claims that can be cross-referenced across episodes.
+
+> The substrate that makes P19 (MCP) and P20 (Digest) actually useful, not just plausible. Without this, every consumer reinvents extraction.
+
+### Locked design decisions (v1)
+
+1. **Embeddings: SQLite blob + Python cosine, behind a thin retrieval interface.** Generic `embeddings` table keyed by `(object_type, object_id, model)` so we can embed segments / claims / entities / episodes uniformly. No Chroma / pgvector yet — but the abstraction layer from day 1 makes that swap a one-file change when ANN / multi-tenant scale demands it. Same table seeds P10 Semantic Search later.
+2. **LLM: reuse existing AI Settings as the control plane, layered with task-based presets.** No globally hardcoded provider. Presets per task type:
+   - `extract` — cheap, structured, deterministic (default: `gpt-4o-mini`-class)
+   - `summarize` — cheap-medium
+   - `synthesize` — better model allowed (used by P20 cross-source synthesis)
+   - `chat` — user-selected (used by P19 `ask_episode`)
+
+   Each preset is overridable in `ai_settings`; user can map any task to any configured provider.
+3. **Backfill: lazy and resumable, never blocking.** New jobs run extraction immediately. Existing transcripts get marked `knowledge_status = pending` and a background worker processes them by priority: (1) most recent, (2) user-opened, (3) subscribed / high-value. On-demand extraction kicks in when an API call hits an unextracted job, then caches.
+4. **Confidence: store everything above a sanity floor, filter at the surface.** No early data destruction. Storage floor: `0.1`. Default surface thresholds: API=`0.5`, UI=`0.6`, digest/alerts=`0.7+`. Contradiction detection can opt into the long tail. `extraction_version` is tracked per record so re-extraction with improved prompts is well-defined.
+
+### Schema (Pydantic models)
+
+- [ ] **Claim** — `claim_id` (stable hash for cross-job dedup), `episode_id`, `text`, `speaker`, `timestamp_start/end`, `claim_type` (fact / opinion / prediction / question / recommendation), `confidence`, `evidence_excerpt`, `entity_ids[]`, `topic_ids[]`, `extraction_version`, `schema_version`, `source_url`
+- [ ] **Entity** — `entity_id` (canonical, e.g. `person:vitalik-buterin`), `name`, `entity_type` (person / company / ticker / project / product / place), `aliases[]`. Embedding lives in the generic `embeddings` table, **not** inline.
+- [ ] **EntityMention** — `entity_id`, `episode_id`, `timestamp`, `speaker`, `raw_text` (how it was actually said in the transcript)
+- [ ] **Topic** — `topic_id`, `name`, `segments[]` (episode_id + time range), `sentiment_summary`, `frequency_over_time`
+- [ ] **Prediction** (extends Claim) — `target_horizon`, `conditions`, `falsifiable_by`, `resolution` (pending / true / false / unresolvable), `resolved_at`
+- [ ] **Embedding** (generic, separate table) — `object_type` (episode / segment / claim / entity), `object_id`, `model`, `dim`, `vector_blob` (numpy float32 bytes), `norm` (cached for cosine speed)
+
+### Tasks
+
+- [ ] Schema spec doc (`docs/knowledge-schema.md`) with explicit `schema_version` and `extraction_version` policy + re-extraction rules
+- [ ] Task preset registry (`app/core/llm_presets.py`):
+  - [ ] Map `extract | summarize | synthesize | chat` → provider+model
+  - [ ] Default presets in code, overridable via `ai_settings` table (new `task_presets` JSON column)
+  - [ ] `get_provider_for_task(task)` helper used by extractor / summarizer / RAG / digest
+- [ ] Knowledge extractor service (`app/core/knowledge_extractor.py`):
+  - [ ] LLM-powered extraction with structured output (function calling / JSON mode via litellm)
+  - [ ] Per-segment processing (~3000 tokens, 200-token overlap) with episode metadata as context
+  - [ ] Pulls model from `get_provider_for_task("extract")`, not directly from AI Settings
+  - [ ] One unified prompt per chunk → `{claims, entities, topics, predictions}`
+  - [ ] Schema validation on every LLM output (malformed → quarantine table, never crash pipeline)
+- [ ] Embedding store (`app/core/embedding_store.py`):
+  - [ ] Thin retrieval interface (`embed`, `upsert`, `query_topk`, `cosine`)
+  - [ ] SQLite blob backend with cached `norm` for fast cosine
+  - [ ] Driver pattern → swap to Chroma / pgvector later without touching callers
+  - [ ] Local model: `sentence-transformers/all-MiniLM-L6-v2` (~80MB)
+- [ ] Storage (extend `JobStore._init_db`):
+  - [ ] Normalized SQLite tables: `claims`, `entities`, `entity_mentions`, `topics`, `predictions`, `claim_entities`, `claim_topics`
+  - [ ] Generic `embeddings` table (`object_type`, `object_id`, `model`, `dim`, `vector_blob`, `norm`)
+  - [ ] Quarantine table for malformed extractions (`extraction_failures`)
+  - [ ] Add `knowledge_status` column on `jobs`: `none | pending | extracting | complete | failed`
+- [ ] Cross-job normalization:
+  - [ ] Embed entity names; cosine ≥ 0.85 → merge with existing entity, else create new
+  - [ ] Speaker matching across episodes (name+show heuristic for v1, voice embedding later)
+- [ ] Backfill worker (`app/workers/knowledge_backfill.py`):
+  - [ ] On first deploy: mark all existing jobs with transcripts as `knowledge_status = pending`
+  - [ ] Process priority queue: recent → user-opened → subscribed → rest
+  - [ ] On-demand path: API call to `GET /jobs/{id}/knowledge` on `pending` job triggers immediate extraction (and caches)
+  - [ ] Per-feed daily extraction budget (cost guardrail, downgrade model when over)
+- [ ] Confidence model:
+  - [ ] Storage floor: `0.1` (anything above gets persisted, raw value preserved)
+  - [ ] Per-claim model self-reported confidence
+  - [ ] Speaker conviction tag (hedged vs. asserted) — orthogonal to extraction confidence
+  - [ ] All query endpoints accept `min_confidence` param; defaults: API=`0.5`, UI=`0.6`, digest=`0.7`
+- [ ] Export formats: JSON, JSONL (one claim per line for LLM consumption), CSV
+- [ ] API endpoints:
+  - [ ] `GET /jobs/{id}/knowledge?min_confidence=...` — all knowledge for an episode (triggers on-demand extract if `pending`)
+  - [ ] `GET /api/claims?topic=...&speaker=...&entity=...&since=...&type=...&min_confidence=...`
+  - [ ] `GET /api/entities/{id}/mentions`
+  - [ ] `POST /jobs/{id}/extract-knowledge` — manual trigger / re-extract (bumps `extraction_version`)
+  - [ ] `GET /api/topics`
+  - [ ] `GET /api/predictions?resolution=pending`
+
+### Phased rollout (within P18)
+
+1. **Phase A — Claims-only MVP** ✅ **SHIPPED**: schema + extractor + `claims` / `embeddings` / `extraction_failures` tables + task preset registry + `POST /jobs/{id}/extract-knowledge` + `GET /jobs/{id}/knowledge` + `GET /api/claims`. New jobs only (manual trigger; backfill in Phase C). 45 new tests, all passing.
+2. **Phase B — Entities + canonicalization** (~2-3 days): embedding-cosine matching using the existing `embedding_store.py` interface, mentions table, entity API.
+3. **Phase C — Topics + Predictions + backfill worker** (~2 days): topics table, prediction subtype, lazy backfill priority queue, on-demand cache path.
+4. **Phase D — Pipeline auto-run + tests + docs** (~1 day): hook into `workflow.py`, write `docs/knowledge-schema.md`, raise coverage to 80%+.
+
+### Phase A — what shipped
+
+- `app/core/knowledge_schema.py` — `Claim`, `ClaimDraft`, `ExtractionRunResult`, `compute_claim_id`, `LLM_RESPONSE_SCHEMA`, `ClaimType` enum, `SCHEMA_VERSION`/`EXTRACTION_VERSION` constants
+- `app/core/llm_presets.py` — `TaskType`, `get_provider_for_task`, `_DEFAULT_PRESETS` (extract/summarize/synthesize/chat); resolves overrides from new `ai_settings.task_presets` JSON column
+- `app/core/knowledge_extractor.py` — segment chunking (~3000 tokens, 200 overlap), JSON-mode prompting, defensive parsing (markdown fences + prose-wrapped JSON), per-chunk failure isolation, claim_id-based dedup across overlapping chunks, storage floor 0.1
+- `app/core/embedding_store.py` — `EmbeddingStore` (upsert/get/cosine), behind a thin interface so Chroma/pgvector swap is one-file later; sentinel `DEFAULT_TEXT_MODEL`
+- `app/core/job_store.py` — `claims` / `embeddings` / `extraction_failures` tables; `knowledge_status` column on jobs; `ai_settings.task_presets` column; `upsert_claims`, `get_claims_for_job`, `query_claims`, `delete_claims_for_job`, `set_/get_knowledge_status`, `record_extraction_failure`
+- `app/api/knowledge_routes.py` — `POST /api/jobs/{id}/extract-knowledge`, `GET /api/jobs/{id}/knowledge`, `GET /api/claims` with `min_confidence` filter (defaults: 0.5 for both job + library queries)
+- `tests/` — `test_knowledge_schema.py` (11), `test_knowledge_store.py` (13), `test_knowledge_extractor.py` (14), `test_llm_presets.py` (7) — 45 new tests, all green
+
+---
+
+## P19: Sift MCP Server (Capability Surface)
+
+**Goal:** Expose Sift as an MCP (Model Context Protocol) server so Claude Desktop, Cursor, and custom agents can call Sift primitives directly. This shifts Sift from "an app that ships connectors" to "a capability surface" — Obsidian / Notion / Logseq become *agent-side targets*, not Sift-side integrations.
+
+> The unlock: build N agent skills on top of one MCP server, instead of N×M point-to-point connectors. Inspired by the `podwise-cli` MCP surface, but goes deeper because Sift has the structured knowledge layer (P18) underneath.
+
+### Tool surface (stable JSON Schema per tool)
+
+- [ ] **Ingest & retrieval**
+  - [ ] `ingest_url(url, profile?)` — submit URL, return `episode_id` + pipeline status
+  - [ ] `get_transcript(episode_id, format?)` — text / SRT / JSON with timestamps
+  - [ ] `get_chapters(episode_id)` — auto-generated chapter markers
+  - [ ] `get_segment(episode_id, start, end)` — pull a specific time range
+  - [ ] `get_clips(episode_id, criteria?)` — viral / insightful / topic-filtered clips
+- [ ] **Understanding**
+  - [ ] `get_summary(episode_id, mode?)` — bullets / chapters / topics / action items
+  - [ ] `get_highlights(episode_id)` — pull-quote-grade excerpts with timestamps
+  - [ ] `get_claims(episode_id)` — structured claims (reads from P18)
+  - [ ] `get_entities(episode_id)` — people / companies / tickers / projects
+  - [ ] `get_topics(episode_id)` — topic graph
+  - [ ] `get_predictions(episode_id)` — falsifiable forward-looking claims
+- [ ] **Q&A**
+  - [ ] `ask_episode(episode_id, question)` — RAG against single episode (depends on P11)
+  - [ ] `ask_at_timestamp(episode_id, time_range, question)` — scoped Q&A
+  - [ ] `search_library(query, filters?)` — semantic search across all episodes (depends on P10)
+- [ ] **Cross-episode synthesis**
+  - [ ] `compare_episodes(episode_ids[], topic?)` — agreements / disagreements
+  - [ ] `find_contradictions(speaker?, topic?, timeframe?)` — surface inconsistencies
+  - [ ] `summarize_trend(topic, last_n_days)` — narrative evolution over time
+- [ ] **Export**
+  - [ ] `export_to_vault(episode_id, target, template?)` — Obsidian / Notion / Logseq (depends on P21)
+
+### Tasks
+
+- [ ] Implement `sift-mcp` server:
+  - [ ] stdio transport (Claude Desktop, local agents)
+  - [ ] HTTP transport (remote agents, Cursor)
+  - [ ] Auth via Sift API key (passthrough)
+  - [ ] Streaming for long-running tools (`ingest_url`, `ask_episode`)
+- [ ] Schema-first: every tool ships with a stable JSON Schema and example call
+- [ ] Reference agent skills (shipped in repo):
+  - [ ] **Episode → Obsidian note** (claims + highlights + clickable timestamps)
+  - [ ] **Weekly recap** (cross-source synthesis from subscriptions)
+  - [ ] **Topic research** (search → claims → contradictions → brief)
+  - [ ] **Language learning** (transcript + translation + key vocabulary)
+- [ ] Distribution:
+  - [ ] `uvx sift-mcp` install path
+  - [ ] Claude Desktop config snippet in README
+  - [ ] Cursor MCP config snippet
+  - [ ] Test suite covering Claude Desktop + Cursor + raw MCP client
+
+---
+
+## P20: Subscription Digest Pipeline (Cross-Episode Synthesis)
+
+**Goal:** Turn Sift from on-demand tool into always-on knowledge pipeline. Nightly ingest of subscribed feeds → structured extraction (P18) → cross-episode synthesis → multi-channel digest output. The differentiator vs. single-episode summarizers is *cross-source synthesis*: what 5 podcasts said about the same topic this week, who's repeating which narrative, what's new framing.
+
+> Single-episode summary is a feature; continuous knowledge monitoring is the product.
+
+### Phase 1 — Subscription-driven brief
+
+- [ ] Cron-driven nightly ingest job (`app/workers/digest_runner.py`)
+- [ ] Per-subscription pipeline profile (Quick / Deep / Full — reuses P12)
+- [ ] Auto-extract structured knowledge per new episode (depends on P18)
+- [ ] Daily digest email per subscription set
+- [ ] Cost guardrails (per-feed daily budget, model downgrade when over)
+- [ ] Failure handling: caption-missing fallback, low-quality transcript flag, retry queue
+
+### Phase 2 — Topic synthesis
+
+- [ ] User-defined topic tracking (BTC, AI agents, ETH ETF, stablecoins, etc.)
+- [ ] Daily topic answers:
+  - [ ] Which episodes mentioned it
+  - [ ] New claims / predictions on this topic
+  - [ ] Cross-source agreement / disagreement
+  - [ ] Repeated-narrative detection (who is amplifying which framing)
+- [ ] Topic-scoped digest (per topic, not per feed)
+
+### Phase 3 — Reusable intelligence layer
+
+- [ ] All extracted knowledge written to KB (queryable via P19 MCP tools)
+- [ ] Output channels:
+  - [ ] Email digest (HTML)
+  - [ ] Telegram digest (rich format with episode links)
+  - [ ] Webhook JSON (consumes P16 intelligent webhooks)
+  - [ ] Notion database row (one row per claim or per episode)
+  - [ ] Markdown export → Obsidian vault folder (consumes P21)
+- [ ] Inbox UI: pin / mute / follow topics, mark-read, archive
+
+### Cross-cutting
+
+- [ ] Dedup across feeds (same news mentioned by N podcasts → single digest item)
+- [ ] Source ranking (per-user trust weights)
+- [ ] API endpoints:
+  - [ ] `POST /api/digests` - Create / configure a digest
+  - [ ] `GET /api/digests/{id}` - Get latest digest output
+  - [ ] `POST /api/topics` - Track a topic
+  - [ ] `GET /api/topics/{id}/synthesis` - Cross-source synthesis for a topic
+
+---
+
+## P21: Vault & Note-App Export Channels
+
+**Goal:** First-class output channels for Obsidian / Notion / Logseq — served both directly (write-to-vault) and through MCP (`export_to_vault` tool from P19). Templated markdown with frontmatter, clickable timestamps, claim cards, embedded highlights.
+
+> The "very convenient YouTube → note" UX, but built on primitives instead of a one-off plugin.
+
+### Tasks
+
+- [ ] Markdown templater (`app/core/note_exporter.py`):
+  - [ ] YAML frontmatter (title, source_url, date, speakers, topics, tags)
+  - [ ] Clickable timestamp links (`[12:42](https://youtu.be/...?t=762)`)
+  - [ ] Collapsible transcript blocks
+  - [ ] Claim cards (one block per extracted claim, with timestamp + confidence)
+  - [ ] Highlight blocks (pull quotes)
+  - [ ] Embedded chapter ToC
+- [ ] Built-in templates:
+  - [ ] **Episode note** (full episode → one note)
+  - [ ] **Highlights only** (just key quotes + claims)
+  - [ ] **Topic note** (cross-episode synthesis on a topic)
+  - [ ] **Daily digest** (one note per day, all subscriptions)
+- [ ] Output targets:
+  - [ ] **Obsidian vault**: write `.md` into configured folder, use `[[wikilinks]]` for normalized entities
+  - [ ] **Notion**: create page in configured database, claims as database rows
+  - [ ] **Logseq**: journal-friendly format with block references
+- [ ] Per-subscription auto-export setting
+- [ ] Vault config:
+  - [ ] Vault path (Obsidian)
+  - [ ] Database ID + integration token (Notion)
+  - [ ] Graph path (Logseq)
+- [ ] MCP integration: `export_to_vault(episode_id, target, template?)` calls this layer
+- [ ] API endpoints:
+  - [ ] `POST /jobs/{id}/export` with `target` and `template` params
+  - [ ] `GET /api/export-templates`
+
+---
+
 ## v2.0 Backlog (Future Ideas)
 
 - [ ] **Cross-Platform Social Graph**: Track speakers across downloads, build profiles of their positions over time
@@ -648,5 +890,5 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 - [ ] Voice search within transcripts (speak a query, find the answer)
 - [ ] Multi-language UI
 - [ ] Export to cloud storage (S3, Google Drive, Dropbox)
-- [ ] Notion integration for structured data export
-- [ ] MCP server for LLM agent integration (expose Sift as a tool for AI agents)
+- [x] Notion integration for structured data export → promoted to **P21: Vault & Note-App Export Channels**
+- [x] MCP server for LLM agent integration → promoted to **P19: Sift MCP Server (Capability Surface)**
