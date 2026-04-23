@@ -106,6 +106,24 @@ def compute_entity_id(
     return f"ent_{digest[:8]}"
 
 
+def compute_topic_id(*, name: str) -> str:
+    """Stable opaque topic ID (`top_<8-char hash>`).
+
+    Uses the full topic-normalization pipeline (ticker expansion +
+    conservative plural collapse) so that `"BTC price"` and `"Bitcoin
+    prices"` map to the same id before any embedding comparison runs.
+    Hash collision is not the de-dup boundary — the canonicalizer does
+    that via cosine ≥0.90 on `name + description`. This id exists so
+    claims and join rows can point at something opaque and stable, even
+    if we later rename a topic.
+    """
+    from .topic_normalization import normalize_topic_for_match
+
+    payload = normalize_topic_for_match(name)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"top_{digest[:8]}"
+
+
 class Claim(BaseModel):
     """A discrete, citable statement extracted from a transcript."""
 
@@ -277,6 +295,73 @@ class EntityMention(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class Topic(BaseModel):
+    """A canonical topic — an abstraction over a cluster of claims.
+
+    Unlike entities, topics don't carry a `type` — the topic graph is
+    flat. Name alone is often ambiguous (`"Bitcoin"`) so the description
+    carries the LLM's abstraction and gets included in the embedding
+    recipe. No slug: topics aren't deep-linked in UI/MCP the way
+    entities are, and the kebab form reads worse here than it does on
+    people or companies.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    topic_id: str = Field(description="Stable `top_<8-char hash>` PK.")
+    name: str = Field(description="Short canonical topic label.")
+    description: str = Field(
+        default="",
+        description="LLM-written abstraction; embedded alongside name for canonicalization.",
+    )
+    aliases: list[str] = Field(
+        default_factory=list,
+        description="Observed surface forms collected from aggregation runs.",
+    )
+    confidence: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence from the aggregation pass.",
+    )
+    created_at: Optional[datetime] = Field(
+        default=None, description="Persisted by the store layer."
+    )
+
+
+class TopicDraft(BaseModel):
+    """Raw topic shape returned by the aggregation LLM call.
+
+    `claim_indices` refers to positions in the claims list we fed into
+    the prompt (0-indexed). Those get resolved back to `claim_id`s
+    post-call — asking the LLM to emit 32-char hashes reliably is a
+    losing bet.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    description: str = ""
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+    claim_indices: list[int] = Field(default_factory=list)
+
+
+class ClaimTopicEdge(BaseModel):
+    """One row in the `claim_topics` join (source of truth for claim↔topic).
+
+    The `Claim.topic_ids` JSON array is a denormalized cache of the
+    `topic_id`s for fast per-claim render; this edge table powers
+    reverse queries (`claims for this topic`) and carries the
+    confidence the aggregator assigned to the link.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    claim_id: str
+    topic_id: str
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 class ChunkFailure(BaseModel):
     """One per-chunk extraction failure, surfaced for quarantine persistence."""
 
@@ -300,6 +385,14 @@ class ExtractionRunResult(BaseModel):
     mentions: list[EntityMention] = Field(
         default_factory=list,
         description="Per-chunk entity mentions to persist alongside claims.",
+    )
+    topics: list[Topic] = Field(
+        default_factory=list,
+        description="Canonical topics from the second-pass aggregation (Phase C.1). Empty when claim_count < threshold or no summarize provider.",
+    )
+    claim_topic_edges: list[ClaimTopicEdge] = Field(
+        default_factory=list,
+        description="Source-of-truth claim↔topic edges (join table). `Claim.topic_ids` JSON is a denormalized cache of these.",
     )
     chunks_processed: int = 0
     chunks_failed: int = 0
@@ -402,4 +495,37 @@ LLM_RESPONSE_SCHEMA = {
         },
     },
     "required": ["claims"],
+}
+
+
+# Phase C.1: separate schema for the second-pass topic aggregation call.
+# This call runs once per episode after claims+entities are extracted, not
+# per chunk. Input is a numbered list of claim texts; output is a small
+# set of topics each pointing back at the claim indices they cover.
+# Indices are resolved to stable `claim_id`s by the aggregator.
+TOPIC_AGGREGATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "topics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "confidence": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                    },
+                    "claim_indices": {
+                        "type": "array",
+                        "items": {"type": "integer", "minimum": 0},
+                    },
+                },
+                "required": ["name", "claim_indices"],
+            },
+        }
+    },
+    "required": ["topics"],
 }

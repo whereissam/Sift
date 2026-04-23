@@ -9,14 +9,19 @@ from app.core.knowledge_schema import (
     SCHEMA_VERSION,
     Claim,
     ClaimDraft,
+    ClaimTopicEdge,
     ClaimType,
     Entity,
     EntityDraft,
     EntityMention,
     EntityType,
     LLM_RESPONSE_SCHEMA,
+    TOPIC_AGGREGATION_SCHEMA,
+    Topic,
+    TopicDraft,
     compute_claim_id,
     compute_entity_id,
+    compute_topic_id,
     normalize_entity_name,
     slugify_entity_name,
 )
@@ -252,3 +257,58 @@ class TestClaimDraftEntityRefs:
             entity_refs=["ETH", "BTC"],
         )
         assert d.entity_refs == ["ETH", "BTC"]
+
+
+class TestTopicIdStability:
+    def test_same_input_same_id(self):
+        a = compute_topic_id(name="Bitcoin Price")
+        b = compute_topic_id(name="  bitcoin  price  ")
+        # Normalization collapses both surface forms to the same id
+        assert a == b
+        assert a.startswith("top_")
+        assert len(a) == len("top_") + 8
+
+    def test_ticker_variants_collapse(self):
+        assert compute_topic_id(name="BTC") == compute_topic_id(name="Bitcoin")
+        assert compute_topic_id(name="ETH prices") == compute_topic_id(
+            name="Ethereum price"
+        )
+
+    def test_different_topic_different_id(self):
+        a = compute_topic_id(name="Bitcoin price")
+        b = compute_topic_id(name="AI safety")
+        assert a != b
+
+
+class TestTopicModel:
+    def test_minimum_valid(self):
+        t = Topic(topic_id="top_12345678", name="Bitcoin Price")
+        assert t.description == ""
+        assert t.aliases == []
+        assert t.confidence == 1.0
+
+    def test_topic_draft_defaults(self):
+        d = TopicDraft(name="Bitcoin Price")
+        assert d.description == ""
+        assert d.confidence == 0.8
+        assert d.claim_indices == []
+
+    def test_claim_topic_edge_defaults(self):
+        e = ClaimTopicEdge(claim_id="c", topic_id="top_12345678")
+        assert e.confidence == 1.0
+
+
+class TestTopicAggregationSchema:
+    def test_requires_topics_array(self):
+        assert "topics" in TOPIC_AGGREGATION_SCHEMA["required"]
+
+    def test_topic_item_required_fields(self):
+        topic_item = TOPIC_AGGREGATION_SCHEMA["properties"]["topics"]["items"]
+        assert set(topic_item["required"]) == {"name", "claim_indices"}
+
+    def test_claim_indices_is_integer_array(self):
+        ci = TOPIC_AGGREGATION_SCHEMA["properties"]["topics"]["items"][
+            "properties"
+        ]["claim_indices"]
+        assert ci["type"] == "array"
+        assert ci["items"]["type"] == "integer"

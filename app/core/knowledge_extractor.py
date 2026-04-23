@@ -40,16 +40,19 @@ from .knowledge_schema import (
     ChunkFailure,
     Claim,
     ClaimDraft,
+    ClaimTopicEdge,
     Entity,
     EntityDraft,
     EntityMention,
     ExtractionRunResult,
     LLM_RESPONSE_SCHEMA,
+    Topic,
     compute_claim_id,
     normalize_entity_name,
 )
 from .llm_presets import TaskType, get_provider_for_task
 from .summarizer import LiteLLMProvider
+from .topic_aggregator import MIN_CLAIMS_FOR_AGGREGATION, TopicAggregator
 
 logger = logging.getLogger(__name__)
 
@@ -211,19 +214,32 @@ class KnowledgeExtractor:
         self,
         provider: Optional[LiteLLMProvider] = None,
         canonicalizer: Optional[EntityCanonicalizer] = None,
+        topic_aggregator: Optional[TopicAggregator] = None,
     ):
         self.provider = provider
         # Canonicalizer is optional: tests inject a lightweight fake, and
         # Phase A callers that don't need entity resolution can pass None
         # — in that case `entity_refs` is silently discarded.
         self.canonicalizer = canonicalizer
+        # Topic aggregator is also optional. When None, the topic pass
+        # is skipped and `result.topics`/`result.claim_topic_edges` stay
+        # empty — same graceful-degradation story as the canonicalizer.
+        self.topic_aggregator = topic_aggregator
 
     @classmethod
     def from_settings(cls) -> "KnowledgeExtractor":
-        """Build an extractor using the `extract` task preset."""
+        """Build an extractor using the `extract` task preset.
+
+        Also wires a `TopicAggregator` backed by the `summarize` preset
+        for the second-pass topic run. If no `summarize` provider is
+        configured, the aggregator's `is_available()` is false and the
+        chunk loop below skips the topic pass silently.
+        """
+        topic_agg = TopicAggregator.from_settings() if TopicAggregator.is_available() else None
         return cls(
             provider=get_provider_for_task(TaskType.EXTRACT),
             canonicalizer=EntityCanonicalizer(),
+            topic_aggregator=topic_agg,
         )
 
     @staticmethod
@@ -466,22 +482,61 @@ class KnowledgeExtractor:
                 winner = existing.model_copy(update={"entity_ids": merged_ids})
             deduped[c.claim_id] = winner
 
+        final_claims = list(deduped.values())
+
         # success = at least one chunk produced *something* (valid JSON, even
         # an empty claim list counts). If every chunk threw, we don't want the
         # caller to overwrite prior data with this run's empty result.
         all_failed = len(chunks) > 0 and len(failures) == len(chunks)
         run_success = not all_failed
 
+        # --- Phase C.1: second-pass topic aggregation ---
+        # Graceful degradation: if the aggregator is missing, unavailable,
+        # below the claim-count threshold, or throws, we return the run
+        # without topics rather than failing the whole extraction. The
+        # topic pass is additive signal.
+        topics: list[Topic] = []
+        edges: list[ClaimTopicEdge] = []
+        topic_tokens = 0
+        if (
+            run_success
+            and self.topic_aggregator is not None
+            and len(final_claims) >= MIN_CLAIMS_FOR_AGGREGATION
+        ):
+            try:
+                topics, edges, topic_tokens = await self.topic_aggregator.aggregate(
+                    final_claims
+                )
+            except Exception as e:
+                logger.warning(
+                    "knowledge_extractor: topic aggregation failed: %s", e
+                )
+
+        # Populate `claim.topic_ids` from the edges as the denormalized cache.
+        # The join table (edges → claim_topics) remains the source of truth;
+        # this just keeps the per-claim render path cheap. Claims with no
+        # edges get an empty list (already the default).
+        if edges:
+            claim_topic_map: dict[str, list[str]] = {}
+            for e in edges:
+                claim_topic_map.setdefault(e.claim_id, []).append(e.topic_id)
+            final_claims = [
+                c.model_copy(update={"topic_ids": claim_topic_map.get(c.claim_id, [])})
+                for c in final_claims
+            ]
+
         return ExtractionRunResult(
             job_id=episode_id,
             success=run_success,
-            claims=list(deduped.values()),
+            claims=final_claims,
             entities=list(all_entities.values()),
             mentions=all_mentions,
+            topics=topics,
+            claim_topic_edges=edges,
             chunks_processed=len(chunks) - len(failures),
             chunks_failed=len(failures),
             failures=failures,
-            tokens_used=total_tokens,
+            tokens_used=total_tokens + topic_tokens,
             model=self.provider.model_name,
             provider=self.provider.name,
             error=None if not failures else f"{len(failures)} chunk(s) failed",

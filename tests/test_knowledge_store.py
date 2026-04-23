@@ -403,6 +403,186 @@ class TestReplaceClaimsIncludesEntities:
         assert len(rows) == 1
 
 
+class TestTopicStore:
+    """Phase C.1: topic + claim_topics CRUD."""
+
+    def _make_topic(
+        self,
+        *,
+        topic_id: str = "top_aaaaaaaa",
+        name: str = "Bitcoin Price",
+        description: str = "Bitcoin spot price trends",
+    ) -> dict:
+        return {
+            "topic_id": topic_id,
+            "name": name,
+            "description": description,
+            "aliases": [name],
+            "confidence": 0.9,
+        }
+
+    def test_upsert_and_get_by_id(self, store: JobStore):
+        store.upsert_topic(self._make_topic())
+        row = store.get_topic_by_id("top_aaaaaaaa")
+        assert row is not None
+        assert row["name"] == "Bitcoin Price"
+        assert row["description"] == "Bitcoin spot price trends"
+
+    def test_upsert_merges_aliases(self, store: JobStore):
+        t1 = self._make_topic()
+        t1["aliases"] = ["Bitcoin Price"]
+        store.upsert_topic(t1)
+        t2 = self._make_topic()
+        t2["aliases"] = ["Bitcoin Price", "BTC price"]
+        store.upsert_topic(t2)
+        row = store.get_topic_by_id("top_aaaaaaaa")
+        assert set(row["aliases"]) == {"Bitcoin Price", "BTC price"}
+
+    def test_list_topics(self, store: JobStore):
+        store.upsert_topic(self._make_topic())
+        store.upsert_topic(
+            self._make_topic(topic_id="top_bbbbbbbb", name="AI Safety")
+        )
+        rows = store.list_topics()
+        assert len(rows) == 2
+
+    def test_find_topic_ids(self, store: JobStore):
+        store.upsert_topic(self._make_topic())
+        ids = store.find_topic_ids()
+        assert ids == ["top_aaaaaaaa"]
+
+    def test_add_and_get_edge(self, store: JobStore):
+        store.upsert_topic(self._make_topic())
+        # Claim must exist first (FK)
+        claim = _make_claim(text="BTC rallying", timestamp_start=1.0)
+        store.upsert_claims([claim])
+        store.add_claim_topic_edge(
+            {
+                "claim_id": claim["claim_id"],
+                "topic_id": "top_aaaaaaaa",
+                "confidence": 0.9,
+            }
+        )
+        edges = store.get_claim_topic_edges(claim["claim_id"])
+        assert len(edges) == 1
+        assert edges[0]["topic_id"] == "top_aaaaaaaa"
+
+    def test_claims_for_topic_reads_from_join(self, store: JobStore):
+        """Source of truth is claim_topics, not the JSON cache on claims."""
+        store.upsert_topic(self._make_topic())
+        claim = _make_claim(text="Bitcoin broke 100k", timestamp_start=1.0)
+        # Deliberately leave claims.topic_ids EMPTY so we prove the query
+        # reads the join, not the denormalized cache.
+        claim["topic_ids"] = []
+        store.upsert_claims([claim])
+        store.add_claim_topic_edge(
+            {
+                "claim_id": claim["claim_id"],
+                "topic_id": "top_aaaaaaaa",
+                "confidence": 0.9,
+            }
+        )
+        rows = store.get_claims_for_topic("top_aaaaaaaa")
+        assert len(rows) == 1
+        assert rows[0]["text"] == "Bitcoin broke 100k"
+
+
+class TestReplaceClaimsIncludesTopics:
+    """Phase C.1: replace_claims_for_job handles topics + edges in same tx."""
+
+    def test_topics_and_edges_written(self, store: JobStore):
+        topic = {
+            "topic_id": "top_aaaaaaaa",
+            "name": "Bitcoin",
+            "description": "",
+            "aliases": [],
+            "confidence": 0.9,
+        }
+        claim = _make_claim(text="Bitcoin is up", timestamp_start=1.0)
+        claim["topic_ids"] = ["top_aaaaaaaa"]
+        edge = {
+            "claim_id": claim["claim_id"],
+            "topic_id": "top_aaaaaaaa",
+            "confidence": 0.9,
+        }
+        store.replace_claims_for_job(
+            "ep-1",
+            [claim],
+            topics=[topic],
+            claim_topic_edges=[edge],
+        )
+        assert store.get_topic_by_id("top_aaaaaaaa") is not None
+        edges = store.get_claim_topic_edges(claim["claim_id"])
+        assert len(edges) == 1
+
+    def test_re_extraction_clears_prior_edges(self, store: JobStore):
+        topic = {
+            "topic_id": "top_aaaaaaaa",
+            "name": "T",
+            "description": "",
+            "aliases": [],
+            "confidence": 1.0,
+        }
+        claim_v1 = _make_claim(text="v1", timestamp_start=1.0)
+        claim_v1["topic_ids"] = ["top_aaaaaaaa"]
+        edge_v1 = {
+            "claim_id": claim_v1["claim_id"],
+            "topic_id": "top_aaaaaaaa",
+            "confidence": 0.9,
+        }
+        store.replace_claims_for_job(
+            "ep-1", [claim_v1], topics=[topic], claim_topic_edges=[edge_v1]
+        )
+        # Re-extract with a different claim — old claim + its edges should
+        # be gone; new claim + new edges in place.
+        claim_v2 = _make_claim(text="v2", timestamp_start=1.0)
+        claim_v2["topic_ids"] = ["top_aaaaaaaa"]
+        edge_v2 = {
+            "claim_id": claim_v2["claim_id"],
+            "topic_id": "top_aaaaaaaa",
+            "confidence": 0.95,
+        }
+        store.replace_claims_for_job(
+            "ep-1", [claim_v2], topics=[topic], claim_topic_edges=[edge_v2]
+        )
+        claims = store.get_claims_for_topic("top_aaaaaaaa")
+        assert len(claims) == 1
+        assert claims[0]["text"] == "v2"
+        # No orphan edge for the deleted v1 claim
+        assert store.get_claim_topic_edges(claim_v1["claim_id"]) == []
+
+    def test_edge_for_unknown_claim_dropped(self, store: JobStore):
+        """Defensive: edges that don't point at claims in the run are dropped,
+        not written with a dangling claim_id."""
+        topic = {
+            "topic_id": "top_aaaaaaaa",
+            "name": "T",
+            "description": "",
+            "aliases": [],
+            "confidence": 1.0,
+        }
+        claim = _make_claim(text="real", timestamp_start=1.0)
+        claim["topic_ids"] = ["top_aaaaaaaa"]
+        bogus_edge = {
+            "claim_id": "not_a_real_claim_id",
+            "topic_id": "top_aaaaaaaa",
+            "confidence": 1.0,
+        }
+        good_edge = {
+            "claim_id": claim["claim_id"],
+            "topic_id": "top_aaaaaaaa",
+            "confidence": 1.0,
+        }
+        store.replace_claims_for_job(
+            "ep-1",
+            [claim],
+            topics=[topic],
+            claim_topic_edges=[bogus_edge, good_edge],
+        )
+        edges = store.get_claim_topic_edges(claim["claim_id"])
+        assert len(edges) == 1
+
+
 class TestTaskPresets:
     """get_task_presets / set_task_presets round-trip with api_key encryption."""
 

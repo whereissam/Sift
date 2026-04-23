@@ -19,7 +19,7 @@
 - **Smart Metadata** - Auto-embed ID3/MP4 tags with artwork
 
 ### Understand & Analyze
-- **Knowledge Extraction** - Structured, citable claims (fact / opinion / prediction / question / recommendation) with timestamps, speaker attribution, and confidence scores. Queryable across your library via `/api/claims`.
+- **Knowledge Extraction** - Structured, citable claims (fact / opinion / prediction / question / recommendation) with timestamps, speaker attribution, and confidence scores. Canonical entities (people, companies, tickers, projects) and topic clusters are resolved across episodes so the same concept collapses to one node in the graph. Queryable across your library via `/api/claims`, `/api/entities`, and `/api/topics`.
 - **Ask Audio (RAG)** - Chat with your downloads — ask questions, get answers with timestamps (coming soon)
 - **Semantic Search** - Search your entire library by concept, not just keywords, via vector embeddings (coming soon)
 - **Psychographic Mapping** - Emotional heatmap timeline with AI-powered reasoning: detect heated moments, explain *why* they're heated, and spot contradictions across a conversation

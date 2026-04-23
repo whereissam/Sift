@@ -516,6 +516,179 @@ async def test_extract_tolerates_missing_entities_field():
     assert result.entities == []
 
 
+class _FakeTopicAggregator:
+    """Stand-in for TopicAggregator.
+
+    `scripted` maps deduped claim_count → (topics, edges, tokens).
+    If no matching key, returns ([], [], 0) — lets tests assert that
+    below-threshold behavior lines up with the aggregator's own contract.
+    """
+
+    def __init__(self, scripted=None):
+        from app.core.knowledge_schema import ClaimTopicEdge, Topic
+
+        self._scripted = scripted or {}
+        self._Topic = Topic
+        self._Edge = ClaimTopicEdge
+        self.calls: list[int] = []
+
+    async def aggregate(self, claims):
+        self.calls.append(len(claims))
+        key = len(claims)
+        return self._scripted.get(key, ([], [], 0))
+
+
+@pytest.mark.asyncio
+async def test_extract_runs_topic_pass_when_claims_above_threshold():
+    """Happy path: extractor passes deduped claims to the aggregator and
+    surfaces topics + edges on the result."""
+    from app.core.knowledge_schema import ClaimTopicEdge, Topic
+
+    # Build a canned LLM response with 3 simple claims.
+    response = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": "c1",
+                    "timestamp_start": 1.0,
+                    "timestamp_end": 2.0,
+                    "claim_type": "fact",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "c1",
+                },
+                {
+                    "text": "c2",
+                    "timestamp_start": 3.0,
+                    "timestamp_end": 4.0,
+                    "claim_type": "fact",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "c2",
+                },
+                {
+                    "text": "c3",
+                    "timestamp_start": 5.0,
+                    "timestamp_end": 6.0,
+                    "claim_type": "fact",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "c3",
+                },
+            ]
+        }
+    )
+    # Topic aggregator returns one topic covering all three claims.
+    topic = Topic(topic_id="top_fake01", name="X", description="d")
+    # Real claim_ids are derived post-extraction; the aggregator sees them.
+    # We don't know them up-front here, so we fake out the aggregator to
+    # produce edges pointing at whatever claim_ids the extractor passed.
+
+    class _StickyFakeAgg:
+        async def aggregate(self, claims):
+            edges = [
+                ClaimTopicEdge(
+                    claim_id=c.claim_id, topic_id="top_fake01", confidence=0.8
+                )
+                for c in claims
+            ]
+            return [topic], edges, 11
+
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response),
+        canonicalizer=_FakeCanonicalizer(),
+        topic_aggregator=_StickyFakeAgg(),
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1",
+        segments=_segs((1.0, 6.0, "some transcript", None)),
+    )
+    assert result.success is True
+    assert len(result.topics) == 1
+    assert len(result.claim_topic_edges) == 3
+    # Denormalized cache populated on every claim
+    for c in result.claims:
+        assert c.topic_ids == ["top_fake01"]
+    # Aggregator-reported tokens added to total
+    assert result.tokens_used >= 11
+
+
+@pytest.mark.asyncio
+async def test_extract_skips_topic_pass_when_below_threshold():
+    """MIN_CLAIMS_FOR_AGGREGATION is 3 — with 2 claims the aggregator
+    should not be invoked and the result should have empty topics/edges."""
+    response = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": "c1",
+                    "timestamp_start": 1.0,
+                    "timestamp_end": 2.0,
+                    "claim_type": "fact",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "c1",
+                },
+                {
+                    "text": "c2",
+                    "timestamp_start": 3.0,
+                    "timestamp_end": 4.0,
+                    "claim_type": "fact",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "c2",
+                },
+            ]
+        }
+    )
+    agg = _FakeTopicAggregator()
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response),
+        canonicalizer=_FakeCanonicalizer(),
+        topic_aggregator=agg,
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1", segments=_segs((1.0, 4.0, "x", None))
+    )
+    assert result.topics == []
+    assert result.claim_topic_edges == []
+    # Extractor has its own MIN threshold before calling; aggregator shouldn't
+    # have been called at all.
+    assert agg.calls == []
+
+
+@pytest.mark.asyncio
+async def test_extract_topic_pass_failure_does_not_fail_run():
+    """Topic aggregation is additive — if the aggregator throws, claims
+    should still be returned and success stays True."""
+    response = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": f"c{i}",
+                    "timestamp_start": float(i),
+                    "timestamp_end": float(i + 1),
+                    "claim_type": "fact",
+                    "confidence": 0.9,
+                    "evidence_excerpt": f"c{i}",
+                }
+                for i in range(3)
+            ]
+        }
+    )
+
+    class _ThrowingAgg:
+        async def aggregate(self, claims):
+            raise RuntimeError("topic pass exploded")
+
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response),
+        canonicalizer=_FakeCanonicalizer(),
+        topic_aggregator=_ThrowingAgg(),
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1", segments=_segs((1.0, 4.0, "x", None))
+    )
+    assert result.success is True
+    assert len(result.claims) == 3
+    assert result.topics == []
+
+
 @pytest.mark.asyncio
 async def test_extract_without_canonicalizer_keeps_phase_a_behavior():
     """When canonicalizer is None (Phase A caller), entity_refs are silently

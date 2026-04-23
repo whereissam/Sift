@@ -729,8 +729,13 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 
 1. **Phase A — Claims-only MVP** ✅ **SHIPPED**: schema + extractor + `claims` / `embeddings` / `extraction_failures` tables + task preset registry + `POST /jobs/{id}/extract-knowledge` + `GET /jobs/{id}/knowledge` + `GET /api/claims`. New jobs only (manual trigger; backfill in Phase C). 45 new tests, all passing.
 2. **Phase B — Entities + canonicalization** ✅ **SHIPPED**: filled `embedding_store.embed()` (sentence-transformers lazy-loaded, module cache, `to_thread` batch), added `entities` + `entity_mentions` tables (dual-ID: `ent_<hash>` PK + UNIQUE slug), shipped `entity_canonicalizer.py` (normalize → cache → cosine ≥0.85 reuse → else mint with slug-collision sequence suffix), extended `LLM_RESPONSE_SCHEMA` to `{claims, entities}` with per-claim `entity_refs`, shipped `GET /api/entities*`. Entities + mentions ride in the same tx as claims. **56 new tests**, 154/154 total green.
-3. **Phase C — Topics + Predictions + backfill worker** (~2 days, **NEXT**): topics table, prediction subtype, lazy backfill priority queue, on-demand cache path.
+3. **Phase C — Topics + Predictions + backfill worker** (split into C.1 / C.2 / C.3 by change kind — classification / schema semantics / control-plane):
+   - **C.1 — Topics** ✅ **SHIPPED**: second-pass aggregation over already-extracted claims, `topics` + `claim_topics` tables (join is source of truth; `Claim.topic_ids` JSON kept as denormalized cache for fast per-claim render), `topic_canonicalizer` (reuses Phase B embedding infra, threshold 0.90, lexical-normalize layer with ticker expansion + conservative plural collapse), `GET /api/topics*` endpoints. Gracefully degrades when `summarize` provider missing, `claim_count < 3`, or aggregator throws — topic pass never blocks claims. **54 new tests**, 208/208 suite green.
+   - **C.2 — Predictions**: dedicated `predictions` table, FK `claim_id UNIQUE`, prediction lifecycle columns (`target_horizon`, `conditions`, `falsifiable_by`, `resolution`, `resolved_at`), prediction-specific API + prompts. Separate table (not nullable columns on claims) because this is the start of a prediction lifecycle, not a flag — future expansion (multiple resolution events, resolution evidence, confidence recalibration, tracking dashboards) lands cleanly on a dedicated row.
+   - **C.3 — Backfill worker + cost guardrails**: both-trigger backfill (background worker + route-triggered on-demand), idempotent enqueue with status machine `pending | running | ready | failed` + `knowledge_version` + `locked_at`/`worker_id`, global default daily budget + per-subscription override + priority tier + model-downgrade policy.
 4. **Phase D — Pipeline auto-run + tests + docs** (~1 day): hook into `workflow.py`, write `docs/knowledge-schema.md`, raise coverage to 80%+.
+
+**Why split Phase C into three passes**: topics = classification layer, predictions = schema semantics (changes claim wire format), backfill = operational control plane. Bundling them produces a release where quality drops can't be attributed to the right surface (prompts vs schema vs orchestration). Each pass has its own tx/schema/test churn and should land on its own.
 
 ### Phase A — what shipped
 
@@ -792,6 +797,67 @@ Defaults from the original proposal, tightened after external review (weak-signa
 - `tests/test_entity_api.py` — list (by type/since), get by `entity_id`, get by slug, mentions listing
 - Extend `tests/test_knowledge_extractor.py` — `{claims, entities}` LLM response → `entity_ids` resolved on claims, mentions written with char offsets when findable; entity-only (no claim ref) path persists; weak-signal tolerance (claim references a name the LLM didn't list as an entity — skip gracefully)
 - Extend `tests/test_knowledge_store.py` — entity + mention CRUD; dual-ID lookup (by `entity_id` and by slug); transactional replace including entities + mentions rolls back together
+
+### Phase C.1 — locked decisions (Topics)
+
+1. **Second-pass aggregation, not inline with claims.** Chunk pass stays `{claims, entities}`; a separate per-episode LLM call takes the validated claims as input and emits `{topics}`. *Why:* claims are the distilled semantic units, topics are an abstraction over them. Single-purpose prompts are easier to debug and retry; one episode-level call instead of N chunk-level kitchen-sink prompts.
+2. **Hash-only topic IDs (`top_<8-char hash>`), no slug.** Entities earned their slug because they're frequently deep-linked in UI/MCP exports. Topics are fuzzier and the kebab label (`topic:bitcoin-price-action`) reads worse than on entities.
+3. **Trigger inline when `claim_count >= 3`.** Below that, aggregation has too little signal to justify an extra LLM call. Above it, cost is bounded to one call per episode.
+4. **LLM preset: `summarize` (cheap-medium).** Already configured in `llm_presets.py`. `synthesize` reserved for P20 cross-episode.
+5. **Canonicalization threshold 0.90** (vs. 0.85 for entities). Topics drift more on surface form ("Bitcoin price" vs "BTC price action"); over-merging corrupts the graph in ways that are painful to unwind. Erring toward under-merge is safer to tune.
+6. **Lexical normalization layer up front**, before embedding:
+   - Ticker → name expansion (`btc` → `bitcoin`, `eth` → `ethereum`, `sol` → `solana`, small curated map — extend as the tail grows).
+   - Whitespace/case collapse (shared with `normalize_for_embedding`).
+   - Conservative last-word plural collapse (strip trailing `-s` only; skip `-ss`/`-es`/`-ies` and tokens under 5 chars).
+   - Rationale: topic drift is more often a *naming* problem than a semantic one — cheap normalization catches the common tail without paying a cosine round.
+7. **Embedding source: `f"{name}: {description}"`.** Topic names alone are short and ambiguous; description carries the LLM's abstraction. Both stored separately so the recipe can be re-run later without losing source text.
+8. **Claim↔topic edges: join table is the source of truth; `claims.topic_ids` JSON is a denormalized cache.** `claim_topics(claim_id, topic_id, confidence)` powers reverse queries (`GET /api/topics/{id}/claims`); JSON column stays populated for cheap per-claim render. Always write both in the same tx; readers treat the join as authoritative.
+
+### Phase C.1 — files to ship
+
+**New:**
+- `app/core/topic_canonicalizer.py` — `canonicalize(name, description) → topic_id`; normalize → embed `"{name}: {description}"` → query_topk against existing topics → ≥0.90 cosine reuse (merge alias, update description if confidence higher) → else mint `top_<hash>`.
+- `app/core/topic_aggregator.py` — `aggregate(claims) → (topics, edges)`; numbered-claim prompt, LLM call via `summarize` preset, parses `{topics: [{name, description, confidence, claim_indices: [int]}]}`, resolves indices back to `claim_id`s.
+- `app/core/topic_normalization.py` — `TICKER_MAP` + `normalize_topic_for_match(text)`; pure module, no DB.
+- `app/api/topic_routes.py` — `GET /api/topics`, `GET /api/topics/{id}`, `GET /api/topics/{id}/claims`.
+
+**Extend:**
+- `app/core/knowledge_schema.py` — add `Topic`, `TopicDraft`, `ClaimTopicEdge`, `TOPIC_AGGREGATION_SCHEMA` (separate from `LLM_RESPONSE_SCHEMA`), `compute_topic_id`.
+- `app/core/job_store.py` — `topics` + `claim_topics` tables; `upsert_topic`, `get_topic_by_id`, `list_topics`, `get_claim_topic_edges`, `get_claims_for_topic`; extend `replace_claims_for_job` to accept `topics` + `claim_topic_edges` and replace both inside the existing tx.
+- `app/core/knowledge_extractor.py` — after claims validate, if `len(claims) >= 3` and a `summarize` provider is configured, run `TopicAggregator.aggregate(claims)` → `(topics, edges)`; attach to `ExtractionRunResult`; populate `Claim.topic_ids` from edges as denormalized cache.
+- `app/api/knowledge_routes.py` — pass `topics` + `claim_topic_edges` into `replace_claims_for_job`.
+- `app/api/__init__.py` — register `topic_router`.
+
+**Tests:**
+- `tests/test_topic_canonicalizer.py` — normalization (ticker expand, plural collapse, whitespace); cosine reuse ≥0.90; below-threshold mints new; description merge on reuse.
+- `tests/test_topic_aggregator.py` — numbered-claim prompt; LLM response → `(topics, edges)` mapping; claim-index out-of-range handled; empty/malformed LLM output returns empty result.
+- `tests/test_topic_api.py` — list/get/claims endpoints (TestClient pattern from `test_entity_api.py`).
+- Extend extractor + store + schema tests for topic path.
+
+### Phase C.1 — what shipped
+
+- `app/core/topic_normalization.py` — `TICKER_MAP` (btc/eth/sol/… → names, llm/rag/mcp → expansions), `normalize_topic_for_match` (compose: `normalize_for_embedding` → ticker expand → conservative last-word plural collapse that preserves `-ss`/`-us`/`-is`/`-os`/`-ies` endings)
+- `app/core/knowledge_schema.py` — `Topic`, `TopicDraft`, `ClaimTopicEdge`, `compute_topic_id` (stable `top_<8-char hash>` over normalized name), `TOPIC_AGGREGATION_SCHEMA` (separate LLM schema for the second-pass call — one `topics` array, each with `name / description / confidence / claim_indices`); `ExtractionRunResult` carries `topics` + `claim_topic_edges`
+- `app/core/topic_canonicalizer.py` — embed `f"{normalized_name}: {description}"`, cosine ≥ **0.90** reuse with alias merge + description replacement on higher-confidence hit, else mint new `top_<hash>` and write the embedding under `object_type="topic"` in the generic `embeddings` table (so Phase B's `query_topk` just works)
+- `app/core/topic_aggregator.py` — second-pass service; `aggregate(claims) → (topics, edges, tokens)`; numbered claim prompt, `summarize` task preset, `TOPIC_AGGREGATION_SCHEMA` JSON-mode response; graceful degradation on every failure axis (no provider / no canonicalizer / below `MIN_CLAIMS_FOR_AGGREGATION=3` / malformed JSON / missing `topics` field / out-of-range `claim_indices`); truncates to top-confidence `MAX_CLAIMS_PER_CALL=120` when oversized
+- `app/core/knowledge_extractor.py` — optional `topic_aggregator` ctor arg; after claim dedup, if `len(final_claims) >= MIN_CLAIMS_FOR_AGGREGATION` and aggregator is wired, runs the topic pass inside a broad try/except (topic failure never fails the run) and rewrites each claim's `topic_ids` from the edges as the denormalized cache
+- `app/core/job_store.py` — new `topics` (PK `topic_id`) + `claim_topics` (composite PK `(claim_id, topic_id)` + confidence + FK on both sides) tables; `upsert_topic` (merges aliases), `get_topic_by_id`, `list_topics`, `find_topic_ids`, `add_claim_topic_edge`, `get_claim_topic_edges`, `get_claims_for_topic` (joins through `claim_topics`, not the JSON cache); `replace_claims_for_job(...)` extended with `topics` + `claim_topic_edges` args — explicit `DELETE FROM claim_topics WHERE claim_id IN (...)` before the claim delete closes the orphan-edges hole without flipping `PRAGMA foreign_keys` globally; bogus edges (claim_id not in this run) are logged and dropped rather than crashing the tx
+- `app/api/topic_routes.py` — `GET /api/topics` (since/limit/offset), `GET /api/topics/{topic_id}`, `GET /api/topics/{topic_id}/claims` (reads from the join so reverse queries always see source of truth)
+- `app/api/knowledge_routes.py` — `POST /jobs/{id}/extract-knowledge` passes `topics` + `claim_topic_edges` into `replace_claims_for_job` so claims / entities / mentions / topics / edges land in one transaction
+- `app/api/__init__.py` — topic router wired
+- `tests/` — `test_topic_canonicalizer.py` (17), `test_topic_aggregator.py` (9), `test_topic_api.py` (7), +15 topic tests in `test_knowledge_schema.py`, +11 topic tests in `test_knowledge_store.py`, +3 topic-pass tests in `test_knowledge_extractor.py` — **54 new tests**, 208/208 suite green
+
+### Phase C.2 — locked decisions (Predictions, future)
+
+1. **Dedicated `predictions` table, FK `claim_id UNIQUE`.** Physically separate from `claims`. Prediction is semantically a `claim_type`, but the lifecycle columns (`target_horizon`, `conditions`, `falsifiable_by`, `resolution`, `resolved_at`) aren't "just nullable fields" — they're the start of a lifecycle. Separate table keeps claim rows clean and makes future expansion (resolution events, resolution evidence, confidence recalibration, tracking dashboards) land on a dedicated row instead of adding more nullable columns.
+2. Prediction-specific extraction prompts + validation; API endpoints `GET /api/predictions?resolution=pending`, `POST /api/predictions/{id}/resolve`.
+
+### Phase C.3 — locked decisions (Backfill + cost guardrails, future)
+
+1. **Both-trigger backfill** (background scheduler + route-triggered on-demand). Background-only feels stale; on-demand-only misses cold inventory. Both is the right default — dedup is the interesting engineering problem.
+2. **Status machine: `pending | running | ready | failed`** + `knowledge_version` + `locked_at` / `worker_id` for claim-lock. Idempotent enqueue: calling enqueue twice on the same pending job is a no-op.
+3. **Route behavior on `/jobs/{id}/knowledge`:** `ready` → return cached. `running` → return in-progress status (client polls). `pending` → acquire lock, run inline if cheap enough, otherwise enqueue and return `202 Accepted`.
+4. **Budgets: global default + per-subscription override.** Global daily extraction budget in settings; optional per-feed override + priority tier; downgrade to cheaper `extract` model when over budget. Top-priority feeds stay on the better model longer.
 
 ---
 

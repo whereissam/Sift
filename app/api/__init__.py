@@ -25,6 +25,7 @@ from .realtime_routes import router as realtime_router
 from .model_routes import router as model_router
 from .knowledge_routes import router as knowledge_router
 from .entity_routes import router as entity_router
+from .topic_routes import router as topic_router
 
 # Create combined router
 router = APIRouter()
@@ -53,5 +54,6 @@ router.include_router(realtime_router)  # /transcribe/live WebSocket
 router.include_router(model_router)  # /models/* routes (desktop model management)
 router.include_router(knowledge_router)  # P18: /jobs/{id}/knowledge, /jobs/{id}/extract-knowledge, /claims
 router.include_router(entity_router)  # P18 Phase B: /entities, /entities/{id_or_slug}[/mentions]
+router.include_router(topic_router)  # P18 Phase C.1: /topics, /topics/{id}[/claims]
 
 __all__ = ["router"]

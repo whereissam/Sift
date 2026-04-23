@@ -202,14 +202,24 @@ async def extract_knowledge(request: Request, job_id: str):
     # Phase B: entities and mentions ride in the same transaction so a
     # partial write can never leave the episode with orphan mentions
     # pointing at vanished claims (or vice versa).
+    #
+    # Phase C.1: topics and claim_topic edges also ride in the same tx.
+    # The join table (`claim_topics`) is the source of truth for claim↔
+    # topic links; `claims.topic_ids` JSON is a denormalized cache that
+    # the extractor already populated to match the edges — the store
+    # writes both from the same dict, so they can't drift.
     claim_rows = [c.model_dump(mode="json") for c in result.claims]
     entity_rows = [e.model_dump(mode="json") for e in result.entities]
     mention_rows = [m.model_dump(mode="json") for m in result.mentions]
+    topic_rows = [t.model_dump(mode="json") for t in result.topics]
+    edge_rows = [edge.model_dump(mode="json") for edge in result.claim_topic_edges]
     job_store.replace_claims_for_job(
         job_id,
         claim_rows,
         entities=entity_rows,
         mentions=mention_rows,
+        topics=topic_rows,
+        claim_topic_edges=edge_rows,
     )
     job_store.set_knowledge_status(job_id, "complete")
 
