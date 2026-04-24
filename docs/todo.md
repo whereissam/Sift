@@ -813,26 +813,26 @@ Defaults from the original proposal, tightened after external review (weak-signa
 7. **Embedding source: `f"{name}: {description}"`.** Topic names alone are short and ambiguous; description carries the LLM's abstraction. Both stored separately so the recipe can be re-run later without losing source text.
 8. **Claim↔topic edges: join table is the source of truth; `claims.topic_ids` JSON is a denormalized cache.** `claim_topics(claim_id, topic_id, confidence)` powers reverse queries (`GET /api/topics/{id}/claims`); JSON column stays populated for cheap per-claim render. Always write both in the same tx; readers treat the join as authoritative.
 
-### Phase C.1 — files to ship
+### Phase C.1 — files to ship ✅ (all shipped in `7d3ce0f`)
 
 **New:**
-- `app/core/topic_canonicalizer.py` — `canonicalize(name, description) → topic_id`; normalize → embed `"{name}: {description}"` → query_topk against existing topics → ≥0.90 cosine reuse (merge alias, update description if confidence higher) → else mint `top_<hash>`.
-- `app/core/topic_aggregator.py` — `aggregate(claims) → (topics, edges)`; numbered-claim prompt, LLM call via `summarize` preset, parses `{topics: [{name, description, confidence, claim_indices: [int]}]}`, resolves indices back to `claim_id`s.
-- `app/core/topic_normalization.py` — `TICKER_MAP` + `normalize_topic_for_match(text)`; pure module, no DB.
-- `app/api/topic_routes.py` — `GET /api/topics`, `GET /api/topics/{id}`, `GET /api/topics/{id}/claims`.
+- [x] `app/core/topic_canonicalizer.py` — `canonicalize(name, description) → topic_id`; normalize → embed `"{name}: {description}"` → query_topk against existing topics → ≥0.90 cosine reuse (merge alias, update description if confidence higher) → else mint `top_<hash>`.
+- [x] `app/core/topic_aggregator.py` — `aggregate(claims) → (topics, edges)`; numbered-claim prompt, LLM call via `summarize` preset, parses `{topics: [{name, description, confidence, claim_indices: [int]}]}`, resolves indices back to `claim_id`s.
+- [x] `app/core/topic_normalization.py` — `TICKER_MAP` + `normalize_topic_for_match(text)`; pure module, no DB.
+- [x] `app/api/topic_routes.py` — `GET /api/topics`, `GET /api/topics/{id}`, `GET /api/topics/{id}/claims`.
 
 **Extend:**
-- `app/core/knowledge_schema.py` — add `Topic`, `TopicDraft`, `ClaimTopicEdge`, `TOPIC_AGGREGATION_SCHEMA` (separate from `LLM_RESPONSE_SCHEMA`), `compute_topic_id`.
-- `app/core/job_store.py` — `topics` + `claim_topics` tables; `upsert_topic`, `get_topic_by_id`, `list_topics`, `get_claim_topic_edges`, `get_claims_for_topic`; extend `replace_claims_for_job` to accept `topics` + `claim_topic_edges` and replace both inside the existing tx.
-- `app/core/knowledge_extractor.py` — after claims validate, if `len(claims) >= 3` and a `summarize` provider is configured, run `TopicAggregator.aggregate(claims)` → `(topics, edges)`; attach to `ExtractionRunResult`; populate `Claim.topic_ids` from edges as denormalized cache.
-- `app/api/knowledge_routes.py` — pass `topics` + `claim_topic_edges` into `replace_claims_for_job`.
-- `app/api/__init__.py` — register `topic_router`.
+- [x] `app/core/knowledge_schema.py` — add `Topic`, `TopicDraft`, `ClaimTopicEdge`, `TOPIC_AGGREGATION_SCHEMA` (separate from `LLM_RESPONSE_SCHEMA`), `compute_topic_id`.
+- [x] `app/core/job_store.py` — `topics` + `claim_topics` tables; `upsert_topic`, `get_topic_by_id`, `list_topics`, `get_claim_topic_edges`, `get_claims_for_topic`; extend `replace_claims_for_job` to accept `topics` + `claim_topic_edges` and replace both inside the existing tx.
+- [x] `app/core/knowledge_extractor.py` — after claims validate, if `len(claims) >= 3` and a `summarize` provider is configured, run `TopicAggregator.aggregate(claims)` → `(topics, edges)`; attach to `ExtractionRunResult`; populate `Claim.topic_ids` from edges as denormalized cache.
+- [x] `app/api/knowledge_routes.py` — pass `topics` + `claim_topic_edges` into `replace_claims_for_job`.
+- [x] `app/api/__init__.py` — register `topic_router`.
 
 **Tests:**
-- `tests/test_topic_canonicalizer.py` — normalization (ticker expand, plural collapse, whitespace); cosine reuse ≥0.90; below-threshold mints new; description merge on reuse.
-- `tests/test_topic_aggregator.py` — numbered-claim prompt; LLM response → `(topics, edges)` mapping; claim-index out-of-range handled; empty/malformed LLM output returns empty result.
-- `tests/test_topic_api.py` — list/get/claims endpoints (TestClient pattern from `test_entity_api.py`).
-- Extend extractor + store + schema tests for topic path.
+- [x] `tests/test_topic_canonicalizer.py` — normalization (ticker expand, plural collapse, whitespace); cosine reuse ≥0.90; below-threshold mints new; description merge on reuse.
+- [x] `tests/test_topic_aggregator.py` — numbered-claim prompt; LLM response → `(topics, edges)` mapping; claim-index out-of-range handled; empty/malformed LLM output returns empty result.
+- [x] `tests/test_topic_api.py` — list/get/claims endpoints (TestClient pattern from `test_entity_api.py`).
+- [x] Extend extractor + store + schema tests for topic path.
 
 ### Phase C.1 — what shipped
 
@@ -850,17 +850,78 @@ Defaults from the original proposal, tightened after external review (weak-signa
 
 Commit: `7d3ce0f feat(knowledge): P18 Phase C.1 — topics aggregation layer`. Includes post-review polish (docstring accuracy for the `claim_topics` upsert SQL, graceful-degradation branches enumerated on `TopicAggregator.aggregate`).
 
-### Phase C.2 — locked decisions (Predictions, future)
+### Phase C.2 — locked decisions (Predictions)
 
 1. **Dedicated `predictions` table, FK `claim_id UNIQUE`.** Physically separate from `claims`. Prediction is semantically a `claim_type`, but the lifecycle columns (`target_horizon`, `conditions`, `falsifiable_by`, `resolution`, `resolved_at`) aren't "just nullable fields" — they're the start of a lifecycle. Separate table keeps claim rows clean and makes future expansion (resolution events, resolution evidence, confidence recalibration, tracking dashboards) land on a dedicated row instead of adding more nullable columns.
 2. Prediction-specific extraction prompts + validation; API endpoints `GET /api/predictions?resolution=pending`, `POST /api/predictions/{id}/resolve`.
 
-### Phase C.3 — locked decisions (Backfill + cost guardrails, future)
+### Phase C.2 — tasks (uncheck → check as they ship)
+
+**Schema:**
+- [ ] `app/core/knowledge_schema.py` — `Prediction` + `PredictionDraft` Pydantic models; `Resolution` enum (`pending` | `true` | `false` | `unresolvable`); `TargetHorizon` union (absolute date / relative interval / event-conditional); extend `ExtractionRunResult` with `predictions: list[Prediction]`.
+- [ ] `app/core/knowledge_schema.py` — new `PREDICTION_EXTRACTION_SCHEMA` JSON-mode schema for the dedicated prediction-enrichment pass (or extend `LLM_RESPONSE_SCHEMA` with optional prediction fields on each claim — decide in planning).
+
+**Storage:**
+- [ ] `app/core/job_store.py` — `predictions` table (`claim_id TEXT PK + FK UNIQUE`, `target_horizon TEXT`, `conditions TEXT`, `falsifiable_by TEXT`, `resolution TEXT DEFAULT 'pending'`, `resolution_note TEXT`, `resolved_at TEXT`, `resolved_by TEXT`, `created_at`, `updated_at`). Cascade delete via FK so re-extraction cleans predictions with their claims.
+- [ ] `app/core/job_store.py` — `upsert_prediction`, `get_prediction_by_claim_id`, `list_predictions` (filter by `resolution` + `since`), `resolve_prediction` (claim-lock aware). Extend `replace_claims_for_job` with optional `predictions=` arg, written in the same tx as claims.
+
+**Extraction:**
+- [ ] `app/core/prediction_extractor.py` **(new)** — second-pass service that reads claims of `claim_type="prediction"` and enriches them with lifecycle fields. Reuse `extract` preset or upgrade to `synthesize` if quality drops. Graceful degradation on missing provider / malformed output (same pattern as `TopicAggregator.aggregate`).
+- [ ] `app/core/knowledge_extractor.py` — optional `prediction_extractor` ctor arg; after claim dedup, enrich prediction-type claims; surface as `result.predictions`.
+
+**API:**
+- [ ] `app/api/prediction_routes.py` **(new)** — `GET /api/predictions?resolution=&since=&limit=&offset=`, `GET /api/predictions/{claim_id}`, `POST /api/predictions/{claim_id}/resolve` (body: `{resolution, note}`), `DELETE /api/predictions/{claim_id}/resolve` (revert to pending).
+- [ ] `app/api/knowledge_routes.py` — pass `predictions=` into `replace_claims_for_job`.
+- [ ] `app/api/__init__.py` — register `prediction_router`.
+
+**Tests:**
+- [ ] `tests/test_prediction_extractor.py` — extraction happy path; graceful-degradation branches; only prediction-type claims enriched.
+- [ ] `tests/test_prediction_api.py` — list / get / resolve / revert; 404s; filter by resolution.
+- [ ] Extend `tests/test_knowledge_store.py` — prediction CRUD; resolve/revert flow; transactional replace including predictions.
+- [ ] Extend `tests/test_knowledge_schema.py` — `Prediction` model, `Resolution` enum, `TargetHorizon` shapes.
+
+**Docs:**
+- [ ] `docs/todo.md` — add "Phase C.2 — what shipped" summary (mirror the C.1 block).
+- [ ] `README.md` — surface `/api/predictions` under the Knowledge Extraction bullet.
+
+---
+
+### Phase C.3 — locked decisions (Backfill + cost guardrails)
 
 1. **Both-trigger backfill** (background scheduler + route-triggered on-demand). Background-only feels stale; on-demand-only misses cold inventory. Both is the right default — dedup is the interesting engineering problem.
 2. **Status machine: `pending | running | ready | failed`** + `knowledge_version` + `locked_at` / `worker_id` for claim-lock. Idempotent enqueue: calling enqueue twice on the same pending job is a no-op.
 3. **Route behavior on `/jobs/{id}/knowledge`:** `ready` → return cached. `running` → return in-progress status (client polls). `pending` → acquire lock, run inline if cheap enough, otherwise enqueue and return `202 Accepted`.
 4. **Budgets: global default + per-subscription override.** Global daily extraction budget in settings; optional per-feed override + priority tier; downgrade to cheaper `extract` model when over budget. Top-priority feeds stay on the better model longer.
+
+### Phase C.3 — tasks
+
+**Storage + state machine:**
+- [ ] `app/core/job_store.py` — migration: add `knowledge_version INTEGER DEFAULT 0`, `knowledge_locked_at TEXT`, `knowledge_worker_id TEXT` to `jobs` table; tighten `knowledge_status` values to the locked enum.
+- [ ] `app/core/job_store.py` — `acquire_knowledge_lock(job_id, worker_id, ttl_seconds)` (atomic UPDATE with status check), `release_knowledge_lock`, `list_pending_knowledge_jobs(priority_bucket)`.
+
+**Background worker:**
+- [ ] `app/workers/knowledge_backfill.py` **(new)** — priority queue (recent → user-opened → subscribed → rest); per-feed daily budget check; model-downgrade on budget exceeded; stale-lock reaper for crashed workers.
+- [ ] Register worker in startup path with cron schedule / APScheduler wiring.
+
+**Route behavior:**
+- [ ] `app/api/knowledge_routes.py` — `GET /jobs/{id}/knowledge` returns 202 + `run_state` when `pending`/`running`; acquires lock + runs inline when cheap-enough threshold allows; returns cached rows otherwise.
+
+**Budget tiers:**
+- [ ] `app/core/config.py` — add `knowledge_daily_budget_usd` + `knowledge_model_downgrade_threshold_usd` global settings.
+- [ ] Subscription model — optional `knowledge_budget_override_usd` + `knowledge_priority_tier` per subscription.
+- [ ] `app/core/llm_presets.py` — downgrade helper: given a task + remaining budget, return a cheaper model when over threshold.
+
+**API:**
+- [ ] `POST /api/jobs/{id}/knowledge/enqueue` — idempotent enqueue for a pending job.
+- [ ] `GET /api/knowledge/backfill-status` — stats endpoint (pending/running/ready counts, today's spend, downgrades applied).
+
+**Tests:**
+- [ ] `tests/test_knowledge_backfill.py` — priority ordering, lock acquire/release, budget cap, model downgrade, stale-lock reaper.
+- [ ] Extend `tests/test_knowledge_api.py` — 202 path, inline run path, cached read path, state-transition correctness.
+
+**Docs:**
+- [ ] `docs/todo.md` — add "Phase C.3 — what shipped" summary.
+- [ ] `README.md` — note on-demand + background backfill behavior.
 
 ---
 
