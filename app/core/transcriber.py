@@ -5,9 +5,12 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import httpx
+
+if TYPE_CHECKING:
+    import numpy as np
 
 from .checkpoint import CheckpointManager, TranscriptionCheckpoint
 
@@ -510,12 +513,9 @@ class AudioTranscriber:
     @staticmethod
     def is_available() -> bool:
         """Check if faster-whisper is available."""
-        try:
-            from faster_whisper import WhisperModel
+        from importlib.util import find_spec
 
-            return True
-        except ImportError:
-            return False
+        return find_spec("faster_whisper") is not None
 
     @staticmethod
     def format_as_dialogue(segments: list[TranscriptionSegment]) -> str:

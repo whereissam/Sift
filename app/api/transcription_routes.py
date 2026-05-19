@@ -10,23 +10,20 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFi
 import aiofiles
 
 from .auth import verify_api_key
+from .download_routes import jobs as download_jobs
 from .schemas import (
-    DownloadJob,
     JobStatus,
     TranscribeRequest,
     TranscriptionJob,
     TranscriptionSegment as TranscriptionSegmentSchema,
     TranscriptionOutputFormat,
 )
+from .transcription_store import transcription_jobs
 from ..core.downloader import DownloaderFactory
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
-
-# Import shared stores
-from .transcription_store import transcription_jobs
-from .download_routes import jobs as download_jobs
 
 
 async def _process_transcription(job_id: str, request: TranscribeRequest, audio_path: Path):

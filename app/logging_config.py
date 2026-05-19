@@ -2,7 +2,6 @@
 
 import logging
 import sys
-import uuid
 from contextvars import ContextVar
 
 import structlog

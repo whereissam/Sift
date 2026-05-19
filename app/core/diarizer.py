@@ -221,11 +221,9 @@ class SpeakerDiarizer:
     @staticmethod
     def is_available() -> bool:
         """Check if pyannote is available."""
-        try:
-            from pyannote.audio import Pipeline
-            return True
-        except ImportError:
-            return False
+        from importlib.util import find_spec
+
+        return find_spec("pyannote.audio") is not None
 
     @staticmethod
     def format_as_dialogue(segments: list[DiarizedSegment]) -> str:

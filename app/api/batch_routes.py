@@ -13,7 +13,6 @@ from .schemas import (
     BatchStatus,
 )
 from ..core.batch_manager import get_batch_manager
-from ..core.queue_manager import get_queue_manager
 
 logger = logging.getLogger(__name__)
 

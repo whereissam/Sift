@@ -1,8 +1,7 @@
 """Tests for multi-engine transcription architecture."""
 
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
-from pathlib import Path
+from unittest.mock import patch
 
 from app.core.transcription_engine import (
     TranscriptionEngine,
@@ -15,7 +14,6 @@ from app.core.transcription_engine import (
     get_best_engine,
     EngineInfo,
 )
-from app.core.transcriber import TranscriptionResult, TranscriptionSegment
 from app.api.schemas import TranscriptionEngineType
 
 

@@ -8,7 +8,6 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from .auth import verify_api_key
-from .schemas import JobStatus
 
 logger = logging.getLogger(__name__)
 

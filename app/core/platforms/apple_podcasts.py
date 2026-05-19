@@ -1,11 +1,9 @@
 """Apple Podcasts downloader implementation."""
 
-import asyncio
 import logging
 import re
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
 
 import httpx
 import feedparser

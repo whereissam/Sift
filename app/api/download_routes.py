@@ -19,7 +19,6 @@ from .schemas import (
     Platform,
 )
 from ..core.downloader import DownloaderFactory
-from ..core.converter import AudioConverter
 from ..core.base import Platform as CorePlatform
 from ..core.exceptions import ContentNotFoundError, UnsupportedPlatformError
 
@@ -247,7 +246,6 @@ async def update_download_priority(job_id: str, priority: int):
     Priority levels: 1 (lowest) to 10 (highest).
     Only affects jobs that are still in the queue.
     """
-    from .schemas import PriorityUpdate
     from ..core.queue_manager import get_queue_manager
 
     queue_manager = get_queue_manager()

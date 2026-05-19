@@ -108,15 +108,6 @@ class SpotifyDownloader(PlatformDownloader):
 
             self.download_dir.mkdir(parents=True, exist_ok=True)
 
-            # Map quality to bitrate
-            bitrate_map = {
-                "low": "128k",
-                "medium": "192k",
-                "high": "256k",
-                "highest": "320k",
-            }
-            bitrate = bitrate_map.get(quality, "256k")
-
             # Build spotdl command
             # For mp4, download as mp3 first then convert
             download_format = "mp3" if output_format == "mp4" else output_format

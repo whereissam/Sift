@@ -183,9 +183,6 @@ def SpaceDownloader(*args, **kwargs):
     return XSpacesDownloader(*args, **kwargs)
 
 
-# Re-export for backward compatibility
-from .base import DownloadResult, AudioMetadata
-
 __all__ = [
     "DownloaderFactory",
     "download_audio",

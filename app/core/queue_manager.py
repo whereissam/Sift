@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Callable, Optional, Awaitable
 
 from ..config import get_settings
-from .job_store import get_job_store, JobStatus
+from .job_store import get_job_store
 
 logger = logging.getLogger(__name__)
 

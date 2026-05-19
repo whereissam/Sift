@@ -1,7 +1,6 @@
 """Real-time audio transcription with streaming support and LLM enhancement."""
 
 import asyncio
-import base64
 import logging
 import subprocess
 import tempfile

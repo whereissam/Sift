@@ -325,7 +325,6 @@ Produce only the {target_name} translation, without any additional explanations 
             if end_pos < len(text):
                 # Look for sentence endings within the last 200 chars of the chunk
                 search_start = max(end_pos - 200, current_pos)
-                chunk_text = text[current_pos:end_pos]
                 search_text = text[search_start:end_pos]
 
                 # Try to find sentence boundaries (., !, ?, 。, ！, ？)

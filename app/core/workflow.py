@@ -1,6 +1,5 @@
 """Two-phase workflow for download, convert, and transcribe."""
 
-import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path

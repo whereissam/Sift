@@ -15,7 +15,6 @@ from .schemas import (
 from ..core.translator import (
     TranslateGemmaTranslator,
     AITranslator,
-    get_supported_languages,
     normalize_language_code,
     get_language_name,
     SUPPORTED_LANGUAGES,
@@ -193,7 +192,7 @@ async def translate_text(request: TranslateRequest):
             if not translator.is_available():
                 raise HTTPException(
                     status_code=503,
-                    detail=f"TranslateGemma is not available. Please install it with: ollama pull translategemma",
+                    detail="TranslateGemma is not available. Please install it with: ollama pull translategemma",
                 )
 
             result = await translator.translate(

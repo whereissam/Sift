@@ -28,7 +28,7 @@ async def download_command(args):
     )
 
     if result.success:
-        print(f"\nDownload complete!")
+        print("\nDownload complete!")
         print(f"File: {result.file_path}")
         if result.file_size_mb:
             print(f"Size: {result.file_size_mb:.2f} MB")
@@ -65,7 +65,7 @@ async def convert_command(args):
         )
 
         output_size = output_path.stat().st_size / (1024 * 1024)
-        print(f"\nConversion complete!")
+        print("\nConversion complete!")
         print(f"Output: {output_path}")
         print(f"Size: {output_size:.2f} MB")
 

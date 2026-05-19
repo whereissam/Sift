@@ -9,7 +9,6 @@ sentence-transformers would return.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Sequence
 
 import pytest
 
@@ -181,7 +180,6 @@ class TestSlugCollision:
         # situation where the second mint can't match the first by cosine
         # (they're "different Apples"), so the canonicalizer must produce
         # apple-2 rather than merging.
-        import numpy as np
 
         db, estore = isolated_env
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import AsyncIterator, Callable, Optional
+from typing import Callable, Optional
 
 
 class ProviderType(str, Enum):

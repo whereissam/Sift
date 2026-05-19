@@ -14,6 +14,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+from .transcriber import TranscriptionResult, TranscriptionSegment  # noqa: F401  (re-exported for backward compat)
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,10 +67,6 @@ class BaseTranscriptionEngine(ABC):
         ...
 
 
-# Re-export shared types from transcriber for backward compat
-from .transcriber import TranscriptionResult, TranscriptionSegment
-
-
 class WhisperEngine(BaseTranscriptionEngine):
     """Wrapper around existing faster-whisper transcriber."""
 
@@ -99,11 +97,9 @@ class WhisperEngine(BaseTranscriptionEngine):
         )
 
     def is_available(self) -> bool:
-        try:
-            from faster_whisper import WhisperModel
-            return True
-        except ImportError:
-            return False
+        from importlib.util import find_spec
+
+        return find_spec("faster_whisper") is not None
 
     def get_info(self) -> EngineInfo:
         return EngineInfo(
@@ -264,11 +260,9 @@ class SenseVoiceEngine(BaseTranscriptionEngine):
             )
 
     def is_available(self) -> bool:
-        try:
-            import funasr
-            return True
-        except ImportError:
-            return False
+        from importlib.util import find_spec
+
+        return find_spec("funasr") is not None
 
     def get_info(self) -> EngineInfo:
         return EngineInfo(

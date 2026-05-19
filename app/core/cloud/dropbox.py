@@ -185,9 +185,9 @@ class DropboxProvider(OAuthProvider):
                 error=f"Local file not found: {local_path}",
             )
 
-        try:
-            import dropbox
-        except ImportError:
+        from importlib.util import find_spec
+
+        if find_spec("dropbox") is None:
             return CloudUploadResult(
                 success=False,
                 provider_type=self.provider_type,

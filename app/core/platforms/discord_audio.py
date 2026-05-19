@@ -1,6 +1,5 @@
 """Discord audio downloader implementation."""
 
-import asyncio
 import hashlib
 import logging
 import re
@@ -196,7 +195,7 @@ class DiscordAudioDownloader(PlatformDownloader):
                 content_id=content_id,
                 title=Path(original_filename).stem,
                 creator_name="Discord",
-                description=f"Downloaded from Discord CDN",
+                description="Downloaded from Discord CDN",
             )
 
             logger.info(f"Download complete: {file_path}")
@@ -236,30 +235,12 @@ class DiscordAudioDownloader(PlatformDownloader):
             content_id = self.extract_content_id(url)
             filename = self._extract_filename_from_url(url)
 
-            # Try to get file size via HEAD request
-            file_size = None
-            try:
-                async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(30.0),
-                    follow_redirects=True,
-                ) as client:
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                    }
-                    response = await client.head(url, headers=headers)
-                    if response.status_code == 200:
-                        content_length = response.headers.get("content-length")
-                        if content_length:
-                            file_size = int(content_length)
-            except Exception:
-                pass
-
             return AudioMetadata(
                 platform=Platform.DISCORD,
                 content_id=content_id,
                 title=Path(filename).stem,
                 creator_name="Discord",
-                description=f"Audio file from Discord",
+                description="Audio file from Discord",
             )
 
         except Exception as e:

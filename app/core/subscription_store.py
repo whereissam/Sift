@@ -1,6 +1,5 @@
 """Persistent subscription storage using SQLite."""
 
-import json
 import logging
 import sqlite3
 from contextlib import contextmanager

@@ -3,12 +3,13 @@
 import uvicorn
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from .bot.webhook import router as telegram_router
 from .config import get_settings
 from .api import router as api_router
 from .api.ratelimit import limiter
@@ -196,8 +197,6 @@ app.add_middleware(
 )
 
 # Security headers middleware
-from starlette.middleware.base import BaseHTTPMiddleware
-
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
@@ -218,7 +217,6 @@ app.add_middleware(RequestIDMiddleware)
 app.include_router(api_router, prefix="/api", tags=["download"])
 
 # Include Telegram webhook route
-from .bot.webhook import router as telegram_router
 app.include_router(telegram_router)
 
 

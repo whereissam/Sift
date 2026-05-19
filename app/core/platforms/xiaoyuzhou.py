@@ -1,6 +1,5 @@
 """小宇宙播客 (Xiaoyuzhou FM) downloader implementation."""
 
-import asyncio
 import logging
 import re
 from pathlib import Path
@@ -223,7 +222,7 @@ class XiaoyuzhouDownloader(PlatformDownloader):
                 filename = f"{self._sanitize_filename(show_name)} - {self._sanitize_filename(title)}{ext}"
                 file_path = self.download_dir / filename
 
-            logger.info(f"Downloading audio from Xiaoyuzhou...")
+            logger.info("Downloading audio from Xiaoyuzhou...")
 
             # Download the audio file
             await self._download_file(audio_url, file_path)

@@ -240,7 +240,7 @@ class SiftBot:
             await query.edit_message_text("Downloading audio for transcription...")
             try:
                 await self._transcribe_from_url_callback(update, query, url)
-            except Exception as e:
+            except Exception:
                 logger.exception(f"Transcribe error for user {update.effective_user.id}")
                 await query.edit_message_text("Transcription failed. Please try again later.")
             return
@@ -280,7 +280,7 @@ class SiftBot:
         except SiftError as e:
             logger.error(f"Download error for user {update.effective_user.id}: {e}")
             await query.edit_message_text(f"Download failed: {e}")
-        except Exception as e:
+        except Exception:
             logger.exception(f"Unexpected error for user {update.effective_user.id}")
             await query.edit_message_text("An unexpected error occurred. Please try again later.")
 

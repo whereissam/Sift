@@ -6,11 +6,9 @@ drive the preset resolution logic without touching SQLite or the real env.
 
 from __future__ import annotations
 
-import json
 
 import pytest
 
-from app.core import llm_presets
 from app.core.llm_presets import TaskType, get_provider_for_task, list_defaults
 
 
