@@ -99,9 +99,12 @@ class _AnnotationsMixin:
                 UPDATE annotations SET content = ?, updated_at = ?
                 WHERE id = ?
             """, (content, now, annotation_id))
+            updated = cursor.rowcount > 0
 
-            if cursor.rowcount > 0:
-                return self.get_annotation(annotation_id)
+        # Must read AFTER the context commits — otherwise the fresh
+        # connection opened by ``get_annotation`` can't see the UPDATE.
+        if updated:
+            return self.get_annotation(annotation_id)
         return None
 
     def delete_annotation(self, annotation_id: str) -> bool:
