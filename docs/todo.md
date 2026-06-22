@@ -94,8 +94,8 @@ Follow-up (completed 2026-06-22):
 
 | Feature | Difficulty | Impact | Priority |
 |---------|------------|--------|----------|
-| AI-Friendly Knowledge Schema (Claims, Entities, Predictions) | Medium | Very High | P18 |
-| Sift MCP Server (Capability Surface) | Medium | Very High | P19 |
+| AI-Friendly Knowledge Schema (Claims, Entities, Predictions) | Medium | Very High | P18 ✅ |
+| Sift MCP Server (Capability Surface) | Medium | Very High | P19 🚧 (Phase 1 shipped) |
 | Subscription Digest Pipeline (Cross-Episode Synthesis) | High | Very High | P20 |
 | Vault & Note-App Export Channels (Obsidian / Notion / Logseq) | Low | High | P21 |
 
@@ -1005,50 +1005,66 @@ Scope notes: `workflow.py`'s overall coverage stays low (28%) because its downlo
 
 > The unlock: build N agent skills on top of one MCP server, instead of N×M point-to-point connectors. Inspired by the `podwise-cli` MCP surface, but goes deeper because Sift has the structured knowledge layer (P18) underneath.
 
+> **Phase 1 status (✅ SHIPPED):** the MCP scaffold + every tool backed by P18 / existing routes is live (HTTP-client architecture, `X-API-Key` passthrough, stdio transport). Tools needing unbuilt phases are still unchecked and intentionally *not registered* on the server yet. See "P19 Phase 1 — what shipped" below.
+
 ### Tool surface (stable JSON Schema per tool)
 
-- [ ] **Ingest & retrieval**
-  - [ ] `ingest_url(url, profile?)` — submit URL, return `episode_id` + pipeline status
-  - [ ] `get_transcript(episode_id, format?)` — text / SRT / JSON with timestamps
-  - [ ] `get_chapters(episode_id)` — auto-generated chapter markers
-  - [ ] `get_segment(episode_id, start, end)` — pull a specific time range
-  - [ ] `get_clips(episode_id, criteria?)` — viral / insightful / topic-filtered clips
-- [ ] **Understanding**
-  - [ ] `get_summary(episode_id, mode?)` — bullets / chapters / topics / action items
-  - [ ] `get_highlights(episode_id)` — pull-quote-grade excerpts with timestamps
-  - [ ] `get_claims(episode_id)` — structured claims (reads from P18)
-  - [ ] `get_entities(episode_id)` — people / companies / tickers / projects
-  - [ ] `get_topics(episode_id)` — topic graph
-  - [ ] `get_predictions(episode_id)` — falsifiable forward-looking claims
-- [ ] **Q&A**
+- [x] **Ingest & retrieval**
+  - [x] `ingest_url(url, profile?)` — submit URL, return `episode_id` + pipeline status (profile=P12, not yet wired)
+  - [x] `get_transcript(episode_id, format?)` — text / JSON-with-timestamps / formatted
+  - [x] `get_chapters(episode_id)` — auto-generated chapter markers
+  - [x] `get_segment(episode_id, start, end)` — pull a specific time range (composed client-side)
+  - [x] `get_clips(episode_id, criteria?)` — viral / insightful / topic-filtered clips
+- [x] **Understanding**
+  - [x] `get_summary(episode_id, mode?)` — bullets / chapters / topics / action items
+  - [x] `get_highlights(episode_id)` — pull-quote-grade excerpts with timestamps (derived from clips)
+  - [x] `get_claims(episode_id)` — structured claims (reads from P18)
+  - [x] `get_entities(episode_id)` — people / companies / tickers / projects (composed from claims)
+  - [x] `get_topics(episode_id)` — topic graph (composed from claims)
+  - [x] `get_predictions(episode_id)` — falsifiable forward-looking claims (composed from claims)
+- [ ] **Q&A** (deferred — depends on P10/P11)
   - [ ] `ask_episode(episode_id, question)` — RAG against single episode (depends on P11)
   - [ ] `ask_at_timestamp(episode_id, time_range, question)` — scoped Q&A
   - [ ] `search_library(query, filters?)` — semantic search across all episodes (depends on P10)
-- [ ] **Cross-episode synthesis**
+- [ ] **Cross-episode synthesis** (deferred — depends on P13/P20)
   - [ ] `compare_episodes(episode_ids[], topic?)` — agreements / disagreements
   - [ ] `find_contradictions(speaker?, topic?, timeframe?)` — surface inconsistencies
   - [ ] `summarize_trend(topic, last_n_days)` — narrative evolution over time
-- [ ] **Export**
+- [ ] **Export** (deferred — depends on P21)
   - [ ] `export_to_vault(episode_id, target, template?)` — Obsidian / Notion / Logseq (depends on P21)
 
 ### Tasks
 
-- [ ] Implement `sift-mcp` server:
-  - [ ] stdio transport (Claude Desktop, local agents)
-  - [ ] HTTP transport (remote agents, Cursor)
-  - [ ] Auth via Sift API key (passthrough)
-  - [ ] Streaming for long-running tools (`ingest_url`, `ask_episode`)
-- [ ] Schema-first: every tool ships with a stable JSON Schema and example call
+- [x] Implement `sift-mcp` server:
+  - [x] stdio transport (Claude Desktop, local agents)
+  - [ ] HTTP transport (remote agents, Cursor) — `run_streamable_http_async` exists in the SDK; stdio-only for now
+  - [x] Auth via Sift API key (passthrough)
+  - [ ] Streaming for long-running tools (`ingest_url`, `ask_episode`) — deferred
+- [x] Schema-first: every tool ships with a stable JSON Schema (FastMCP derives it from typed signatures + docstrings)
 - [ ] Reference agent skills (shipped in repo):
   - [ ] **Episode → Obsidian note** (claims + highlights + clickable timestamps)
   - [ ] **Weekly recap** (cross-source synthesis from subscriptions)
   - [ ] **Topic research** (search → claims → contradictions → brief)
   - [ ] **Language learning** (transcript + translation + key vocabulary)
 - [ ] Distribution:
-  - [ ] `uvx sift-mcp` install path
-  - [ ] Claude Desktop config snippet in README
-  - [ ] Cursor MCP config snippet
-  - [ ] Test suite covering Claude Desktop + Cursor + raw MCP client
+  - [x] install path (`uv sync --extra mcp` + `uv run sift-mcp`; `sift-mcp` console script registered)
+  - [x] Claude Desktop config snippet in README
+  - [x] Cursor MCP config snippet
+  - [x] Test suite covering the tool surface + HTTP client (raw MCP client via `FastMCP.call_tool`)
+
+### P19 Phase 1 — what shipped
+
+Architecture: the MCP server is an **HTTP client of the Sift REST API** (`X-API-Key` passthrough), so it works against a local or remote Sift and carries no DB coupling. Scope: only the tools backed by P18 + existing routes are registered; phase-dependent tools (P10/P11/P13/P20/P21) are intentionally omitted, not stubbed.
+
+- `app/mcp_server/config.py` — `MCPConfig` + `load_config()` from env (`SIFT_API_URL`, `SIFT_API_KEY`, `SIFT_MCP_TIMEOUT`); decoupled from the heavy `app.config`.
+- `app/mcp_server/client.py` — `SiftClient` (async httpx wrapper): one method per endpoint, `X-API-Key` header, `SiftAPIError` normalization (server `detail` + status; transport failures), and `get_knowledge` returns `(status, body)` so a 202 (extraction pending) isn't an error. `httpx.AsyncClient` is injectable for tests.
+- `app/mcp_server/server.py` — `build_server()` returns a `FastMCP` with 11 tools. Per-episode `get_entities`/`get_topics`/`get_predictions` are **composed** from `get_claims` (the API only offers global entity/topic/prediction lists): collect `entity_ids`/`topic_ids` / prediction-type `claim_id`s from the episode's claims, fetch each, skip 404s. 202 → uniform `{status: "pending", run_state, message}`.
+- `app/mcp_server/__main__.py` — `sift-mcp` entry point; stdio transport.
+- `pyproject.toml` — `mcp>=1.2.0` (extra `[mcp]` + uv dev), `sift-mcp` console script.
+- `README.md` — MCP Server section with Claude Desktop + Cursor config snippets and the deferred-tools note.
+- `tests/` — `test_mcp_client.py` (8: path/params/headers, 202 non-raise, 404 + transport error mapping), `test_mcp_server_tools.py` (16: registration incl. deferred-tools-absent, transcript formats, segment slicing, summary mode validation, highlights ranking, knowledge composition + dedup + 404-skip, 202-pending) — **24 new tests**, 471/471 suite green.
+
+Deferred: HTTP/streamable transport (SDK supports it; stdio covers Claude Desktop + local Cursor today), streaming for long tools, and the reference agent skills (Obsidian note / weekly recap / topic research / language learning) — those want P20/P21 substrate to be worth shipping.
 
 ---
 

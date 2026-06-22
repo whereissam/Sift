@@ -34,6 +34,7 @@
 - **Content Distiller** - Feed multiple URLs and get a single synthesized briefing (coming soon)
 
 ### Automate & Integrate
+- **MCP Server (Capability Surface)** - Expose Sift to Claude Desktop, Cursor, and custom agents as MCP tools (`ingest_url`, `get_transcript`, `get_claims`, `get_entities`, `get_topics`, `get_predictions`, …). One server, N agent skills. See [MCP Server](#mcp-server) below.
 - **Agentic Ingest Pipeline** - Paste a URL and Sift auto-triggers summarization, entity extraction, and search indexing (coming soon)
 - **Telegram Research Assistant** - Send a link, then ask questions about the content — the bot answers instantly
 - **Intelligent Webhooks** - Notifications include AI-generated summaries, key findings, and detected insights (coming soon)
@@ -277,6 +278,55 @@ docker-compose up -d    # API + Frontend + Whisper + Ollama
 ```
 
 See [Deployment Guide](docs/deployment.md) for Docker, cloud, and systemd setup.
+
+## MCP Server
+
+Sift ships an [MCP](https://modelcontextprotocol.io) server (`sift-mcp`) that exposes its primitives as tools to Claude Desktop, Cursor, and any MCP client. It's a thin HTTP client of the Sift REST API — point it at a local or remote Sift instance with `SIFT_API_URL` / `SIFT_API_KEY` (the key is sent as `X-API-Key`). The MCP process holds no database of its own.
+
+**Tools (this release):** `ingest_url`, `get_transcript`, `get_segment`, `get_summary`, `get_chapters`, `get_clips`, `get_highlights`, `get_claims`, `get_entities`, `get_topics`, `get_predictions`. The knowledge tools (`get_claims`/`entities`/`topics`/`predictions`) read the P18 layer and return `status: "pending"` while extraction is still running — just retry. Q&A, library-wide semantic search, cross-episode synthesis, and vault export are not yet exposed (they await P10/P11/P13/P20/P21).
+
+**Install & run** (needs a running Sift API — see [Web Mode](#web-mode-self-hosted-full-features)):
+
+```bash
+# from a checkout
+uv sync --extra mcp
+SIFT_API_URL=http://localhost:8000 SIFT_API_KEY=your-key uv run sift-mcp
+```
+
+**Claude Desktop** — add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "sift": {
+      "command": "uv",
+      "args": ["run", "sift-mcp"],
+      "cwd": "/path/to/xdownloader",
+      "env": {
+        "SIFT_API_URL": "http://localhost:8000",
+        "SIFT_API_KEY": "your-key"
+      }
+    }
+  }
+}
+```
+
+**Cursor** — add to `~/.cursor/mcp.json` (or the project's `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "sift": {
+      "command": "uv",
+      "args": ["run", "sift-mcp"],
+      "cwd": "/path/to/xdownloader",
+      "env": { "SIFT_API_URL": "http://localhost:8000", "SIFT_API_KEY": "your-key" }
+    }
+  }
+}
+```
+
+If Sift runs without `API_KEY` set (auth disabled), omit `SIFT_API_KEY`. The full knowledge schema the tools surface is documented in [`docs/knowledge-schema.md`](docs/knowledge-schema.md).
 
 ## Architecture & Vision
 

@@ -61,11 +61,15 @@ cloud = [
     "google-auth-oauthlib>=1.2.0",
     "dropbox>=12.0.0",
 ]
+mcp = [
+    "mcp>=1.2.0",
+]
 
 [project.scripts]
 sift = "app.cli:cli"
 sift-api = "app.main:main"
 sift-bot = "app.bot:run_bot"
+sift-mcp = "app.mcp_server.__main__:main"
 # Backward compatibility aliases
 xdownloader = "app.cli:cli"
 xdownloader-api = "app.main:main"
@@ -92,4 +96,5 @@ dev-dependencies = [
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=5.0.0",
     "ruff>=0.2.0",
+    "mcp>=1.2.0",
 ]
