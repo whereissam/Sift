@@ -7,10 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from .auth import verify_api_key
+from .ratelimit import limiter
 from .schemas import (
     DownloadRequest,
     DownloadJob,
@@ -181,8 +182,10 @@ async def _process_download(job_id: str, request: DownloadRequest):
 
 
 @router.post("/download", response_model=DownloadJob)
+@limiter.limit("10/minute")
 async def start_download(
-    request: DownloadRequest,
+    request: Request,
+    body: DownloadRequest,
     background_tasks: BackgroundTasks,
 ):
     """
@@ -193,11 +196,11 @@ async def start_download(
 
     Returns a job ID that can be used to check status and retrieve the file.
     """
-    logger.info(f"Download request: platform={request.platform}, format={request.format}")
+    logger.info(f"Download request: platform={body.platform}, format={body.format}")
 
     # Validate URL scheme
     from urllib.parse import urlparse as _urlparse
-    _parsed_url = _urlparse(request.url)
+    _parsed_url = _urlparse(body.url)
     if _parsed_url.scheme not in ("http", "https"):
         raise HTTPException(
             status_code=400,
@@ -205,7 +208,7 @@ async def start_download(
         )
 
     # Validate URL and detect platform
-    detected_platform = DownloaderFactory.detect_platform(request.url)
+    detected_platform = DownloaderFactory.detect_platform(body.url)
 
     if not detected_platform:
         raise HTTPException(
@@ -225,7 +228,7 @@ async def start_download(
     jobs[job_id] = job
 
     # Start background download
-    background_tasks.add_task(_process_download, job_id, request)
+    background_tasks.add_task(_process_download, job_id, body)
 
     return job
 

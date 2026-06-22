@@ -219,7 +219,7 @@ class SubscriptionStore:
     _UPDATABLE_COLUMNS = {
         "name", "url", "subscription_type", "platform", "enabled",
         "check_interval", "auto_transcribe", "output_format", "quality",
-        "last_checked_at", "last_item_at", "error", "updated_at",
+        "output_dir", "last_checked_at", "last_item_at", "error", "updated_at",
     }
 
     def update_subscription(self, subscription_id: str, **kwargs) -> Optional[dict]:
@@ -230,6 +230,10 @@ class SubscriptionStore:
         invalid_keys = set(kwargs.keys()) - self._UPDATABLE_COLUMNS
         if invalid_keys:
             raise ValueError(f"Invalid column names: {invalid_keys}")
+
+        # Keep a custom output_dir contained under the download directory
+        if "output_dir" in kwargs:
+            _validate_output_dir(kwargs["output_dir"])
 
         # Convert boolean fields to int
         for bool_field in ["enabled", "auto_transcribe"]:

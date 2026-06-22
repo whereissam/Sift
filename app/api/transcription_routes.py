@@ -6,10 +6,20 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 import aiofiles
 
 from .auth import verify_api_key
+from .ratelimit import limiter
 from .download_routes import jobs as download_jobs
 from .schemas import (
     JobStatus,
@@ -276,8 +286,10 @@ async def list_transcription_engines():
 
 
 @router.post("/transcribe", response_model=TranscriptionJob)
+@limiter.limit("10/minute")
 async def start_transcription(
-    request: TranscribeRequest,
+    request: Request,
+    body: TranscribeRequest,
     background_tasks: BackgroundTasks,
 ):
     """
@@ -290,22 +302,22 @@ async def start_transcription(
     Supports the same platforms as download (X Spaces, YouTube, Podcasts, etc.)
     """
     # Validate request
-    if not request.url and not request.job_id:
+    if not body.url and not body.job_id:
         raise HTTPException(
             status_code=400,
             detail="Either 'url' or 'job_id' must be provided",
         )
 
     audio_path = None
-    source_url = request.url
-    source_job_id = request.job_id
+    source_url = body.url
+    source_job_id = body.job_id
 
     # If job_id is provided, get the file from the completed download
-    if request.job_id:
-        if request.job_id not in download_jobs:
+    if body.job_id:
+        if body.job_id not in download_jobs:
             raise HTTPException(status_code=404, detail="Download job not found")
 
-        download_job = download_jobs[request.job_id]
+        download_job = download_jobs[body.job_id]
         if download_job.status != JobStatus.COMPLETED:
             raise HTTPException(
                 status_code=400,
@@ -317,11 +329,11 @@ async def start_transcription(
             raise HTTPException(status_code=404, detail="Downloaded file not found")
 
         audio_path = Path(file_path)
-        source_job_id = request.job_id
+        source_job_id = body.job_id
 
     # If URL is provided, we need to download first
-    elif request.url:
-        detected_platform = DownloaderFactory.detect_platform(request.url)
+    elif body.url:
+        detected_platform = DownloaderFactory.detect_platform(body.url)
         if not detected_platform:
             raise HTTPException(
                 status_code=400,
@@ -329,9 +341,9 @@ async def start_transcription(
             )
 
         # Download the audio first
-        downloader = DownloaderFactory.get_downloader(request.url)
+        downloader = DownloaderFactory.get_downloader(body.url)
         result = await downloader.download(
-            url=request.url,
+            url=body.url,
             output_format="m4a",
             quality="high",
         )
@@ -343,7 +355,7 @@ async def start_transcription(
             )
 
         audio_path = result.file_path
-        source_url = request.url
+        source_url = body.url
 
     # Create transcription job
     job_id = str(uuid.uuid4())
@@ -358,7 +370,7 @@ async def start_transcription(
     transcription_jobs[job_id] = job
 
     # Start background transcription
-    background_tasks.add_task(_process_transcription, job_id, request, audio_path)
+    background_tasks.add_task(_process_transcription, job_id, body, audio_path)
 
     return job
 
@@ -444,7 +456,9 @@ async def resume_transcription(
 
 
 @router.post("/transcribe/upload", response_model=TranscriptionJob)
+@limiter.limit("10/minute")
 async def transcribe_uploaded_file(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     engine: str = Form(default="auto"),

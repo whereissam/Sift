@@ -4,7 +4,7 @@ import ipaddress
 import logging
 import socket
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -26,6 +26,20 @@ BLOCKED_NETWORKS = [
     ipaddress.ip_network("fe80::/10"),
     ipaddress.ip_network("::ffff:0:0/96"),  # IPv4-mapped IPv6
 ]
+
+
+def _ip_block_reason(ip_str: str) -> str | None:
+    """Return a human-readable reason if an IP is blocked, else None."""
+    ip = ipaddress.ip_address(ip_str)
+    # Reject unspecified (0.0.0.0 / ::) and multicast explicitly
+    if ip.is_unspecified:
+        return "the unspecified address"
+    if ip.is_multicast:
+        return "a multicast address"
+    for network in BLOCKED_NETWORKS:
+        if ip in network:
+            return "a private/reserved IP address"
+    return None
 
 
 def validate_url_ssrf(url: str) -> tuple[bool, str | None]:
@@ -51,21 +65,67 @@ def validate_url_ssrf(url: str) -> tuple[bool, str | None]:
     try:
         addrs = socket.getaddrinfo(parsed.hostname, None)
         for _, _, _, _, sockaddr in addrs:
-            ip = ipaddress.ip_address(sockaddr[0])
-
-            # Reject unspecified (0.0.0.0 / ::) and multicast explicitly
-            if ip.is_unspecified:
-                return False, "URL resolves to the unspecified address"
-            if ip.is_multicast:
-                return False, "URL resolves to a multicast address"
-
-            for network in BLOCKED_NETWORKS:
-                if ip in network:
-                    return False, "URL resolves to a private/reserved IP address"
+            reason = _ip_block_reason(sockaddr[0])
+            if reason:
+                return False, f"URL resolves to {reason}"
     except socket.gaierror:
         return False, f"Cannot resolve hostname: {parsed.hostname}"
 
     return True, None
+
+
+def _resolve_and_pin(host: str) -> str:
+    """Resolve a hostname, reject if any address is blocked, return one IP.
+
+    The returned IP is the one a connection will actually be pinned to, so the
+    same address that passed validation is the address that gets connected —
+    closing the DNS-rebinding window between check and connect.
+
+    Raises:
+        ValueError: if the host cannot be resolved or resolves to a blocked IP.
+    """
+    try:
+        addrs = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise ValueError(f"Cannot resolve hostname: {host}") from exc
+
+    chosen: Optional[str] = None
+    for _, _, _, _, sockaddr in addrs:
+        ip = sockaddr[0]
+        reason = _ip_block_reason(ip)
+        if reason:
+            raise ValueError(f"URL resolves to {reason}")
+        if chosen is None:
+            chosen = ip
+    if chosen is None:
+        raise ValueError(f"Cannot resolve hostname: {host}")
+    return chosen
+
+
+class _PinnedTransport(httpx.AsyncHTTPTransport):
+    """Transport that pins each request's TCP connection to a validated IP.
+
+    Resolving and validating in the transport — at the moment of connection —
+    means the IP we vetted is the IP we connect to, with no second DNS lookup in
+    between. The original hostname is preserved as the TLS ``sni_hostname`` so
+    certificate verification still happens against the hostname, not the IP.
+    """
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        ip = _resolve_and_pin(host)
+        if ip != host:
+            request.extensions = dict(request.extensions)
+            request.extensions["sni_hostname"] = host
+            request.url = request.url.copy_with(host=ip)
+        return await super().handle_async_request(request)
+
+
+def _client_kwargs_with_pinning(client_kwargs: Optional[dict]) -> dict:
+    """Inject the DNS-pinning transport into client kwargs if not overridden."""
+    kwargs = dict(client_kwargs or {})
+    kwargs.setdefault("transport", _PinnedTransport())
+    return kwargs
 
 
 async def safe_get(
@@ -88,7 +148,7 @@ async def safe_get(
     if not is_valid:
         raise ValueError(f"Blocked URL: {error}")
 
-    client_kwargs = dict(client_kwargs or {})
+    client_kwargs = _client_kwargs_with_pinning(client_kwargs)
     get_kwargs.pop("follow_redirects", None)
 
     async with httpx.AsyncClient(**client_kwargs) as client:
@@ -99,7 +159,9 @@ async def safe_get(
                 location = resp.headers.get("location")
                 if not location:
                     return resp
-                next_url = str(resp.url.join(location))
+                # Join against the hostname URL we sent, not resp.url (whose host
+                # has been rewritten to the pinned IP by the transport).
+                next_url = urljoin(current_url, location)
                 is_valid, error = validate_url_ssrf(next_url)
                 if not is_valid:
                     raise ValueError(f"Blocked redirect URL: {error}")
@@ -147,7 +209,7 @@ class _SafeStream:
     def __init__(self, url, *, method, client_kwargs, max_redirects, request_kwargs):
         self._url = url
         self._method = method
-        self._client_kwargs = dict(client_kwargs or {})
+        self._client_kwargs = _client_kwargs_with_pinning(client_kwargs)
         self._max_redirects = max_redirects
         self._request_kwargs = dict(request_kwargs)
         self._request_kwargs.pop("follow_redirects", None)
@@ -176,7 +238,7 @@ class _SafeStream:
                 if not location:
                     self._stream_cm = stream_cm
                     return resp
-                next_url = str(resp.url.join(location))
+                next_url = urljoin(current_url, location)
                 await stream_cm.__aexit__(None, None, None)
                 is_valid, error = validate_url_ssrf(next_url)
                 if not is_valid:

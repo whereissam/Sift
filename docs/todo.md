@@ -23,14 +23,17 @@ Full-codebase security review completed 2026-06-22. Fixed:
 - [x] Frontend: nginx CSP/HSTS, removed `TAURI_` from Vite `envPrefix`, added
       `.dockerignore`, gitignore `output/`
 
-Deferred / follow-up:
+Follow-up (completed 2026-06-22):
 
-- [ ] Socket-level DNS pinning to fully close the SSRF DNS-rebinding TOCTOU
-      window (current mitigation: per-hop re-validation, no pinning)
-- [ ] Allow updating a valid `output_dir` on existing subscriptions (currently
-      blocked by the column allowlist)
-- [ ] Persist + encrypt cloud-provider credentials (currently in-memory only)
-- [ ] Per-endpoint rate limits on expensive download/transcribe/upload routes
+- [x] Socket-level DNS pinning to close the SSRF DNS-rebinding TOCTOU window —
+      a pinning httpx transport connects to the validated IP while keeping the
+      hostname for TLS SNI/cert verification
+- [x] Allow updating a valid `output_dir` on existing subscriptions (added to
+      the column allowlist with path-containment validation)
+- [x] Persist + encrypt cloud-provider credentials (stored in the
+      `cloud_providers` table, Fernet-encrypted, reloaded on startup)
+- [x] Per-endpoint rate limits on expensive download/transcribe/upload routes
+      (10/min each)
 
 ## Priority Matrix
 

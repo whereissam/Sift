@@ -195,3 +195,37 @@ def test_create_subscription_rejects_out_of_scope_output_dir(monkeypatch, tmp_pa
             platform=SubscriptionPlatform.PODCAST,
             output_dir="/etc",
         )
+
+
+def test_update_subscription_output_dir_scope(monkeypatch, tmp_path):
+    """A valid output_dir update is allowed; an out-of-scope one is rejected."""
+    from app.core import subscription_store as ss
+    from app.core.subscription_store import (
+        SubscriptionType,
+        SubscriptionPlatform,
+    )
+
+    download_dir = tmp_path / "downloads"
+    download_dir.mkdir()
+    fake = _FakeSettings(download_dir=str(download_dir))
+    monkeypatch.setattr(ss, "get_settings", lambda: fake, raising=False)
+    import app.config as config_module
+    monkeypatch.setattr(config_module, "get_settings", lambda: fake)
+
+    store = SubscriptionStore(db_path=tmp_path / "subs.db")
+    store.create_subscription(
+        subscription_id="s1",
+        name="ok",
+        subscription_type=SubscriptionType.RSS,
+        platform=SubscriptionPlatform.PODCAST,
+    )
+
+    # A path under the download dir is accepted.
+    good = download_dir / "podcasts"
+    good.mkdir()
+    updated = store.update_subscription("s1", output_dir=str(good))
+    assert updated is not None
+
+    # An out-of-scope path is rejected.
+    with pytest.raises(ValueError):
+        store.update_subscription("s1", output_dir="/etc")

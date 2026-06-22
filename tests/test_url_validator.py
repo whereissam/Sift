@@ -4,7 +4,13 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.url_validator import safe_get, safe_stream, validate_url_ssrf
+from app.core.url_validator import (
+    _PinnedTransport,
+    _resolve_and_pin,
+    safe_get,
+    safe_stream,
+    validate_url_ssrf,
+)
 
 
 def _fake_getaddrinfo(ip: str):
@@ -74,3 +80,62 @@ class TestSafeFetchHelpers:
             with pytest.raises(ValueError):
                 async with safe_stream("http://metadata.example.com/"):
                     pass
+
+
+class TestDnsPinning:
+    """Tests for the DNS-pinning resolver and transport."""
+
+    def test_resolve_and_pin_returns_validated_ip(self):
+        with patch("socket.getaddrinfo", _fake_getaddrinfo("93.184.216.34")):
+            assert _resolve_and_pin("example.com") == "93.184.216.34"
+
+    def test_resolve_and_pin_rejects_blocked_ip(self):
+        # The classic rebinding payload: a public-looking host now resolving
+        # to the cloud metadata endpoint.
+        with patch("socket.getaddrinfo", _fake_getaddrinfo("169.254.169.254")):
+            with pytest.raises(ValueError):
+                _resolve_and_pin("rebind.example.com")
+
+    def test_resolve_and_pin_unresolvable(self):
+        import socket
+
+        def _boom(*a, **k):
+            raise socket.gaierror("no such host")
+
+        with patch("socket.getaddrinfo", _boom):
+            with pytest.raises(ValueError):
+                _resolve_and_pin("nope.invalid")
+
+    @pytest.mark.asyncio
+    async def test_pinned_transport_rewrites_host_and_sets_sni(self):
+        import httpx
+
+        captured = {}
+
+        async def _fake_super(self, request):
+            captured["host"] = request.url.host
+            captured["sni"] = request.extensions.get("sni_hostname")
+            captured["host_header"] = request.headers.get("host")
+            return httpx.Response(200)
+
+        transport = _PinnedTransport()
+        req = httpx.Request("GET", "https://example.com/path")
+        with patch("socket.getaddrinfo", _fake_getaddrinfo("93.184.216.34")):
+            with patch.object(httpx.AsyncHTTPTransport, "handle_async_request", _fake_super):
+                await transport.handle_async_request(req)
+
+        # Connection is pinned to the validated IP, but TLS/cert still use the
+        # original hostname via sni_hostname (and the Host header is preserved).
+        assert captured["host"] == "93.184.216.34"
+        assert captured["sni"] == "example.com"
+        assert captured["host_header"] == "example.com"
+
+    @pytest.mark.asyncio
+    async def test_pinned_transport_blocks_rebind(self):
+        import httpx
+
+        transport = _PinnedTransport()
+        req = httpx.Request("GET", "https://rebind.example.com/")
+        with patch("socket.getaddrinfo", _fake_getaddrinfo("169.254.169.254")):
+            with pytest.raises(ValueError):
+                await transport.handle_async_request(req)

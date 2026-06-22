@@ -1,7 +1,9 @@
 """Export manager for cloud storage uploads."""
 
 import asyncio
+import json
 import logging
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -63,8 +65,79 @@ class ExportManager:
         self._worker_task: Optional[asyncio.Task] = None
         self._running = False
 
-        # Load providers from environment
+        # Load providers from environment, then from the encrypted DB store
         self._load_env_providers()
+        self._load_persisted_providers()
+
+    def _db_path(self) -> Path:
+        """Path to the shared job-store DB (holds the cloud_providers table)."""
+        from ..job_store import get_job_store
+
+        return get_job_store().db_path
+
+    def _persist_provider(self, config: ProviderConfig) -> None:
+        """Persist a provider with its credentials encrypted at rest."""
+        from ..job_store._crypto import _encrypt_secret
+
+        now = datetime.utcnow().isoformat()
+        encrypted = _encrypt_secret(json.dumps(config.credentials or {}))
+        try:
+            with sqlite3.connect(str(self._db_path())) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO cloud_providers
+                        (id, provider_type, name, credentials, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        provider_type=excluded.provider_type,
+                        name=excluded.name,
+                        credentials=excluded.credentials,
+                        updated_at=excluded.updated_at
+                    """,
+                    (config.id, config.provider_type.value, config.name,
+                     encrypted, now, now),
+                )
+        except sqlite3.Error as e:
+            logger.error("Failed to persist cloud provider %s: %s", config.id, e)
+
+    def _delete_persisted_provider(self, provider_id: str) -> None:
+        """Remove a persisted provider row."""
+        try:
+            with sqlite3.connect(str(self._db_path())) as conn:
+                conn.execute(
+                    "DELETE FROM cloud_providers WHERE id = ?", (provider_id,)
+                )
+        except sqlite3.Error as e:
+            logger.error("Failed to delete cloud provider %s: %s", provider_id, e)
+
+    def _load_persisted_providers(self) -> None:
+        """Load DB-persisted providers, decrypting their credentials."""
+        from ..job_store._crypto import _decrypt_secret
+
+        try:
+            with sqlite3.connect(str(self._db_path())) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT id, provider_type, name, credentials FROM cloud_providers"
+                ).fetchall()
+        except sqlite3.Error as e:
+            logger.error("Failed to load persisted cloud providers: %s", e)
+            return
+
+        for row in rows:
+            if row["id"] in self._providers:
+                continue  # env-configured provider takes precedence
+            try:
+                credentials = json.loads(_decrypt_secret(row["credentials"] or "")) or {}
+                config = ProviderConfig(
+                    id=row["id"],
+                    provider_type=ProviderType(row["provider_type"]),
+                    name=row["name"],
+                    credentials=credentials,
+                )
+                self.register_provider(config, persist=False)
+            except Exception as e:  # noqa: BLE001 — one bad row shouldn't abort load
+                logger.error("Skipping unloadable cloud provider %s: %s", row["id"], e)
 
     def _load_env_providers(self):
         """Load cloud providers from environment variables."""
@@ -86,12 +159,16 @@ class ExportManager:
             self._providers[dropbox_provider.provider_id] = dropbox_provider
             logger.info("Loaded Dropbox provider from environment")
 
-    def register_provider(self, config: ProviderConfig) -> CloudProvider:
+    def register_provider(
+        self, config: ProviderConfig, persist: bool = True
+    ) -> CloudProvider:
         """
         Register a new cloud storage provider.
 
         Args:
             config: Provider configuration
+            persist: Whether to persist the provider (with encrypted credentials)
+                to the DB. False when re-loading already-persisted providers.
 
         Returns:
             The created provider instance
@@ -106,6 +183,8 @@ class ExportManager:
             raise ValueError(f"Unsupported provider type: {config.provider_type}")
 
         self._providers[config.id] = provider
+        if persist:
+            self._persist_provider(config)
         logger.info(f"Registered cloud provider: {config.name} ({config.provider_type.value})")
         return provider
 
@@ -121,6 +200,7 @@ class ExportManager:
         """
         if provider_id in self._providers:
             del self._providers[provider_id]
+            self._delete_persisted_provider(provider_id)
             logger.info(f"Unregistered cloud provider: {provider_id}")
             return True
         return False
