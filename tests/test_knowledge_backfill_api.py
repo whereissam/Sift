@@ -11,7 +11,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api import knowledge_routes
 from app.api.knowledge_routes import router as knowledge_router
 from app.core import job_store as job_store_module
 from app.core.job_store import JobStore
