@@ -4,9 +4,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-import httpx
-
 from .base import AudioMetadata
+from .url_validator import safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +62,14 @@ class MetadataTagger:
             return False
 
     async def _download_artwork(self, url: str) -> Optional[bytes]:
-        """Download artwork from URL."""
+        """Download artwork from URL (SSRF-safe)."""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=30, follow_redirects=True)
-                if response.status_code == 200:
-                    return response.content
-                logger.warning(f"Failed to download artwork: HTTP {response.status_code}")
+            response = await safe_get(url, timeout=30)
+            if response.status_code == 200:
+                return response.content
+            logger.warning(f"Failed to download artwork: HTTP {response.status_code}")
+        except ValueError as e:
+            logger.warning(f"Blocked artwork download: {e}")
         except Exception as e:
             logger.warning(f"Failed to download artwork: {e}")
         return None

@@ -13,6 +13,7 @@ import httpx
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
 from ..exceptions import SiftError, ContentNotFoundError
+from ..url_validator import safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -137,36 +138,41 @@ class DiscordAudioDownloader(PlatformDownloader):
                 file_path = self.download_dir / f"{base_name}{target_ext}"
 
             # Download the file
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(300.0),
-                follow_redirects=True,
-            ) as client:
-                # Discord CDN sometimes requires specific headers
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                    "Accept": "*/*",
-                }
+            # SSRF protection: validate the URL (and any redirects) before
+            # fetching, since the URL is user/feed supplied.
+            # Discord CDN sometimes requires specific headers
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Accept": "*/*",
+            }
 
-                logger.info("Downloading from Discord CDN...")
-                response = await client.get(url, headers=headers)
+            logger.info("Downloading from Discord CDN...")
+            try:
+                response = await safe_get(
+                    url,
+                    client_kwargs={"timeout": httpx.Timeout(300.0)},
+                    headers=headers,
+                )
+            except ValueError as e:
+                raise SiftError(f"Blocked Discord URL: {e}") from e
 
-                if response.status_code == 404:
-                    raise ContentNotFoundError(f"Discord file not found or expired: {url}")
+            if response.status_code == 404:
+                raise ContentNotFoundError(f"Discord file not found or expired: {url}")
 
-                if response.status_code == 403:
-                    raise SiftError(
-                        "Access denied. The link may have expired or require authentication."
-                    )
+            if response.status_code == 403:
+                raise SiftError(
+                    "Access denied. The link may have expired or require authentication."
+                )
 
-                if response.status_code != 200:
-                    raise SiftError(
-                        f"Failed to download from Discord: HTTP {response.status_code}"
-                    )
+            if response.status_code != 200:
+                raise SiftError(
+                    f"Failed to download from Discord: HTTP {response.status_code}"
+                )
 
-                # Save the downloaded content
-                temp_path = self.download_dir / f"discord_temp_{content_id}{original_ext}"
-                temp_path.write_bytes(response.content)
-                logger.info(f"Downloaded to temp file: {temp_path}")
+            # Save the downloaded content
+            temp_path = self.download_dir / f"discord_temp_{content_id}{original_ext}"
+            temp_path.write_bytes(response.content)
+            logger.info(f"Downloaded to temp file: {temp_path}")
 
             # Convert format if needed
             needs_conversion = output_format and f".{output_format}" != original_ext

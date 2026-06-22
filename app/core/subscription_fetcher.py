@@ -13,7 +13,7 @@ from typing import Optional
 import feedparser
 import httpx
 
-from .url_validator import validate_url_ssrf
+from .url_validator import safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -65,21 +65,11 @@ class RSSFetcher(BaseFetcher):
         """Fetch episodes from an RSS feed."""
         logger.info(f"Fetching RSS feed: {source_url}")
 
-        # SSRF protection: block private/reserved IPs
-        is_valid, error = validate_url_ssrf(source_url)
-        if not is_valid:
-            logger.warning(f"Blocked RSS fetch to {source_url}: {error}")
-            return []
-
+        # SSRF protection: validate URL and every redirect hop.
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    source_url,
-                    timeout=60.0,
-                    follow_redirects=True,
-                )
-                resp.raise_for_status()
-                feed = feedparser.parse(resp.text)
+            resp = await safe_get(source_url, timeout=60.0)
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.text)
 
             items = []
             for entry in feed.entries[:limit]:
@@ -125,21 +115,11 @@ class RSSFetcher(BaseFetcher):
             return False, None, None
 
         # Try to fetch and parse the RSS feed directly
-        # SSRF protection: block private/reserved IPs
-        is_valid, error = validate_url_ssrf(source_url)
-        if not is_valid:
-            logger.warning(f"Blocked RSS validation for {source_url}: {error}")
-            return False, None, None
-
+        # SSRF protection: validate URL and every redirect hop.
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    source_url,
-                    timeout=30.0,
-                    follow_redirects=True,
-                )
-                resp.raise_for_status()
-                feed = feedparser.parse(resp.text)
+            resp = await safe_get(source_url, timeout=30.0)
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.text)
 
             if feed.bozo and not feed.entries:
                 logger.warning(f"Invalid RSS feed: {source_url}")

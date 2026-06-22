@@ -11,6 +11,7 @@ import feedparser
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
 from ..exceptions import SiftError, ContentNotFoundError
+from ..url_validator import safe_get, safe_stream
 
 logger = logging.getLogger(__name__)
 
@@ -87,20 +88,21 @@ class ApplePodcastsDownloader(PlatformDownloader):
             return data["results"][0]
 
     async def _get_rss_feed(self, feed_url: str) -> feedparser.FeedParserDict:
-        """Fetch and parse RSS feed."""
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(feed_url, timeout=60.0, follow_redirects=True)
-            resp.raise_for_status()
-            return feedparser.parse(resp.text)
+        """Fetch and parse RSS feed (SSRF-safe)."""
+        # feed_url comes from the iTunes API, so validate it and any redirects.
+        resp = await safe_get(feed_url, timeout=60.0)
+        resp.raise_for_status()
+        return feedparser.parse(resp.text)
 
     async def _download_file(self, url: str, output_path: Path) -> None:
-        """Download file from URL."""
-        async with httpx.AsyncClient() as client:
-            async with client.stream("GET", url, timeout=300.0, follow_redirects=True) as resp:
-                resp.raise_for_status()
-                with open(output_path, "wb") as f:
-                    async for chunk in resp.aiter_bytes(chunk_size=8192):
-                        f.write(chunk)
+        """Download file from URL (SSRF-safe)."""
+        # The audio URL is derived from the RSS feed, so validate it (and any
+        # redirects) before streaming.
+        async with safe_stream(url, timeout=300.0) as resp:
+            resp.raise_for_status()
+            with open(output_path, "wb") as f:
+                async for chunk in resp.aiter_bytes(chunk_size=8192):
+                    f.write(chunk)
 
     def _sanitize_filename(self, name: str) -> str:
         """Sanitize a string for use as a filename."""

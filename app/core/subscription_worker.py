@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import httpx
 import re
 
 from ..config import get_settings
@@ -18,6 +17,7 @@ from .subscription_store import (
 )
 from .subscription_fetcher import get_fetcher
 from .downloader import DownloaderFactory
+from .url_validator import safe_stream
 
 
 def _is_direct_audio_url(url: str) -> bool:
@@ -63,12 +63,16 @@ async def _download_direct_audio(
 
         logger.info(f"Direct downloading: {url[:80]}...")
 
-        async with httpx.AsyncClient() as client:
-            async with client.stream("GET", url, timeout=300.0, follow_redirects=True) as resp:
+        # SSRF protection: validate (and re-validate redirects) before streaming.
+        try:
+            async with safe_stream(url, timeout=300.0) as resp:
                 resp.raise_for_status()
                 with open(output_path, "wb") as f:
                     async for chunk in resp.aiter_bytes(chunk_size=8192):
                         f.write(chunk)
+        except ValueError as e:
+            logger.warning(f"Blocked direct download for {url[:80]}: {e}")
+            return None
 
         # Convert format if needed (but skip mp3->m4a as it requires re-encoding)
         # MP3 and M4A are both widely compatible, so we keep the original format

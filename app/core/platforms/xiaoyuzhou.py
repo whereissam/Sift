@@ -10,6 +10,7 @@ import httpx
 from ...config import get_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
 from ..exceptions import SiftError, ContentNotFoundError
+from ..url_validator import safe_stream
 
 logger = logging.getLogger(__name__)
 
@@ -137,21 +138,20 @@ class XiaoyuzhouDownloader(PlatformDownloader):
             raise ContentNotFoundError(f"Podcast not found: {podcast_id}")
 
     async def _download_file(self, url: str, output_path: Path) -> None:
-        """Download file from URL."""
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "GET",
-                url,
-                timeout=300.0,
-                follow_redirects=True,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                }
-            ) as resp:
-                resp.raise_for_status()
-                with open(output_path, "wb") as f:
-                    async for chunk in resp.aiter_bytes(chunk_size=8192):
-                        f.write(chunk)
+        """Download file from URL (SSRF-safe)."""
+        # The audio URL is scraped from the page, so validate it (and any
+        # redirects) before streaming.
+        async with safe_stream(
+            url,
+            timeout=300.0,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            },
+        ) as resp:
+            resp.raise_for_status()
+            with open(output_path, "wb") as f:
+                async for chunk in resp.aiter_bytes(chunk_size=8192):
+                    f.write(chunk)
 
     def _sanitize_filename(self, name: str) -> str:
         """Sanitize a string for use as a filename."""
