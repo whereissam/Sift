@@ -4,6 +4,8 @@
 
 Sift is evolving from a media utility into an **AI-First Knowledge Extraction Platform**. The user's true intent isn't to own an MP3 — it's to get the *insight* trapped inside that MP3. Downloading is a legacy middle step that becomes invisible as the platform matures.
 
+> **Open-item triage:** see [triage.md](triage.md) for every unchecked item grouped by section with counts (regenerated from this file). Use it to prioritize; this file stays the source of truth.
+
 ## Security Hardening
 
 Full-codebase security review completed 2026-06-22. Fixed:
