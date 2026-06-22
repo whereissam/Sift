@@ -86,44 +86,54 @@ impl JobStore {
     ) -> Result<Vec<serde_json::Value>, String> {
         let conn = self.conn.lock().unwrap();
 
-        let query = match status_filter {
-            Some(status) => format!(
-                "SELECT job_id, status, source_url, platform, content_info,
-                        file_size_mb, error, progress, created_at, completed_at
-                 FROM jobs WHERE status = '{}' ORDER BY created_at DESC LIMIT {}",
-                status, limit
-            ),
-            None => format!(
-                "SELECT job_id, status, source_url, platform, content_info,
-                        file_size_mb, error, progress, created_at, completed_at
-                 FROM jobs ORDER BY created_at DESC LIMIT {}",
-                limit
-            ),
+        let limit = limit as i64;
+        let row_mapper = |row: &rusqlite::Row| {
+            Ok(serde_json::json!({
+                "job_id": row.get::<_, String>(0)?,
+                "status": row.get::<_, String>(1)?,
+                "source_url": row.get::<_, Option<String>>(2)?,
+                "platform": row.get::<_, Option<String>>(3)?,
+                "content_info": row.get::<_, Option<String>>(4)?
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
+                "file_size_mb": row.get::<_, Option<f64>>(5)?,
+                "error": row.get::<_, Option<String>>(6)?,
+                "progress": row.get::<_, f64>(7)?,
+                "created_at": row.get::<_, String>(8)?,
+                "completed_at": row.get::<_, Option<String>>(9)?,
+            }))
         };
 
-        let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(serde_json::json!({
-                    "job_id": row.get::<_, String>(0)?,
-                    "status": row.get::<_, String>(1)?,
-                    "source_url": row.get::<_, Option<String>>(2)?,
-                    "platform": row.get::<_, Option<String>>(3)?,
-                    "content_info": row.get::<_, Option<String>>(4)?
-                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
-                    "file_size_mb": row.get::<_, Option<f64>>(5)?,
-                    "error": row.get::<_, Option<String>>(6)?,
-                    "progress": row.get::<_, f64>(7)?,
-                    "created_at": row.get::<_, String>(8)?,
-                    "completed_at": row.get::<_, Option<String>>(9)?,
-                }))
-            })
-            .map_err(|e| e.to_string())?;
-
         let mut results = Vec::new();
-        for row in rows {
-            if let Ok(val) = row {
-                results.push(val);
+        match status_filter {
+            Some(status) => {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT job_id, status, source_url, platform, content_info,
+                                file_size_mb, error, progress, created_at, completed_at
+                         FROM jobs WHERE status = ?1 ORDER BY created_at DESC LIMIT ?2",
+                    )
+                    .map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map(params![status, limit], row_mapper)
+                    .map_err(|e| e.to_string())?;
+                for row in rows.flatten() {
+                    results.push(row);
+                }
+            }
+            None => {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT job_id, status, source_url, platform, content_info,
+                                file_size_mb, error, progress, created_at, completed_at
+                         FROM jobs ORDER BY created_at DESC LIMIT ?1",
+                    )
+                    .map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map(params![limit], row_mapper)
+                    .map_err(|e| e.to_string())?;
+                for row in rows.flatten() {
+                    results.push(row);
+                }
             }
         }
         Ok(results)

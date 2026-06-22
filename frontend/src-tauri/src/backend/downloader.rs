@@ -194,17 +194,10 @@ pub async fn execute_download(
     log::info!("PATH: {}", extended_path());
     log::info!("Running: {} ...", args[..3.min(args.len())].join(" "));
 
-    // Run via /bin/sh to ensure shebangs and PATH resolve correctly.
-    // Tauri's sandboxed environment may not handle Python script shebangs.
-    let shell_cmd = args
-        .iter()
-        .map(|a| shell_escape::escape(std::borrow::Cow::Borrowed(a.as_str())).to_string())
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    let output = match Command::new("/bin/sh")
-        .arg("-c")
-        .arg(&shell_cmd)
+    // Exec the resolved yt-dlp binary directly — no shell involved — so that
+    // untrusted argument values (URLs, filenames) cannot be interpreted by a shell.
+    let output = match Command::new(&args[0])
+        .args(&args[1..])
         .env("PATH", extended_path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

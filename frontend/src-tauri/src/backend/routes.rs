@@ -1,15 +1,18 @@
 use axum::{
+    body::Body,
     extract::{Path as AxumPath, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post},
     Json, Router,
 };
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio_util::io::ReaderStream;
 
 use super::db::JobStore;
 use super::downloader;
@@ -275,28 +278,38 @@ async fn serve_file(
         .first_or_octet_stream()
         .to_string();
 
-    let filename = file_path
+    // Use only the final path component as the suggested filename, and strip any
+    // CR/LF that could otherwise be used to inject additional response headers.
+    let filename = Path::new(&file_path)
         .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "download".to_string())
+        .replace(['\r', '\n'], "");
+    let filename = if filename.is_empty() {
+        "download".to_string()
+    } else {
+        filename
+    };
 
-    let bytes = tokio::fs::read(&file_path).await.map_err(|e| {
+    // RFC 5987 encoded filename to safely carry UTF-8 / special characters.
+    let encoded = utf8_percent_encode(&filename, NON_ALPHANUMERIC).to_string();
+    let content_disposition = format!("attachment; filename*=UTF-8''{}", encoded);
+
+    // Stream the file instead of buffering it fully into memory (large videos).
+    let file = tokio::fs::File::open(&file_path).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": format!("Failed to read file: {}", e)})),
+            Json(serde_json::json!({"error": format!("Failed to open file: {}", e)})),
         )
     })?;
+    let body = Body::from_stream(ReaderStream::new(file));
 
     Ok((
         [
             ("content-type", mime),
-            (
-                "content-disposition",
-                format!("attachment; filename=\"{}\"", filename),
-            ),
+            ("content-disposition", content_disposition),
         ],
-        bytes,
+        body,
     ))
 }
 
