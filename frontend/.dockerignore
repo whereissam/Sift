@@ -1,0 +1,8 @@
+node_modules
+dist
+output
+*.db
+src-tauri
+.git
+*.local
+*.log

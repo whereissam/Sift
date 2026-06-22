@@ -37,6 +37,6 @@ export default defineConfig({
       ignored: ['**/routeTree.gen.ts']
     }
   },
-  // Env variables starting with TAURI_ are exposed to the frontend
-  envPrefix: ['VITE_', 'TAURI_'],
+  // Only expose VITE_ env vars to the client bundle; never TAURI_ (may contain signing secrets)
+  envPrefix: ['VITE_'],
 });
