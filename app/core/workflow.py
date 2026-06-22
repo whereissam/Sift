@@ -320,12 +320,37 @@ class WorkflowProcessor:
             self.job_store.set_status(job_id, JobStatus.COMPLETED)
             logger.info(f"[{job_id}] Transcription complete")
 
+            # P18 Phase D: flow the fresh transcript into the knowledge base.
+            self._enqueue_knowledge_extraction(job_id)
+
             return self.job_store.get_job(job_id)
 
         except Exception as e:
             logger.error(f"[{job_id}] Transcription failed: {e}")
             self.job_store.set_status(job_id, JobStatus.FAILED, error=str(e))
             raise
+
+    def _enqueue_knowledge_extraction(self, job_id: str) -> None:
+        """Queue a freshly-transcribed job for knowledge extraction (P18 Phase D).
+
+        Non-blocking and best-effort: this only flips the job to
+        ``knowledge_status='pending'`` (idempotent via the Phase C.3 state
+        machine) so the background backfill worker picks it up — it never runs
+        extraction inline here, so transcription latency is unaffected. Gated on
+        ``knowledge_auto_extract``; any failure is swallowed so a KB hiccup can
+        never fail the transcription that just succeeded.
+        """
+        from ..config import get_settings
+
+        if not get_settings().knowledge_auto_extract:
+            return
+        try:
+            if self.job_store.enqueue_knowledge_job(job_id):
+                logger.info(f"[{job_id}] Queued for knowledge extraction")
+        except Exception as e:  # best-effort — never break the transcription
+            logger.warning(
+                f"[{job_id}] Could not queue knowledge extraction: {e}"
+            )
 
     async def retry_job(self, job_id: str) -> dict:
         """Retry a failed or interrupted job from its last successful phase."""

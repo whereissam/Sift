@@ -125,6 +125,10 @@ class Settings(BaseSettings):
     # On-demand inline threshold: a GET on a pending job runs inline (instead of
     # enqueue + 202) only when the transcript is at most this many segments.
     knowledge_inline_max_segments: int = 80
+    # P18 Phase D: auto-enqueue knowledge extraction when a transcript completes,
+    # so new episodes flow into the KB without a manual trigger. The background
+    # backfill worker picks them up; enqueue is non-blocking and idempotent.
+    knowledge_auto_extract: bool = True
 
     # Queue
     queue_enabled: bool = True  # Enable priority queue processing
