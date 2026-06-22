@@ -9,13 +9,6 @@ from .exceptions import AuthenticationError
 class AuthManager:
     """Manages Twitter/X authentication credentials."""
 
-    # Public bearer token used by Twitter's web client
-    # Updated token that works for guest activation
-    BEARER_TOKEN = (
-        "AAAAAAAAAAAAAAAAAAAAAFXzAwAAAAAAMHCxpeSDG1gLNLghVe8d74hl6k4%3D"
-        "RUMF4xAQLsbeBhTSRrCiQpJtxoGWeyHrDb5te2jpGskWDFW82F"
-    )
-
     def __init__(self, auth_token: str, ct0: str):
         """
         Initialize with authentication credentials.
@@ -125,7 +118,7 @@ class AuthManager:
             Dictionary of HTTP headers
         """
         return {
-            "Authorization": f"Bearer {self.BEARER_TOKEN}",
+            "Authorization": f"Bearer {get_settings().twitter_bearer_token}",
             "Cookie": f"auth_token={self.auth_token}; ct0={self.ct0}",
             "x-csrf-token": self.ct0,
             "x-twitter-auth-type": "OAuth2Session",

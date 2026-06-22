@@ -13,6 +13,9 @@ services:
       - ./data:/app/data
     environment:
       - DOWNLOAD_DIR=/app/output
+      # The container must bind 0.0.0.0 for the published port to be reachable
+      # from the host, which exposes the API on the network. Require an API_KEY
+      # so it is never published unauthenticated.
       - HOST=0.0.0.0
       - PORT=8000
       - TWITTER_AUTH_TOKEN=${TWITTER_AUTH_TOKEN:-}
@@ -27,7 +30,7 @@ services:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
-      - API_KEY=${API_KEY:-}
+      - API_KEY=${API_KEY:?API_KEY must be set when HOST=0.0.0.0 (the container binds publicly)}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - STORAGE_CLEANUP_ENABLED=${STORAGE_CLEANUP_ENABLED:-true}
       - MAX_STORAGE_GB=${MAX_STORAGE_GB:-}

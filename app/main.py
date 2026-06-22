@@ -40,6 +40,12 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Sift API")
     logger.info(f"Server: {settings.host}:{settings.port}")
     logger.info(f"API auth: {'enabled (X-API-Key required)' if settings.api_key else 'disabled (open access)'}")
+    if settings.host == "0.0.0.0" and not settings.api_key:
+        logger.warning(
+            "Server is bound to 0.0.0.0 with no API_KEY configured — all "
+            "endpoints are publicly accessible without authentication. Set "
+            "API_KEY (or bind HOST to 127.0.0.1) before exposing this service."
+        )
     logger.info(f"Twitter auth: {settings.has_auth}")
     logger.info(f"Download directory: {settings.download_dir}")
 
@@ -203,6 +209,23 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=63072000; includeSubDomains"
+        )
+        # The API serves JSON, so lock it all the way down. The Swagger/ReDoc
+        # docs are the one exception: they load assets + inline scripts from a
+        # CDN, so they get a CSP scoped to what those pages actually need.
+        if request.url.path in ("/docs", "/redoc"):
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'none'; "
+                "script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+                "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+                "img-src 'self' https://fastapi.tiangolo.com data:; "
+                "font-src 'self' https://cdn.jsdelivr.net; "
+                "connect-src 'self'"
+            )
+        else:
+            response.headers["Content-Security-Policy"] = "default-src 'none'"
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)

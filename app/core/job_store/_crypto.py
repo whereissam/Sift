@@ -15,9 +15,13 @@ logger = logging.getLogger(__name__)
 # Current schema version for migrations
 SCHEMA_VERSION = 2
 
+# Guard so the insecure-fallback warning is only emitted once per process.
+_fallback_key_warned = False
+
 
 def _get_encryption_key() -> bytes:
     """Get or derive a Fernet-compatible encryption key for secrets at rest."""
+    global _fallback_key_warned
     from ...config import get_settings
 
     settings = get_settings()
@@ -25,7 +29,16 @@ def _get_encryption_key() -> bytes:
         # Derive a 32-byte key from the user-provided key
         key_bytes = hashlib.sha256(settings.encryption_key.encode()).digest()
     else:
-        # Derive a machine-specific key from the download directory path
+        # Derive a machine-specific key from the download directory path.
+        # This is a guessable fallback kept only for backward compatibility
+        # with already-stored secrets — production must set ENCRYPTION_KEY.
+        if not _fallback_key_warned:
+            logger.warning(
+                "ENCRYPTION_KEY is not set — deriving the secrets-at-rest key "
+                "from DOWNLOAD_DIR, which is guessable. Set ENCRYPTION_KEY for "
+                "production to securely encrypt stored API keys."
+            )
+            _fallback_key_warned = True
         key_bytes = hashlib.sha256(settings.download_dir.encode()).digest()
     return base64.urlsafe_b64encode(key_bytes)
 

@@ -7,7 +7,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 logger = logging.getLogger(__name__)
+
+
+def _yaml_scalar(value: object) -> str:
+    """Serialize a value as a single-line, YAML-safe scalar.
+
+    Prevents YAML injection from user-controlled strings (e.g. a ``source_url``
+    containing newlines or other YAML control characters).
+    """
+    # Collapse any newlines first so a malicious value can't break out of the
+    # frontmatter onto its own line; PyYAML then quotes/escapes as needed.
+    if isinstance(value, str):
+        value = re.sub(r"\s*\n\s*", " ", value)
+    dumped = yaml.safe_dump(
+        value, default_flow_style=True, allow_unicode=True, width=float("inf")
+    ).strip()
+    # safe_dump appends a trailing "\n..." document-end marker for plain scalars.
+    if dumped.endswith("\n..."):
+        dumped = dumped[:-4].strip()
+    return dumped
 
 
 @dataclass
@@ -108,18 +129,16 @@ class ObsidianExporter:
         """
         lines = ["---"]
 
-        # Title
-        # Escape quotes in title for YAML
-        escaped_title = title.replace('"', '\\"')
-        lines.append(f'title: "{escaped_title}"')
+        # Title (user-controlled — YAML-safe quote/escape)
+        lines.append(f"title: {_yaml_scalar(title)}")
 
-        # Source URL
+        # Source URL (user-controlled — YAML-safe quote/escape)
         if source_url:
-            lines.append(f"source: {source_url}")
+            lines.append(f"source: {_yaml_scalar(source_url)}")
 
         # Date
         if created_at:
-            lines.append(f"date: {created_at}")
+            lines.append(f"date: {_yaml_scalar(created_at)}")
         else:
             lines.append(f"date: {datetime.utcnow().isoformat()}")
 
@@ -129,14 +148,15 @@ class ObsidianExporter:
             seconds = int(duration_seconds % 60)
             lines.append(f"duration: {minutes}m {seconds}s")
 
-        # Language
+        # Language (user-controlled — YAML-safe quote/escape)
         if language:
-            lines.append(f"language: {language}")
+            lines.append(f"language: {_yaml_scalar(language)}")
 
         # Tags
         if tags:
-            tags_str = ", ".join(tags)
-            lines.append(f"tags: [{tags_str}]")
+            # Each tag is user-controlled — serialize the list as a YAML-safe
+            # flow sequence (handles commas, brackets, newlines).
+            lines.append(f"tags: {_yaml_scalar(list(tags))}")
 
         lines.append("---")
         lines.append("")  # Empty line after frontmatter
