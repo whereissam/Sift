@@ -731,8 +731,8 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 2. **Phase B — Entities + canonicalization** ✅ **SHIPPED**: filled `embedding_store.embed()` (sentence-transformers lazy-loaded, module cache, `to_thread` batch), added `entities` + `entity_mentions` tables (dual-ID: `ent_<hash>` PK + UNIQUE slug), shipped `entity_canonicalizer.py` (normalize → cache → cosine ≥0.85 reuse → else mint with slug-collision sequence suffix), extended `LLM_RESPONSE_SCHEMA` to `{claims, entities}` with per-claim `entity_refs`, shipped `GET /api/entities*`. Entities + mentions ride in the same tx as claims. **56 new tests**, 154/154 total green.
 3. **Phase C — Topics + Predictions + backfill worker** (split into C.1 / C.2 / C.3 by change kind — classification / schema semantics / control-plane):
    - **C.1 — Topics** ✅ **SHIPPED**: second-pass aggregation over already-extracted claims, `topics` + `claim_topics` tables (join is source of truth; `Claim.topic_ids` JSON kept as denormalized cache for fast per-claim render), `topic_canonicalizer` (reuses Phase B embedding infra, threshold 0.90, lexical-normalize layer with ticker expansion + conservative plural collapse), `GET /api/topics*` endpoints. Gracefully degrades when `summarize` provider missing, `claim_count < 3`, or aggregator throws — topic pass never blocks claims. **54 new tests**, 208/208 suite green.
-   - **C.2 — Predictions** (**NEXT**): dedicated `predictions` table, FK `claim_id UNIQUE`, prediction lifecycle columns (`target_horizon`, `conditions`, `falsifiable_by`, `resolution`, `resolved_at`), prediction-specific API + prompts. Separate table (not nullable columns on claims) because this is the start of a prediction lifecycle, not a flag — future expansion (multiple resolution events, resolution evidence, confidence recalibration, tracking dashboards) lands cleanly on a dedicated row.
-   - **C.3 — Backfill worker + cost guardrails**: both-trigger backfill (background worker + route-triggered on-demand), idempotent enqueue with status machine `pending | running | ready | failed` + `knowledge_version` + `locked_at`/`worker_id`, global default daily budget + per-subscription override + priority tier + model-downgrade policy.
+   - **C.2 — Predictions** ✅ **SHIPPED**: dedicated `predictions` table (FK `claim_id` PK), lifecycle columns (`target_horizon`, `conditions`, `falsifiable_by`, `resolution`, `resolution_note`, `resolved_at`, `resolved_by`), `PredictionExtractor` second-pass enrichment scoped to `claim_type=prediction`, `/api/predictions` list/get/resolve/revert. Re-extraction refines lifecycle inputs but never clobbers operator-set resolution. **44 new tests**, 252/252 suite green.
+   - **C.3 — Backfill worker + cost guardrails** (**NEXT**): both-trigger backfill (background worker + route-triggered on-demand), idempotent enqueue with status machine `pending | running | ready | failed` + `knowledge_version` + `locked_at`/`worker_id`, global default daily budget + per-subscription override + priority tier + model-downgrade policy.
 4. **Phase D — Pipeline auto-run + tests + docs** (~1 day): hook into `workflow.py`, write `docs/knowledge-schema.md`, raise coverage to 80%+.
 
 **Why split Phase C into three passes**: topics = classification layer, predictions = schema semantics (changes claim wire format), backfill = operational control plane. Bundling them produces a release where quality drops can't be attributed to the right surface (prompts vs schema vs orchestration). Each pass has its own tx/schema/test churn and should land on its own.
@@ -855,34 +855,47 @@ Commit: `7d3ce0f feat(knowledge): P18 Phase C.1 — topics aggregation layer`. I
 1. **Dedicated `predictions` table, FK `claim_id UNIQUE`.** Physically separate from `claims`. Prediction is semantically a `claim_type`, but the lifecycle columns (`target_horizon`, `conditions`, `falsifiable_by`, `resolution`, `resolved_at`) aren't "just nullable fields" — they're the start of a lifecycle. Separate table keeps claim rows clean and makes future expansion (resolution events, resolution evidence, confidence recalibration, tracking dashboards) land on a dedicated row instead of adding more nullable columns.
 2. Prediction-specific extraction prompts + validation; API endpoints `GET /api/predictions?resolution=pending`, `POST /api/predictions/{id}/resolve`.
 
-### Phase C.2 — tasks (uncheck → check as they ship)
+### Phase C.2 — tasks ✅ (all shipped)
 
 **Schema:**
-- [ ] `app/core/knowledge_schema.py` — `Prediction` + `PredictionDraft` Pydantic models; `Resolution` enum (`pending` | `true` | `false` | `unresolvable`); `TargetHorizon` union (absolute date / relative interval / event-conditional); extend `ExtractionRunResult` with `predictions: list[Prediction]`.
-- [ ] `app/core/knowledge_schema.py` — new `PREDICTION_EXTRACTION_SCHEMA` JSON-mode schema for the dedicated prediction-enrichment pass (or extend `LLM_RESPONSE_SCHEMA` with optional prediction fields on each claim — decide in planning).
+- [x] `app/core/knowledge_schema.py` — `Prediction` + `PredictionDraft` Pydantic models; `Resolution` enum (`pending` | `true` | `false` | `unresolvable`); `target_horizon` kept as a free-form string (date / interval / event-conditional / null) — see "what shipped" for the rationale; extend `ExtractionRunResult` with `predictions: list[Prediction]`.
+- [x] `app/core/knowledge_schema.py` — new `PREDICTION_EXTRACTION_SCHEMA` JSON-mode schema for the dedicated prediction-enrichment pass.
 
 **Storage:**
-- [ ] `app/core/job_store.py` — `predictions` table (`claim_id TEXT PK + FK UNIQUE`, `target_horizon TEXT`, `conditions TEXT`, `falsifiable_by TEXT`, `resolution TEXT DEFAULT 'pending'`, `resolution_note TEXT`, `resolved_at TEXT`, `resolved_by TEXT`, `created_at`, `updated_at`). Cascade delete via FK so re-extraction cleans predictions with their claims.
-- [ ] `app/core/job_store.py` — `upsert_prediction`, `get_prediction_by_claim_id`, `list_predictions` (filter by `resolution` + `since`), `resolve_prediction` (claim-lock aware). Extend `replace_claims_for_job` with optional `predictions=` arg, written in the same tx as claims.
+- [x] `app/core/job_store.py` — `predictions` table (`claim_id TEXT PK + FK`, lifecycle columns, indexes on `resolution` + `created_at`). Re-extraction cleanup is explicit (`DELETE FROM predictions WHERE claim_id IN (…)` before the claims delete) instead of relying on `PRAGMA foreign_keys=ON`, mirroring the `claim_topics` pattern.
+- [x] `app/core/job_store.py` — `upsert_prediction`, `get_prediction_by_claim_id`, `list_predictions` (filter by `resolution` + `since`), `resolve_prediction` (handles revert-to-pending separately so resolution metadata gets cleared on revert). Extended `replace_claims_for_job` with optional `predictions=` arg, written in the same tx as claims; bogus rows pointing at unknown claim_ids are dropped rather than crashing the tx.
 
 **Extraction:**
-- [ ] `app/core/prediction_extractor.py` **(new)** — second-pass service that reads claims of `claim_type="prediction"` and enriches them with lifecycle fields. Reuse `extract` preset or upgrade to `synthesize` if quality drops. Graceful degradation on missing provider / malformed output (same pattern as `TopicAggregator.aggregate`).
-- [ ] `app/core/knowledge_extractor.py` — optional `prediction_extractor` ctor arg; after claim dedup, enrich prediction-type claims; surface as `result.predictions`.
+- [x] `app/core/prediction_extractor.py` **(new)** — second-pass service over `claim_type="prediction"` claims; reuses `extract` task preset; full graceful-degradation parity with `TopicAggregator.aggregate`.
+- [x] `app/core/knowledge_extractor.py` — optional `prediction_extractor` ctor arg; runs after claim dedup + topic pass; surfaces `result.predictions`.
 
 **API:**
-- [ ] `app/api/prediction_routes.py` **(new)** — `GET /api/predictions?resolution=&since=&limit=&offset=`, `GET /api/predictions/{claim_id}`, `POST /api/predictions/{claim_id}/resolve` (body: `{resolution, note}`), `DELETE /api/predictions/{claim_id}/resolve` (revert to pending).
-- [ ] `app/api/knowledge_routes.py` — pass `predictions=` into `replace_claims_for_job`.
-- [ ] `app/api/__init__.py` — register `prediction_router`.
+- [x] `app/api/prediction_routes.py` **(new)** — `GET /api/predictions?resolution=&since=&limit=&offset=`, `GET /api/predictions/{claim_id}`, `POST /api/predictions/{claim_id}/resolve`, `DELETE /api/predictions/{claim_id}/resolve` (revert).
+- [x] `app/api/knowledge_routes.py` — passes `predictions=` into `replace_claims_for_job`.
+- [x] `app/api/__init__.py` — `prediction_router` wired.
 
 **Tests:**
-- [ ] `tests/test_prediction_extractor.py` — extraction happy path; graceful-degradation branches; only prediction-type claims enriched.
-- [ ] `tests/test_prediction_api.py` — list / get / resolve / revert; 404s; filter by resolution.
-- [ ] Extend `tests/test_knowledge_store.py` — prediction CRUD; resolve/revert flow; transactional replace including predictions.
-- [ ] Extend `tests/test_knowledge_schema.py` — `Prediction` model, `Resolution` enum, `TargetHorizon` shapes.
+- [x] `tests/test_prediction_extractor.py` — 11 tests covering happy path, filtering, graceful degradation, truncation.
+- [x] `tests/test_prediction_api.py` — 10 tests covering list / get / resolve / revert / 404s / pending-via-POST guard.
+- [x] Extend `tests/test_knowledge_store.py` — 10 prediction-CRUD + transactional-replace tests (including operator-set resolution surviving re-extraction).
+- [x] Extend `tests/test_knowledge_schema.py` — `Prediction` model, `Resolution` enum, `PredictionDraft` defaults, `PREDICTION_EXTRACTION_SCHEMA` shape (10 tests).
+- [x] Extend `tests/test_knowledge_extractor.py` — 3 tests for prediction-pass wiring (happy / failure / no-extractor).
 
 **Docs:**
-- [ ] `docs/todo.md` — add "Phase C.2 — what shipped" summary (mirror the C.1 block).
-- [ ] `README.md` — surface `/api/predictions` under the Knowledge Extraction bullet.
+- [x] `docs/todo.md` — "Phase C.2 — what shipped" block below.
+- [x] `README.md` — `/api/predictions` surfaced + lifecycle-metadata sentence added under the Knowledge Extraction bullet.
+
+### Phase C.2 — what shipped
+
+- `app/core/knowledge_schema.py` — `Prediction` (full lifecycle row: `claim_id` FK, `target_horizon`, `conditions`, `falsifiable_by`, `resolution`, `resolution_note`, `resolved_at`, `resolved_by`, `created_at`, `updated_at`), `PredictionDraft` (LLM-only fields), `Resolution` string enum (`pending|true|false|unresolvable`), `PREDICTION_EXTRACTION_SCHEMA` (one record per `claim_index` with nullable lifecycle fields), `ExtractionRunResult.predictions`. Decision: `target_horizon` stays a free-form string instead of a structured `TargetHorizon` union — LLMs are unreliable at parsing precise dates and we'd rather store source text verbatim than throw away signal trying to canonicalize it. Structured-date parsing can land in Phase D as a separate column without a wire-format break.
+- `app/core/job_store.py` — `predictions` table (`claim_id` PK + FK to `claims`), indexes on `resolution` + `created_at`; `_upsert_prediction_row` (ON CONFLICT updates *only* lifecycle-input fields, deliberately leaves `resolution`/`resolution_note`/`resolved_at`/`resolved_by` alone so re-extraction never clobbers operator state); `upsert_prediction`, `get_prediction_by_claim_id`, `list_predictions(resolution, since, limit, offset)`, `resolve_prediction` (forks revert-to-pending to wipe resolution metadata vs. set-resolved to record `resolved_at`/`resolved_by`). `replace_claims_for_job` extended: explicit `DELETE FROM predictions WHERE claim_id IN (SELECT … WHERE episode_id=?)` before the claim delete (same FK-PRAGMA-off workaround as `claim_topics`), and bogus prediction rows pointing at non-run claim_ids are logged + dropped rather than crashing the tx.
+- `app/core/prediction_extractor.py` — `PredictionExtractor` (one instance per run), `enrich(claims) → (predictions, tokens)`. Filters to `claim_type=PREDICTION` internally so callers can pass the full claims list. `MAX_PREDICTIONS_PER_CALL=60` truncation by descending confidence. Drops drafts where every lifecycle field is null (no signal beyond the claim itself). Full graceful-degradation parity with `TopicAggregator`: missing provider / no prediction-type claims → `([], 0)` without calling LLM; LLM throws / unparseable → `([], 0)`; `predictions` field missing → `([], tokens)` so cost surfaces; out-of-range `claim_index` / malformed draft → skipped, rest still lands.
+- `app/core/knowledge_extractor.py` — `KnowledgeExtractor.__init__` gains optional `prediction_extractor`; `from_settings()` wires both `TopicAggregator` and `PredictionExtractor` when their providers are available; the prediction pass runs after the topic pass with the same broad try/except (additive signal must never block the run). `result.predictions` + per-pass token cost folded into `tokens_used`.
+- `app/api/prediction_routes.py` — `GET /api/predictions` (filter by `resolution` + `since`), `GET /api/predictions/{claim_id}`, `POST /api/predictions/{claim_id}/resolve` (body: `{resolution, note?, resolved_by?}`), `DELETE /api/predictions/{claim_id}/resolve`. POST with `resolution=pending` returns 400 — operators end up clearing resolution metadata they didn't mean to; force them through the DELETE endpoint that exists for exactly this.
+- `app/api/knowledge_routes.py` — `POST /jobs/{id}/extract-knowledge` now threads `predictions=` into `replace_claims_for_job` so claims / entities / mentions / topics / edges / predictions land in one transaction.
+- `app/api/__init__.py` — `prediction_router` wired under `/api`.
+- `README.md` — Knowledge Extraction bullet expanded to surface `/api/predictions` and the lifecycle-tracking story.
+- `tests/` — `test_prediction_extractor.py` (11), `test_prediction_api.py` (10), +10 prediction tests in `test_knowledge_store.py`, +10 prediction tests in `test_knowledge_schema.py`, +3 prediction-pass tests in `test_knowledge_extractor.py` — **44 new tests**, 252/252 suite green.
 
 ---
 

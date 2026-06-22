@@ -46,11 +46,13 @@ from .knowledge_schema import (
     EntityMention,
     ExtractionRunResult,
     LLM_RESPONSE_SCHEMA,
+    Prediction,
     Topic,
     compute_claim_id,
     normalize_entity_name,
 )
 from .llm_presets import TaskType, get_provider_for_task
+from .prediction_extractor import PredictionExtractor
 from .summarizer import LiteLLMProvider
 from .topic_aggregator import MIN_CLAIMS_FOR_AGGREGATION, TopicAggregator
 
@@ -215,6 +217,7 @@ class KnowledgeExtractor:
         provider: Optional[LiteLLMProvider] = None,
         canonicalizer: Optional[EntityCanonicalizer] = None,
         topic_aggregator: Optional[TopicAggregator] = None,
+        prediction_extractor: Optional[PredictionExtractor] = None,
     ):
         self.provider = provider
         # Canonicalizer is optional: tests inject a lightweight fake, and
@@ -225,21 +228,31 @@ class KnowledgeExtractor:
         # is skipped and `result.topics`/`result.claim_topic_edges` stay
         # empty — same graceful-degradation story as the canonicalizer.
         self.topic_aggregator = topic_aggregator
+        # Prediction enricher is optional too. When None or the provider
+        # isn't configured, `result.predictions` stays empty and the
+        # rest of the run is unaffected.
+        self.prediction_extractor = prediction_extractor
 
     @classmethod
     def from_settings(cls) -> "KnowledgeExtractor":
         """Build an extractor using the `extract` task preset.
 
         Also wires a `TopicAggregator` backed by the `summarize` preset
-        for the second-pass topic run. If no `summarize` provider is
-        configured, the aggregator's `is_available()` is false and the
-        chunk loop below skips the topic pass silently.
+        for the second-pass topic run, and a `PredictionExtractor`
+        sharing the `extract` preset for prediction enrichment. Either
+        side is skipped silently when its provider isn't available.
         """
         topic_agg = TopicAggregator.from_settings() if TopicAggregator.is_available() else None
+        pred_ext = (
+            PredictionExtractor.from_settings()
+            if PredictionExtractor.is_available()
+            else None
+        )
         return cls(
             provider=get_provider_for_task(TaskType.EXTRACT),
             canonicalizer=EntityCanonicalizer(),
             topic_aggregator=topic_agg,
+            prediction_extractor=pred_ext,
         )
 
     @staticmethod
@@ -525,6 +538,24 @@ class KnowledgeExtractor:
                 for c in final_claims
             ]
 
+        # --- Phase C.2: prediction enrichment ---
+        # Same graceful-degradation pattern as topics: if the enricher
+        # is missing, unavailable, or throws, we return without
+        # predictions rather than failing the whole run. The enricher
+        # filters internally to claim_type=prediction, so calling it
+        # with an episode that has none is a cheap no-op.
+        predictions: list[Prediction] = []
+        prediction_tokens = 0
+        if run_success and self.prediction_extractor is not None:
+            try:
+                predictions, prediction_tokens = (
+                    await self.prediction_extractor.enrich(final_claims)
+                )
+            except Exception as e:
+                logger.warning(
+                    "knowledge_extractor: prediction enrichment failed: %s", e
+                )
+
         return ExtractionRunResult(
             job_id=episode_id,
             success=run_success,
@@ -533,10 +564,11 @@ class KnowledgeExtractor:
             mentions=all_mentions,
             topics=topics,
             claim_topic_edges=edges,
+            predictions=predictions,
             chunks_processed=len(chunks) - len(failures),
             chunks_failed=len(failures),
             failures=failures,
-            tokens_used=total_tokens + topic_tokens,
+            tokens_used=total_tokens + topic_tokens + prediction_tokens,
             model=self.provider.model_name,
             provider=self.provider.name,
             error=None if not failures else f"{len(failures)} chunk(s) failed",

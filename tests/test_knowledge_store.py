@@ -583,6 +583,194 @@ class TestReplaceClaimsIncludesTopics:
         assert len(edges) == 1
 
 
+class TestPredictionStore:
+    """Phase C.2: predictions table CRUD + resolve/revert lifecycle."""
+
+    def _seed_prediction_claim(self, store: JobStore) -> dict:
+        claim = _make_claim(
+            text="ETH may outperform BTC over the next 6 months",
+            claim_type=ClaimType.PREDICTION,
+        )
+        store.replace_claims_for_job("ep-1", [claim])
+        return claim
+
+    def test_upsert_and_get_by_claim_id(self, store: JobStore):
+        claim = self._seed_prediction_claim(store)
+        store.upsert_prediction(
+            {
+                "claim_id": claim["claim_id"],
+                "target_horizon": "next 6 months",
+                "conditions": "if ETF flows continue",
+                "falsifiable_by": "ETH/BTC ratio breaks 0.06",
+            }
+        )
+        row = store.get_prediction_by_claim_id(claim["claim_id"])
+        assert row is not None
+        assert row["target_horizon"] == "next 6 months"
+        # Defaults to pending
+        assert row["resolution"] == "pending"
+        assert row["resolved_at"] is None
+
+    def test_get_unknown_returns_none(self, store: JobStore):
+        assert store.get_prediction_by_claim_id("nope") is None
+
+    def test_list_filter_by_resolution(self, store: JobStore):
+        c1 = _make_claim(
+            text="A", timestamp_start=1.0, claim_type=ClaimType.PREDICTION
+        )
+        c2 = _make_claim(
+            text="B", timestamp_start=2.0, claim_type=ClaimType.PREDICTION
+        )
+        store.replace_claims_for_job("ep-1", [c1, c2])
+        store.upsert_prediction(
+            {"claim_id": c1["claim_id"], "target_horizon": "h1"}
+        )
+        store.upsert_prediction(
+            {"claim_id": c2["claim_id"], "target_horizon": "h2"}
+        )
+        # Resolve one
+        store.resolve_prediction(
+            c2["claim_id"], resolution="true", note="happened"
+        )
+        pending = store.list_predictions(resolution="pending")
+        resolved = store.list_predictions(resolution="true")
+        assert {p["claim_id"] for p in pending} == {c1["claim_id"]}
+        assert {p["claim_id"] for p in resolved} == {c2["claim_id"]}
+
+    def test_resolve_records_metadata(self, store: JobStore):
+        claim = self._seed_prediction_claim(store)
+        store.upsert_prediction({"claim_id": claim["claim_id"]})
+        out = store.resolve_prediction(
+            claim["claim_id"],
+            resolution="false",
+            note="never happened",
+            resolved_by="user-1",
+        )
+        assert out is not None
+        assert out["resolution"] == "false"
+        assert out["resolution_note"] == "never happened"
+        assert out["resolved_by"] == "user-1"
+        assert out["resolved_at"] is not None
+
+    def test_revert_to_pending_clears_metadata(self, store: JobStore):
+        claim = self._seed_prediction_claim(store)
+        store.upsert_prediction({"claim_id": claim["claim_id"]})
+        store.resolve_prediction(
+            claim["claim_id"],
+            resolution="true",
+            note="confirmed",
+            resolved_by="user-1",
+        )
+        out = store.resolve_prediction(claim["claim_id"], resolution="pending")
+        assert out is not None
+        assert out["resolution"] == "pending"
+        # Reverting wipes the resolution metadata so a re-resolve starts clean
+        assert out["resolution_note"] is None
+        assert out["resolved_at"] is None
+        assert out["resolved_by"] is None
+
+    def test_resolve_unknown_returns_none(self, store: JobStore):
+        out = store.resolve_prediction("nope", resolution="true")
+        assert out is None
+
+    def test_re_extraction_preserves_resolution(self, store: JobStore):
+        """Operator-set resolution must survive re-extraction.
+
+        Re-running the extractor refines lifecycle *input* fields
+        (`target_horizon`, etc.) but never overwrites resolution state
+        — that's an operator decision and clobbering it would silently
+        lose human work.
+        """
+        claim = self._seed_prediction_claim(store)
+        store.upsert_prediction(
+            {
+                "claim_id": claim["claim_id"],
+                "target_horizon": "h-old",
+            }
+        )
+        store.resolve_prediction(
+            claim["claim_id"], resolution="true", note="confirmed"
+        )
+        # Caller (extractor) re-upserts with refined inputs; resolution
+        # stays put.
+        store.upsert_prediction(
+            {
+                "claim_id": claim["claim_id"],
+                "target_horizon": "h-new",
+                "conditions": "now refined",
+            }
+        )
+        row = store.get_prediction_by_claim_id(claim["claim_id"])
+        assert row["target_horizon"] == "h-new"
+        assert row["conditions"] == "now refined"
+        # Operator state preserved
+        assert row["resolution"] == "true"
+        assert row["resolution_note"] == "confirmed"
+
+
+class TestReplaceClaimsIncludesPredictions:
+    """replace_claims_for_job threads predictions through the same tx."""
+
+    def test_predictions_written(self, store: JobStore):
+        claim = _make_claim(claim_type=ClaimType.PREDICTION)
+        prediction = {
+            "claim_id": claim["claim_id"],
+            "target_horizon": "next quarter",
+            "conditions": None,
+            "falsifiable_by": "spot price > $5k",
+        }
+        store.replace_claims_for_job(
+            "ep-1", [claim], predictions=[prediction]
+        )
+        row = store.get_prediction_by_claim_id(claim["claim_id"])
+        assert row is not None
+        assert row["target_horizon"] == "next quarter"
+
+    def test_re_extraction_clears_prior_predictions(self, store: JobStore):
+        """Predictions tied to claims that disappear in re-extraction
+        must be removed too — no orphan rows."""
+        c_v1 = _make_claim(
+            text="v1", timestamp_start=1.0, claim_type=ClaimType.PREDICTION
+        )
+        store.replace_claims_for_job(
+            "ep-1",
+            [c_v1],
+            predictions=[
+                {"claim_id": c_v1["claim_id"], "target_horizon": "old"}
+            ],
+        )
+        # Re-extract with a different claim_id (text changed)
+        c_v2 = _make_claim(
+            text="v2", timestamp_start=1.0, claim_type=ClaimType.PREDICTION
+        )
+        store.replace_claims_for_job(
+            "ep-1",
+            [c_v2],
+            predictions=[
+                {"claim_id": c_v2["claim_id"], "target_horizon": "new"}
+            ],
+        )
+        # Old prediction gone, new one in place
+        assert store.get_prediction_by_claim_id(c_v1["claim_id"]) is None
+        new_row = store.get_prediction_by_claim_id(c_v2["claim_id"])
+        assert new_row is not None
+        assert new_row["target_horizon"] == "new"
+
+    def test_prediction_for_unknown_claim_dropped(self, store: JobStore):
+        """Defensive: predictions pointing at claim_ids not in the run
+        are dropped without crashing the tx."""
+        claim = _make_claim(claim_type=ClaimType.PREDICTION)
+        bogus = {"claim_id": "not_a_real_claim_id", "target_horizon": "x"}
+        good = {"claim_id": claim["claim_id"], "target_horizon": "y"}
+        store.replace_claims_for_job(
+            "ep-1", [claim], predictions=[bogus, good]
+        )
+        assert (
+            store.get_prediction_by_claim_id(claim["claim_id"]) is not None
+        )
+        assert store.get_prediction_by_claim_id("not_a_real_claim_id") is None
+
+
 class TestTaskPresets:
     """get_task_presets / set_task_presets round-trip with api_key encryption."""
 

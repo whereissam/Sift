@@ -208,11 +208,18 @@ async def extract_knowledge(request: Request, job_id: str):
     # topic links; `claims.topic_ids` JSON is a denormalized cache that
     # the extractor already populated to match the edges — the store
     # writes both from the same dict, so they can't drift.
+    #
+    # Phase C.2: predictions (lifecycle rows for prediction-type claims)
+    # also land in the same tx. Re-extraction refines the lifecycle
+    # *input* fields (target_horizon/conditions/falsifiable_by) but
+    # never overwrites operator-set resolution state — that contract
+    # is enforced inside `_upsert_prediction_row`'s ON CONFLICT clause.
     claim_rows = [c.model_dump(mode="json") for c in result.claims]
     entity_rows = [e.model_dump(mode="json") for e in result.entities]
     mention_rows = [m.model_dump(mode="json") for m in result.mentions]
     topic_rows = [t.model_dump(mode="json") for t in result.topics]
     edge_rows = [edge.model_dump(mode="json") for edge in result.claim_topic_edges]
+    prediction_rows = [p.model_dump(mode="json") for p in result.predictions]
     job_store.replace_claims_for_job(
         job_id,
         claim_rows,
@@ -220,6 +227,7 @@ async def extract_knowledge(request: Request, job_id: str):
         mentions=mention_rows,
         topics=topic_rows,
         claim_topic_edges=edge_rows,
+        predictions=prediction_rows,
     )
     job_store.set_knowledge_status(job_id, "complete")
 

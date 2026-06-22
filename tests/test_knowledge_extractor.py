@@ -720,3 +720,137 @@ async def test_extract_without_canonicalizer_keeps_phase_a_behavior():
     assert result.claims[0].entity_ids == []
     assert result.entities == []
     assert result.mentions == []
+
+
+class _FakePredictionExtractor:
+    """Stand-in for PredictionExtractor.
+
+    Builds a Prediction for every claim_type=prediction it sees, with
+    canned lifecycle fields. Lets us assert that the extractor pipes
+    predictions through the run result.
+    """
+
+    def __init__(self, scripted_tokens: int = 7):
+        self._tokens = scripted_tokens
+        self.calls: list[int] = []
+
+    async def enrich(self, claims):
+        from app.core.knowledge_schema import ClaimType, Prediction
+
+        self.calls.append(len(claims))
+        out = [
+            Prediction(
+                claim_id=c.claim_id,
+                target_horizon="canned horizon",
+                falsifiable_by="canned falsifier",
+            )
+            for c in claims
+            if c.claim_type == ClaimType.PREDICTION
+        ]
+        return out, self._tokens
+
+
+@pytest.mark.asyncio
+async def test_extract_runs_prediction_pass_for_prediction_claims():
+    """Prediction enrichment runs after claims are deduped and surfaces
+    predictions on the result, including the token cost."""
+    response = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": "BTC will hit 200k",
+                    "timestamp_start": 1.0,
+                    "timestamp_end": 2.0,
+                    "claim_type": "prediction",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "BTC will hit 200k",
+                },
+                {
+                    "text": "the sky is blue",
+                    "timestamp_start": 3.0,
+                    "timestamp_end": 4.0,
+                    "claim_type": "fact",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "the sky is blue",
+                },
+            ]
+        }
+    )
+    pred_ext = _FakePredictionExtractor(scripted_tokens=13)
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response),
+        canonicalizer=_FakeCanonicalizer(),
+        prediction_extractor=pred_ext,
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1", segments=_segs((1.0, 4.0, "x", None))
+    )
+    assert result.success is True
+    # Only the prediction claim got a Prediction row
+    assert len(result.predictions) == 1
+    assert result.predictions[0].target_horizon == "canned horizon"
+    # Tokens from prediction pass folded into total
+    assert result.tokens_used >= 13
+
+
+@pytest.mark.asyncio
+async def test_extract_prediction_pass_failure_does_not_fail_run():
+    """Same additive-signal contract as topics: if the prediction pass
+    blows up, claims still ship and success stays True."""
+    response = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": "BTC will hit 200k",
+                    "timestamp_start": 1.0,
+                    "timestamp_end": 2.0,
+                    "claim_type": "prediction",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "BTC will hit 200k",
+                }
+            ]
+        }
+    )
+
+    class _ThrowingPredExt:
+        async def enrich(self, claims):
+            raise RuntimeError("prediction pass exploded")
+
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response),
+        canonicalizer=_FakeCanonicalizer(),
+        prediction_extractor=_ThrowingPredExt(),
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1", segments=_segs((1.0, 2.0, "x", None))
+    )
+    assert result.success is True
+    assert len(result.claims) == 1
+    assert result.predictions == []
+
+
+@pytest.mark.asyncio
+async def test_extract_without_prediction_extractor_returns_empty_predictions():
+    """No prediction_extractor wired → predictions stay empty, no error."""
+    response = json.dumps(
+        {
+            "claims": [
+                {
+                    "text": "x",
+                    "timestamp_start": 1.0,
+                    "timestamp_end": 2.0,
+                    "claim_type": "prediction",
+                    "confidence": 0.9,
+                    "evidence_excerpt": "x",
+                }
+            ]
+        }
+    )
+    extractor = KnowledgeExtractor(
+        provider=_FakeProvider(response), canonicalizer=_FakeCanonicalizer()
+    )
+    result = await extractor.extract_claims(
+        episode_id="ep-1", segments=_segs((1.0, 2.0, "x", None))
+    )
+    assert result.success is True
+    assert result.predictions == []

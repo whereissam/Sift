@@ -6,6 +6,7 @@ import pytest
 
 from app.core.knowledge_schema import (
     EXTRACTION_VERSION,
+    PREDICTION_EXTRACTION_SCHEMA,
     SCHEMA_VERSION,
     Claim,
     ClaimDraft,
@@ -16,6 +17,9 @@ from app.core.knowledge_schema import (
     EntityMention,
     EntityType,
     LLM_RESPONSE_SCHEMA,
+    Prediction,
+    PredictionDraft,
+    Resolution,
     TOPIC_AGGREGATION_SCHEMA,
     Topic,
     TopicDraft,
@@ -312,3 +316,75 @@ class TestTopicAggregationSchema:
         ]["claim_indices"]
         assert ci["type"] == "array"
         assert ci["items"]["type"] == "integer"
+
+
+class TestResolutionEnum:
+    def test_values(self):
+        assert Resolution.PENDING.value == "pending"
+        assert Resolution.TRUE.value == "true"
+        assert Resolution.FALSE.value == "false"
+        assert Resolution.UNRESOLVABLE.value == "unresolvable"
+
+    def test_is_string_enum(self):
+        # Important for serialization through Pydantic / FastAPI.
+        assert Resolution.TRUE == "true"
+
+
+class TestPredictionModel:
+    def test_minimum_valid(self):
+        p = Prediction(claim_id="abc123")
+        assert p.resolution == Resolution.PENDING
+        assert p.target_horizon is None
+        assert p.conditions is None
+        assert p.falsifiable_by is None
+        assert p.resolved_at is None
+
+    def test_full_lifecycle_fields(self):
+        p = Prediction(
+            claim_id="abc123",
+            target_horizon="end of 2026",
+            conditions="if rates fall below 4%",
+            falsifiable_by="BTC closing above $200k",
+            resolution=Resolution.TRUE,
+            resolution_note="confirmed via spot price",
+            resolved_by="user-1",
+        )
+        assert p.resolution == Resolution.TRUE
+        assert p.target_horizon == "end of 2026"
+
+    def test_resolution_rejects_invalid(self):
+        with pytest.raises(Exception):  # ValidationError
+            Prediction(claim_id="abc", resolution="maybe")
+
+    def test_prediction_draft_defaults(self):
+        d = PredictionDraft()
+        assert d.target_horizon is None
+        assert d.conditions is None
+        assert d.falsifiable_by is None
+
+    def test_prediction_draft_partial(self):
+        # Drafts can carry just one field — the LLM may identify a
+        # horizon without finding falsifier evidence and that's fine.
+        d = PredictionDraft(target_horizon="2026-12-31")
+        assert d.target_horizon == "2026-12-31"
+        assert d.conditions is None
+
+
+class TestPredictionExtractionSchema:
+    def test_requires_predictions_array(self):
+        assert "predictions" in PREDICTION_EXTRACTION_SCHEMA["required"]
+
+    def test_prediction_item_requires_claim_index(self):
+        item = PREDICTION_EXTRACTION_SCHEMA["properties"]["predictions"][
+            "items"
+        ]
+        assert set(item["required"]) == {"claim_index"}
+
+    def test_lifecycle_fields_nullable(self):
+        # Each lifecycle field accepts string OR null so the LLM can
+        # honestly admit "not stated" instead of confabulating.
+        props = PREDICTION_EXTRACTION_SCHEMA["properties"]["predictions"][
+            "items"
+        ]["properties"]
+        for f in ("target_horizon", "conditions", "falsifiable_by"):
+            assert "null" in props[f]["type"]

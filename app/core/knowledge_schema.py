@@ -362,6 +362,93 @@ class ClaimTopicEdge(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
+class Resolution(str, Enum):
+    """Lifecycle state of a prediction.
+
+    `pending`: still in the future or evidence not yet found.
+    `true` / `false`: resolved by an operator with evidence.
+    `unresolvable`: the prediction was too vague or its falsifier
+    disappeared (event cancelled, conditions never met). Distinct from
+    `pending` so dashboards can drop them from accuracy stats instead
+    of letting them rot.
+    """
+
+    PENDING = "pending"
+    TRUE = "true"
+    FALSE = "false"
+    UNRESOLVABLE = "unresolvable"
+
+
+class Prediction(BaseModel):
+    """A claim of `claim_type=prediction` enriched with lifecycle fields.
+
+    Stored in a dedicated `predictions` table (FK `claim_id` UNIQUE) — not
+    as nullable columns on `claims` — because the lifecycle is the start
+    of a workflow, not a flag. Future expansion (resolution evidence,
+    confidence recalibration, multiple resolution events, tracking
+    dashboards) lands cleanly on a dedicated row instead of more nullable
+    columns.
+
+    `target_horizon` is a free-form string (absolute date, relative
+    interval, event-conditional, or "unspecified"). Parsing into a
+    structured shape is a Phase D concern — the LLM is unreliable at
+    extracting precise dates and we'd rather store the source text
+    verbatim than throw away signal trying to canonicalize it.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    claim_id: str = Field(description="FK to `claims.claim_id` (UNIQUE).")
+    target_horizon: Optional[str] = Field(
+        default=None,
+        description="When the prediction should resolve (date / interval / event). Free-form string.",
+    )
+    conditions: Optional[str] = Field(
+        default=None,
+        description="Stated preconditions ('if rates fall below 4%, then...').",
+    )
+    falsifiable_by: Optional[str] = Field(
+        default=None,
+        description="What evidence would make this prediction true or false.",
+    )
+    resolution: Resolution = Field(
+        default=Resolution.PENDING,
+        description="Lifecycle state. Defaults to pending until an operator resolves.",
+    )
+    resolution_note: Optional[str] = Field(
+        default=None,
+        description="Operator-supplied note attached at resolution time.",
+    )
+    resolved_at: Optional[datetime] = Field(
+        default=None, description="When `resolution` was last changed away from pending."
+    )
+    resolved_by: Optional[str] = Field(
+        default=None,
+        description="Identifier (user, system, agent) that recorded the resolution.",
+    )
+    created_at: Optional[datetime] = Field(
+        default=None, description="Persisted by the store layer."
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None, description="Persisted by the store layer."
+    )
+
+
+class PredictionDraft(BaseModel):
+    """Raw shape returned by the LLM for a prediction enrichment.
+
+    Pairs with a specific `claim_id` (assigned by the extractor before
+    canonicalization) — the LLM only emits the lifecycle fields and the
+    extractor stitches them onto the claim it already produced.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    target_horizon: Optional[str] = None
+    conditions: Optional[str] = None
+    falsifiable_by: Optional[str] = None
+
+
 class ChunkFailure(BaseModel):
     """One per-chunk extraction failure, surfaced for quarantine persistence."""
 
@@ -393,6 +480,10 @@ class ExtractionRunResult(BaseModel):
     claim_topic_edges: list[ClaimTopicEdge] = Field(
         default_factory=list,
         description="Source-of-truth claim↔topic edges (join table). `Claim.topic_ids` JSON is a denormalized cache of these.",
+    )
+    predictions: list[Prediction] = Field(
+        default_factory=list,
+        description="Lifecycle records for prediction-type claims (Phase C.2). Empty when no prediction-type claims or no enricher provider.",
     )
     chunks_processed: int = 0
     chunks_failed: int = 0
@@ -528,4 +619,32 @@ TOPIC_AGGREGATION_SCHEMA = {
         }
     },
     "required": ["topics"],
+}
+
+
+# Phase C.2: schema for the dedicated prediction-enrichment pass. Runs
+# once per episode after claims are extracted, scoped to claims of
+# `claim_type=prediction`. Input is a numbered list of prediction claim
+# texts; output is one record per index with the lifecycle fields filled
+# in. Indices map back to `claim_id`s by the extractor — same indirection
+# pattern as topics, for the same reason (asking the LLM to emit 32-char
+# claim hashes reliably is a losing bet).
+PREDICTION_EXTRACTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "predictions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "claim_index": {"type": "integer", "minimum": 0},
+                    "target_horizon": {"type": ["string", "null"]},
+                    "conditions": {"type": ["string", "null"]},
+                    "falsifiable_by": {"type": ["string", "null"]},
+                },
+                "required": ["claim_index"],
+            },
+        }
+    },
+    "required": ["predictions"],
 }
