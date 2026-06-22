@@ -26,6 +26,9 @@ class _JobsMixin:
         "content_info", "transcription_result", "file_size_mb", "error",
         "progress", "last_checkpoint", "priority", "batch_id", "scheduled_at",
         "webhook_url", "updated_at", "completed_at",
+        # P18 knowledge backfill control-plane columns
+        "knowledge_status", "knowledge_version", "knowledge_locked_at",
+        "knowledge_worker_id",
     }
 
     db_path: Path  # set by JobStore.__init__

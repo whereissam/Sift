@@ -46,6 +46,37 @@ _DEFAULT_PRESETS: dict[TaskType, dict] = {
 }
 
 
+# P18 Phase C.3: cheaper model to fall back to under budget pressure, keyed by
+# a substring of the model that would otherwise be used. Same provider — only
+# the model name changes — so the resolved credentials/base_url still apply.
+# Longest-matching key wins. Downgrading to an already-cheap model is a no-op.
+MODEL_DOWNGRADES: dict[str, str] = {
+    "gpt-4o": "gpt-4o-mini",
+    "gpt-4.1": "gpt-4.1-mini",
+    "claude-3-5-sonnet": "claude-3-5-haiku-20241022",
+    "claude-3-sonnet": "claude-3-haiku-20240307",
+    "claude-3-opus": "claude-3-5-haiku-20241022",
+    "gemini-1.5-pro": "gemini-1.5-flash",
+    "deepseek-reasoner": "deepseek-chat",
+}
+
+
+def downgrade_model(model: str) -> str:
+    """Return a cheaper model for the same provider, or ``model`` unchanged.
+
+    Used by the backfill worker when the daily budget threshold is crossed:
+    keep extracting, but on a cheaper model. Matching is longest-substring so
+    ``gpt-4o-mini`` isn't mistakenly "downgraded" past itself.
+    """
+    if not model:
+        return model
+    best_key: Optional[str] = None
+    for key in MODEL_DOWNGRADES:
+        if key in model and (best_key is None or len(key) > len(best_key)):
+            best_key = key
+    return MODEL_DOWNGRADES[best_key] if best_key else model
+
+
 def _build_litellm_model(provider: str, model: str) -> str:
     """Build the litellm model string from provider+model name.
 
@@ -184,11 +215,17 @@ def _preset_is_usable(preset: dict) -> bool:
     return bool(preset.get("api_key"))
 
 
-def get_provider_for_task(task: TaskType | str) -> Optional[LiteLLMProvider]:
+def get_provider_for_task(
+    task: TaskType | str, *, downgrade: bool = False
+) -> Optional[LiteLLMProvider]:
     """Resolve a configured LiteLLMProvider for the given task.
 
     Returns None when nothing is configured anywhere (DB ai_settings empty,
     env vars empty, default preset's provider has no key).
+
+    When ``downgrade=True`` (the backfill worker over its budget threshold),
+    the resolved model is swapped for a cheaper same-provider model via
+    ``downgrade_model`` before the provider is built.
     """
     if isinstance(task, str):
         task = TaskType(task)
@@ -228,7 +265,7 @@ def get_provider_for_task(task: TaskType | str) -> Optional[LiteLLMProvider]:
         return None
 
     provider_name = preset["provider"]
-    model = preset["model"]
+    model = downgrade_model(preset["model"]) if downgrade else preset["model"]
     api_key = preset.get("api_key")
     base_url = preset.get("base_url")
 

@@ -113,6 +113,19 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True  # Enable scheduled downloads
     scheduler_check_interval: int = 60  # Check interval in seconds
 
+    # P18 Phase C.3: Knowledge backfill worker + cost guardrails
+    knowledge_backfill_enabled: bool = True  # Background knowledge extraction worker
+    knowledge_backfill_interval: int = 300  # Worker tick interval (seconds)
+    knowledge_backfill_batch_size: int = 5  # Jobs processed per tick
+    knowledge_lock_ttl_seconds: int = 900  # Stale-lock reclaim window (15 min)
+    knowledge_seed_on_startup: bool = False  # Mark existing transcripts pending at boot
+    # Cost guardrails. None = unlimited. Budget is per-UTC-day, in-memory.
+    knowledge_daily_budget_usd: float | None = None  # Hard stop for the day
+    knowledge_model_downgrade_threshold_usd: float | None = None  # Switch to cheaper model
+    # On-demand inline threshold: a GET on a pending job runs inline (instead of
+    # enqueue + 202) only when the transcript is at most this many segments.
+    knowledge_inline_max_segments: int = 80
+
     # Queue
     queue_enabled: bool = True  # Enable priority queue processing
     default_priority: int = 5  # Default priority level (1-10)

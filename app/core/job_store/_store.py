@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._annotations import _AnnotationsMixin
+from ._backfill import _BackfillMixin
 from ._batches import _BatchesMixin
 from ._jobs import _JobsMixin
 from ._knowledge import _KnowledgeMixin
@@ -22,11 +23,12 @@ class JobStore(
     _AnnotationsMixin,
     _SettingsMixin,
     _KnowledgeMixin,
+    _BackfillMixin,
 ):
     """SQLite-based persistent job storage.
 
     Implementation is split across mixins for navigability:
-    schema / jobs / batches / annotations / settings / knowledge.
+    schema / jobs / batches / annotations / settings / knowledge / backfill.
     """
 
     def __init__(self, db_path: Optional[Path] = None):

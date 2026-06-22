@@ -765,8 +765,8 @@ See [diarization-setup.md](./diarization-setup.md) for setup instructions.
 3. **Phase C — Topics + Predictions + backfill worker** (split into C.1 / C.2 / C.3 by change kind — classification / schema semantics / control-plane):
    - **C.1 — Topics** ✅ **SHIPPED**: second-pass aggregation over already-extracted claims, `topics` + `claim_topics` tables (join is source of truth; `Claim.topic_ids` JSON kept as denormalized cache for fast per-claim render), `topic_canonicalizer` (reuses Phase B embedding infra, threshold 0.90, lexical-normalize layer with ticker expansion + conservative plural collapse), `GET /api/topics*` endpoints. Gracefully degrades when `summarize` provider missing, `claim_count < 3`, or aggregator throws — topic pass never blocks claims. **54 new tests**, 208/208 suite green.
    - **C.2 — Predictions** ✅ **SHIPPED**: dedicated `predictions` table (FK `claim_id` PK), lifecycle columns (`target_horizon`, `conditions`, `falsifiable_by`, `resolution`, `resolution_note`, `resolved_at`, `resolved_by`), `PredictionExtractor` second-pass enrichment scoped to `claim_type=prediction`, `/api/predictions` list/get/resolve/revert. Re-extraction refines lifecycle inputs but never clobbers operator-set resolution. **44 new tests**, 252/252 suite green.
-   - **C.3 — Backfill worker + cost guardrails** (**NEXT**): both-trigger backfill (background worker + route-triggered on-demand), idempotent enqueue with status machine `pending | running | ready | failed` + `knowledge_version` + `locked_at`/`worker_id`, global default daily budget + per-subscription override + priority tier + model-downgrade policy.
-4. **Phase D — Pipeline auto-run + tests + docs** (~1 day): hook into `workflow.py`, write `docs/knowledge-schema.md`, raise coverage to 80%+.
+   - **C.3 — Backfill worker + cost guardrails** ✅ **SHIPPED**: both-trigger backfill (background worker + route-triggered on-demand), idempotent enqueue with status machine `pending | running | ready | failed` + `knowledge_version` + `locked_at`/`worker_id` claim-lock, stale-lock reaper, in-memory per-UTC-day budget tracker (global daily budget + model-downgrade threshold) + per-subscription override/priority-tier columns, `POST /jobs/{id}/knowledge/enqueue`, `GET /api/knowledge/backfill-status`, 202-on-pending GET behavior. **60 new tests**, 412/412 suite green.
+4. **Phase D — Pipeline auto-run + tests + docs** (**NEXT**, ~1 day): hook into `workflow.py`, write `docs/knowledge-schema.md`, raise coverage to 80%+.
 
 **Why split Phase C into three passes**: topics = classification layer, predictions = schema semantics (changes claim wire format), backfill = operational control plane. Bundling them produces a release where quality drops can't be attributed to the right surface (prompts vs schema vs orchestration). Each pass has its own tx/schema/test churn and should land on its own.
 
@@ -942,32 +942,50 @@ Commit: `7d3ce0f feat(knowledge): P18 Phase C.1 — topics aggregation layer`. I
 ### Phase C.3 — tasks
 
 **Storage + state machine:**
-- [ ] `app/core/job_store.py` — migration: add `knowledge_version INTEGER DEFAULT 0`, `knowledge_locked_at TEXT`, `knowledge_worker_id TEXT` to `jobs` table; tighten `knowledge_status` values to the locked enum.
-- [ ] `app/core/job_store.py` — `acquire_knowledge_lock(job_id, worker_id, ttl_seconds)` (atomic UPDATE with status check), `release_knowledge_lock`, `list_pending_knowledge_jobs(priority_bucket)`.
+- [x] `app/core/job_store/_schema.py` — migration: add `knowledge_version INTEGER DEFAULT 0`, `knowledge_locked_at TEXT`, `knowledge_worker_id TEXT` to `jobs` table + `idx_knowledge_status` index; documented the `none|pending|running|ready|failed` enum (legacy `extracting`/`complete` accepted as aliases).
+- [x] `app/core/job_store/_backfill.py` **(new mixin)** — `acquire_knowledge_lock(job_id, worker_id, ttl_seconds)` (atomic conditional UPDATE, reclaims stale locks), `release_knowledge_lock`, `reap_stale_knowledge_locks`, `enqueue_knowledge_job`, `mark_jobs_pending_for_backfill`, `list_pending_knowledge_jobs` (priority-ordered), `count_pending_knowledge_jobs`, `get_knowledge_status_counts`, `get_knowledge_version`.
 
 **Background worker:**
-- [ ] `app/workers/knowledge_backfill.py` **(new)** — priority queue (recent → user-opened → subscribed → rest); per-feed daily budget check; model-downgrade on budget exceeded; stale-lock reaper for crashed workers.
-- [ ] Register worker in startup path with cron schedule / APScheduler wiring.
+- [x] `app/core/knowledge_backfill.py` **(new — `app/core/`, matching the existing worker convention rather than the nonexistent `app/workers/`)** — `KnowledgeBackfillWorker.tick`/`process_job`, priority queue (reuses the 1-10 `priority` column), per-day budget check, model-downgrade on threshold, stale-lock reaper each tick; shared `resolve_segments_for_job` (warm in-memory → cold persisted `transcription_result`), `persist_extraction_result`, `quarantine_failures`.
+- [x] Register worker in `app/main.py` lifespan (start after storage manager, stop before it); gated on `knowledge_backfill_enabled`, optional `knowledge_seed_on_startup`.
 
 **Route behavior:**
-- [ ] `app/api/knowledge_routes.py` — `GET /jobs/{id}/knowledge` returns 202 + `run_state` when `pending`/`running`; acquires lock + runs inline when cheap-enough threshold allows; returns cached rows otherwise.
+- [x] `app/api/knowledge_routes.py` — `GET /jobs/{id}/knowledge` returns 202 + `run_state` when `pending`/`running`; runs inline through the worker when the transcript is ≤ `knowledge_inline_max_segments` and a provider is available; returns cached rows otherwise.
 
 **Budget tiers:**
-- [ ] `app/core/config.py` — add `knowledge_daily_budget_usd` + `knowledge_model_downgrade_threshold_usd` global settings.
-- [ ] Subscription model — optional `knowledge_budget_override_usd` + `knowledge_priority_tier` per subscription.
-- [ ] `app/core/llm_presets.py` — downgrade helper: given a task + remaining budget, return a cheaper model when over threshold.
+- [x] `app/config.py` — `knowledge_backfill_enabled`/`_interval`/`_batch_size`, `knowledge_lock_ttl_seconds`, `knowledge_seed_on_startup`, `knowledge_daily_budget_usd`, `knowledge_model_downgrade_threshold_usd`, `knowledge_inline_max_segments`.
+- [x] Subscription model — optional `knowledge_budget_override_usd` + `knowledge_priority_tier` per subscription (migration + allowlist).
+- [x] `app/core/llm_presets.py` — `downgrade_model` + `get_provider_for_task(task, downgrade=True)`; `app/core/knowledge_budget.py` blended price table + per-UTC-day spend tracker singleton.
 
 **API:**
-- [ ] `POST /api/jobs/{id}/knowledge/enqueue` — idempotent enqueue for a pending job.
-- [ ] `GET /api/knowledge/backfill-status` — stats endpoint (pending/running/ready counts, today's spend, downgrades applied).
+- [x] `POST /api/jobs/{id}/knowledge/enqueue` — idempotent enqueue for a pending job.
+- [x] `GET /api/knowledge/backfill-status` — stats endpoint (pending/running/ready counts, today's spend, downgrades applied).
 
 **Tests:**
-- [ ] `tests/test_knowledge_backfill.py` — priority ordering, lock acquire/release, budget cap, model downgrade, stale-lock reaper.
-- [ ] Extend `tests/test_knowledge_api.py` — 202 path, inline run path, cached read path, state-transition correctness.
+- [x] `tests/test_knowledge_backfill_store.py` (19) — enqueue, lock acquire/release, stale-lock reaper, priority ordering, status counts.
+- [x] `tests/test_knowledge_budget.py` (17) — pricing, daily rollover, per-sub isolation, budget/threshold decisions.
+- [x] `tests/test_knowledge_backfill.py` (13) — happy path, no-segments, lock-lost, no-provider requeue, downgrade, tick batch/budget/reap, segment resolution.
+- [x] `tests/test_knowledge_backfill_api.py` (8) — 202 paths, inline run, cached read, enqueue idempotency/404, backfill-status. (+3 in `test_llm_presets.py`.)
 
 **Docs:**
-- [ ] `docs/todo.md` — add "Phase C.3 — what shipped" summary.
-- [ ] `README.md` — note on-demand + background backfill behavior.
+- [x] `docs/todo.md` — "Phase C.3 — what shipped" summary (below).
+- [x] `README.md` — on-demand + background backfill behavior.
+
+### Phase C.3 — what shipped
+
+- `app/core/job_store/_schema.py` — three new migrated columns (`knowledge_version`, `knowledge_locked_at`, `knowledge_worker_id`) + `idx_knowledge_status`. The `knowledge_status` vocabulary is `none|pending|running|ready|failed`; the synchronous extract route's legacy `extracting`/`complete` are still written and treated as `running`/`ready` aliases everywhere (acquire, counts) so the two extraction paths interoperate without a breaking migration.
+- `app/core/job_store/_backfill.py` (new `_BackfillMixin`, wired into the composed `JobStore`) — the claim-lock state machine. `acquire_knowledge_lock` is a single conditional UPDATE that wins atomically and lazily reclaims locks older than the TTL (crashed workers); `reap_stale_knowledge_locks` is the eager sweep so status reporting stays honest. `enqueue_knowledge_job` is idempotent (`none|failed → pending` only). `list_pending_knowledge_jobs` orders by `priority DESC, created_at DESC` and excludes jobs with no persisted transcript (nothing to extract from).
+- `app/core/knowledge_budget.py` (new) — `estimate_cost_usd(model, tokens)` blended $/1K table (longest-substring match; local models free; unknown → non-zero fallback so they still count) + `KnowledgeBudgetTracker`, a thread-safe per-UTC-day ledger (global + per-subscription spend + downgrade counter) held as a process singleton. In-memory by design — a restart never *locks out* extraction, the safe direction for a guardrail. Decision helpers (`over_global_budget`/`should_downgrade`/`over_subscription_budget`) keep the worker declarative.
+- `app/core/llm_presets.py` — `MODEL_DOWNGRADES` map + `downgrade_model` (longest-substring, no double-downgrade of already-cheap models); `get_provider_for_task(task, *, downgrade=False)` swaps to a cheaper *same-provider* model when set, so resolved creds/base_url still apply.
+- `app/core/knowledge_extractor.py` — `from_settings(downgrade=False)` threads the flag to the primary `extract` provider only; the additive topic/prediction passes stay on their normal presets.
+- `app/core/knowledge_backfill.py` (new) — `KnowledgeBackfillWorker` mirrors the `scheduler.py` lifecycle (singleton + `start`/`stop`). `tick()` reaps stale locks, checks the daily budget, and processes a priority batch; `process_job()` acquires the lock, resolves segments (warm→cold), builds a (possibly downgraded) extractor, records spend, persists via the shared `persist_extraction_result`, and releases the lock `ready`(+version bump)/`failed`/`pending`. The orchestration loop is thin; `tick`/`process_job` are the unit-testable seam (injectable `extractor_factory`). `resolve_segments_for_job` + `persist_extraction_result` + `quarantine_failures` are shared with the route so the inline and background paths can't drift.
+- `app/api/knowledge_routes.py` — `GET /jobs/{id}/knowledge` now returns `run_state` and HTTP 202 for `running`/`pending`-deferred; small pending jobs run inline through the worker (identical persistence + budget accounting). `POST /jobs/{id}/knowledge/enqueue` (idempotent, 404 on unknown job) and `GET /knowledge/backfill-status` (counts + today's spend + downgrades + configured budgets) added. The synchronous `extract-knowledge` route was refactored onto the shared `persist_extraction_result`/`quarantine_failures` helpers and now records spend against the same daily budget.
+- `app/config.py` — backfill worker + cost-guardrail settings (all default-safe: worker on, budgets `None` = unlimited, seed-on-startup off).
+- `app/core/subscription_store.py` — `knowledge_budget_override_usd` + `knowledge_priority_tier` columns (migration + update allowlist). The tracker supports per-subscription budgets today; job→subscription enforcement in the worker is deferred to P20's digest runner, which owns the feed→job mapping.
+- `app/main.py` — backfill worker started/stopped in the app lifespan.
+- `tests/` — `test_knowledge_backfill_store.py` (19), `test_knowledge_budget.py` (17), `test_knowledge_backfill.py` (13), `test_knowledge_backfill_api.py` (8), +3 in `test_llm_presets.py` — **60 new tests**, 412/412 suite green.
+
+Scope notes: the worker lives in `app/core/` (not the roadmap's aspirational `app/workers/`, which doesn't exist) to match `scheduler.py`/`subscription_worker.py`. Per-subscription budget *enforcement* is wired at the tracker layer but not yet applied per-job in the worker — jobs carry no `subscription_id`, and the clean mapping lives in P20's digest runner.
 
 ---
 

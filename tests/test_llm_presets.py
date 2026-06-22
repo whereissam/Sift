@@ -227,3 +227,27 @@ def test_string_task_arg_accepted():
 def test_unknown_task_raises():
     with pytest.raises(ValueError):
         get_provider_for_task("nonsense-task")
+
+
+# ---------- P18 Phase C.3: model downgrade ----------
+
+
+def test_downgrade_model_swaps_known_models():
+    from app.core.llm_presets import downgrade_model
+
+    assert downgrade_model("gpt-4o") == "gpt-4o-mini"
+    assert downgrade_model("gemini-1.5-pro") == "gemini-1.5-flash"
+
+
+def test_downgrade_model_longest_substring_no_double_downgrade():
+    from app.core.llm_presets import downgrade_model
+
+    # gpt-4o-mini is already cheap — must not be shifted to something else.
+    assert downgrade_model("gpt-4o-mini") == "gpt-4o-mini"
+
+
+def test_downgrade_model_passthrough_for_unknown():
+    from app.core.llm_presets import downgrade_model
+
+    assert downgrade_model("llama3.2") == "llama3.2"
+    assert downgrade_model("") == ""

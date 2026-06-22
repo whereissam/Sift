@@ -97,6 +97,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to start storage manager: {e}")
 
+    # Start knowledge backfill worker (P18 Phase C.3)
+    try:
+        from .core.knowledge_backfill import start_backfill_worker
+        await start_backfill_worker()
+    except Exception as e:
+        logger.error(f"Failed to start knowledge backfill worker: {e}")
+
     # Start Telegram bot in webhook mode
     telegram_app = None
     if settings.telegram_bot_token and settings.telegram_bot_mode == "webhook":
@@ -119,6 +126,13 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to start Telegram bot: {e}")
 
     yield
+
+    # Stop knowledge backfill worker
+    try:
+        from .core.knowledge_backfill import stop_backfill_worker
+        await stop_backfill_worker()
+    except Exception as e:
+        logger.error(f"Failed to stop knowledge backfill worker: {e}")
 
     # Stop storage manager
     try:

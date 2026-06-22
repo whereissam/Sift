@@ -360,9 +360,19 @@ class _SchemaMixin:
             ("batch_id", "TEXT"),
             ("scheduled_at", "TEXT"),
             ("webhook_url", "TEXT"),
-            # P18: knowledge layer status. Values: none|pending|extracting|complete|failed.
+            # P18: knowledge layer status. Values: none|pending|running|ready|failed.
             # 'none' = never attempted; 'pending' = queued for backfill or on-demand.
+            # ('extracting'/'complete' are legacy aliases for running/ready written
+            # by the synchronous extract route — still accepted, never rejected.)
             ("knowledge_status", "TEXT DEFAULT 'none'"),
+            # P18 Phase C.3: backfill control-plane columns. `knowledge_version`
+            # bumps on every successful (re-)extraction so consumers can detect
+            # staleness; `knowledge_locked_at` / `knowledge_worker_id` implement
+            # a claim-lock so concurrent workers (or worker + on-demand route)
+            # don't double-extract the same job.
+            ("knowledge_version", "INTEGER DEFAULT 0"),
+            ("knowledge_locked_at", "TEXT"),
+            ("knowledge_worker_id", "TEXT"),
         ]
 
         for col_name, col_type in migrations:
@@ -382,3 +392,14 @@ class _SchemaMixin:
                 logger.info("Added column task_presets to ai_settings")
             except sqlite3.OperationalError:
                 pass
+
+        # Index for the Phase C.3 backfill pending-queue scan. Created here
+        # (not in _init_db) because knowledge_status is added by migration
+        # above, so the column may not exist on the jobs table until now.
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_knowledge_status "
+                "ON jobs(knowledge_status)"
+            )
+        except sqlite3.OperationalError:
+            pass

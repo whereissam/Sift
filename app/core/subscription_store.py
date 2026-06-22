@@ -102,6 +102,8 @@ class SubscriptionStore:
                     last_checked_at TEXT,
                     last_new_content_at TEXT,
                     total_downloaded INTEGER DEFAULT 0,
+                    knowledge_budget_override_usd REAL,
+                    knowledge_priority_tier INTEGER DEFAULT 5,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -141,6 +143,23 @@ class SubscriptionStore:
                 "CREATE INDEX IF NOT EXISTS idx_items_status "
                 "ON subscription_items(status)"
             )
+
+            # P18 Phase C.3 migration: per-subscription knowledge budget +
+            # priority tier on existing DBs that predate these columns.
+            cursor = conn.execute("PRAGMA table_info(subscriptions)")
+            existing = {row[1] for row in cursor.fetchall()}
+            sub_migrations = [
+                ("knowledge_budget_override_usd", "REAL"),
+                ("knowledge_priority_tier", "INTEGER DEFAULT 5"),
+            ]
+            for col_name, col_type in sub_migrations:
+                if col_name not in existing:
+                    try:
+                        conn.execute(
+                            f"ALTER TABLE subscriptions ADD COLUMN {col_name} {col_type}"
+                        )
+                    except sqlite3.OperationalError:
+                        pass
 
     # ============ Subscription CRUD ============
 
@@ -220,6 +239,7 @@ class SubscriptionStore:
         "name", "url", "subscription_type", "platform", "enabled",
         "check_interval", "auto_transcribe", "output_format", "quality",
         "output_dir", "last_checked_at", "last_item_at", "error", "updated_at",
+        "knowledge_budget_override_usd", "knowledge_priority_tier",
     }
 
     def update_subscription(self, subscription_id: str, **kwargs) -> Optional[dict]:

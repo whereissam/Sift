@@ -17,12 +17,20 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
+from ..config import get_settings
 from ..core.job_store import get_job_store
+from ..core.knowledge_backfill import (
+    get_backfill_worker,
+    persist_extraction_result,
+    quarantine_failures,
+    resolve_segments_for_job,
+)
+from ..core.knowledge_budget import get_budget_tracker
 from ..core.knowledge_extractor import KnowledgeExtractor
-from ..core.knowledge_schema import EXTRACTION_VERSION, ClaimType
+from ..core.knowledge_schema import ClaimType
 from .auth import verify_api_key
 from .ratelimit import limiter
 from .schemas import JobStatus
@@ -56,8 +64,26 @@ class ClaimResponse(BaseModel):
 class JobKnowledgeResponse(BaseModel):
     job_id: str
     knowledge_status: str
+    # Phase C.3 run-state for the on-demand path: ready | running | pending | none.
+    # 'running'/'pending' come back with HTTP 202 so clients know to poll.
+    run_state: str
     claim_count: int
     claims: list[ClaimResponse]
+
+
+class EnqueueResponse(BaseModel):
+    job_id: str
+    enqueued: bool
+    knowledge_status: str
+
+
+class BackfillStatusResponse(BaseModel):
+    counts: dict[str, int]
+    pending: int
+    spent_today_usd: float
+    downgrades_today: int
+    daily_budget_usd: Optional[float] = None
+    downgrade_threshold_usd: Optional[float] = None
 
 
 class ExtractKnowledgeResponse(BaseModel):
@@ -167,15 +193,13 @@ async def extract_knowledge(request: Request, job_id: str):
 
     # Always persist per-chunk failures to the quarantine table — useful for
     # both partial-success and total-failure runs to debug prompt drift.
-    for f in result.failures:
-        job_store.record_extraction_failure(
-            episode_id=job_id,
-            chunk_index=f.chunk_index,
-            error=f.error,
-            raw_output=f.raw_output,
-            extraction_version=EXTRACTION_VERSION,
-            model=result.model,
-        )
+    quarantine_failures(job_store, job_id, result)
+
+    # Account spend so the synchronous path counts against the same daily
+    # budget the backfill worker respects.
+    from ..core.knowledge_budget import estimate_cost_usd
+
+    get_budget_tracker().record(estimate_cost_usd(result.model, result.tokens_used))
 
     if not result.success:
         # Every chunk failed — do NOT overwrite existing claims with this
@@ -214,21 +238,11 @@ async def extract_knowledge(request: Request, job_id: str):
     # *input* fields (target_horizon/conditions/falsifiable_by) but
     # never overwrites operator-set resolution state — that contract
     # is enforced inside `_upsert_prediction_row`'s ON CONFLICT clause.
-    claim_rows = [c.model_dump(mode="json") for c in result.claims]
-    entity_rows = [e.model_dump(mode="json") for e in result.entities]
-    mention_rows = [m.model_dump(mode="json") for m in result.mentions]
-    topic_rows = [t.model_dump(mode="json") for t in result.topics]
-    edge_rows = [edge.model_dump(mode="json") for edge in result.claim_topic_edges]
-    prediction_rows = [p.model_dump(mode="json") for p in result.predictions]
-    job_store.replace_claims_for_job(
-        job_id,
-        claim_rows,
-        entities=entity_rows,
-        mentions=mention_rows,
-        topics=topic_rows,
-        claim_topic_edges=edge_rows,
-        predictions=prediction_rows,
-    )
+    #
+    # The whole persist is factored into `persist_extraction_result` so the
+    # synchronous route and the Phase C.3 backfill worker write byte-identical
+    # transactions and can never drift.
+    persist_extraction_result(job_store, job_id, result)
     job_store.set_knowledge_status(job_id, "complete")
 
     return ExtractKnowledgeResponse(
@@ -244,26 +258,115 @@ async def extract_knowledge(request: Request, job_id: str):
     )
 
 
-@router.get("/jobs/{job_id}/knowledge", response_model=JobKnowledgeResponse)
-async def get_job_knowledge(
-    job_id: str,
-    min_confidence: float = Query(
-        default=0.5, ge=0.0, le=1.0, description="Filter floor (default 0.5)."
-    ),
-):
-    """Return all extracted claims for an episode.
+# Map legacy synchronous-route status values onto the Phase C.3 run-state
+# vocabulary so the on-demand response speaks one language.
+_RUN_STATE_FROM_STATUS = {
+    "complete": "ready",
+    "ready": "ready",
+    "extracting": "running",
+    "running": "running",
+    "pending": "pending",
+    "failed": "failed",
+    "none": "none",
+}
 
-    Default `min_confidence` is 0.5 (API surface threshold). Use 0.1 to see
-    everything we stored, 0.7+ for digest-grade precision.
-    """
-    job_store = get_job_store()
+
+def _knowledge_response(
+    job_store, job_id: str, min_confidence: float
+) -> JobKnowledgeResponse:
     status = job_store.get_knowledge_status(job_id) or "none"
     rows = job_store.get_claims_for_job(job_id, min_confidence=min_confidence)
     return JobKnowledgeResponse(
         job_id=job_id,
         knowledge_status=status,
+        run_state=_RUN_STATE_FROM_STATUS.get(status, status),
         claim_count=len(rows),
         claims=[_row_to_claim_response(r) for r in rows],
+    )
+
+
+@router.get("/jobs/{job_id}/knowledge", response_model=JobKnowledgeResponse)
+async def get_job_knowledge(
+    response: Response,
+    job_id: str,
+    min_confidence: float = Query(
+        default=0.5, ge=0.0, le=1.0, description="Filter floor (default 0.5)."
+    ),
+):
+    """Return extracted claims for an episode — with on-demand backfill.
+
+    Phase C.3 behavior:
+      * ``ready``/``complete`` → return cached claims (HTTP 200).
+      * ``running``/``extracting`` → in-progress; returns HTTP 202, poll again.
+      * ``pending`` → run inline when the transcript is small enough
+        (``knowledge_inline_max_segments``); otherwise enqueue for the
+        background worker and return HTTP 202.
+      * ``none`` → nothing queued; returns cached (typically empty) at 200.
+
+    Default `min_confidence` is 0.5 (API surface threshold). Use 0.1 to see
+    everything stored, 0.7+ for digest-grade precision.
+    """
+    job_store = get_job_store()
+    status = job_store.get_knowledge_status(job_id) or "none"
+
+    if status in ("running", "extracting"):
+        response.status_code = 202
+        return _knowledge_response(job_store, job_id, min_confidence)
+
+    if status == "pending":
+        segments, _ = resolve_segments_for_job(job_id, job_store)
+        settings = get_settings()
+        small_enough = 0 < len(segments) <= settings.knowledge_inline_max_segments
+        provider_ready = KnowledgeExtractor.is_available()
+        if small_enough and provider_ready:
+            # Run inline through the worker so persistence + budget accounting
+            # are identical to the background path. process_job handles its own
+            # lock; a concurrent worker racing us simply loses the lock and the
+            # other side wins — no double extraction.
+            await get_backfill_worker().process_job(job_store.get_job(job_id))
+        else:
+            # Too big (or no provider yet) — leave it queued for the worker.
+            response.status_code = 202
+
+    return _knowledge_response(job_store, job_id, min_confidence)
+
+
+@router.post("/jobs/{job_id}/knowledge/enqueue", response_model=EnqueueResponse)
+async def enqueue_knowledge(job_id: str):
+    """Idempotently queue a job for background knowledge extraction.
+
+    No-op when the job is already pending/running/ready (returns
+    ``enqueued=false``). Only ``none``/``failed`` jobs flip to ``pending``.
+    """
+    job_store = get_job_store()
+    if job_store.get_job(job_id) is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enqueued = job_store.enqueue_knowledge_job(job_id)
+    return EnqueueResponse(
+        job_id=job_id,
+        enqueued=enqueued,
+        knowledge_status=job_store.get_knowledge_status(job_id) or "none",
+    )
+
+
+@router.get("/knowledge/backfill-status", response_model=BackfillStatusResponse)
+async def backfill_status():
+    """Operational stats for the knowledge backfill pipeline.
+
+    Status counts (legacy aliases folded in), today's estimated spend, and the
+    number of model downgrades applied today.
+    """
+    job_store = get_job_store()
+    settings = get_settings()
+    tracker = get_budget_tracker()
+    counts = job_store.get_knowledge_status_counts()
+    return BackfillStatusResponse(
+        counts=counts,
+        pending=job_store.count_pending_knowledge_jobs(),
+        spent_today_usd=round(tracker.spent_today(), 6),
+        downgrades_today=tracker.downgrades_today(),
+        daily_budget_usd=settings.knowledge_daily_budget_usd,
+        downgrade_threshold_usd=settings.knowledge_model_downgrade_threshold_usd,
     )
 
 

@@ -234,13 +234,19 @@ class KnowledgeExtractor:
         self.prediction_extractor = prediction_extractor
 
     @classmethod
-    def from_settings(cls) -> "KnowledgeExtractor":
+    def from_settings(cls, *, downgrade: bool = False) -> "KnowledgeExtractor":
         """Build an extractor using the `extract` task preset.
 
         Also wires a `TopicAggregator` backed by the `summarize` preset
         for the second-pass topic run, and a `PredictionExtractor`
         sharing the `extract` preset for prediction enrichment. Either
         side is skipped silently when its provider isn't available.
+
+        ``downgrade=True`` (set by the Phase C.3 backfill worker when over
+        its daily budget threshold) resolves the primary `extract` provider
+        to a cheaper same-provider model. The secondary topic/prediction
+        passes are left on their normal presets — they're additive and
+        gated on claim volume, so they contribute little to the bill.
         """
         topic_agg = TopicAggregator.from_settings() if TopicAggregator.is_available() else None
         pred_ext = (
@@ -249,7 +255,7 @@ class KnowledgeExtractor:
             else None
         )
         return cls(
-            provider=get_provider_for_task(TaskType.EXTRACT),
+            provider=get_provider_for_task(TaskType.EXTRACT, downgrade=downgrade),
             canonicalizer=EntityCanonicalizer(),
             topic_aggregator=topic_agg,
             prediction_extractor=pred_ext,
