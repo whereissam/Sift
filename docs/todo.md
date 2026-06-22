@@ -4,6 +4,34 @@
 
 Sift is evolving from a media utility into an **AI-First Knowledge Extraction Platform**. The user's true intent isn't to own an MP3 — it's to get the *insight* trapped inside that MP3. Downloading is a legacy middle step that becomes invisible as the platform matures.
 
+## Security Hardening
+
+Full-codebase security review completed 2026-06-22. Fixed:
+
+- [x] SSRF: route all user/feed-supplied URL fetches through an allowlist
+      validator that re-checks every redirect hop (artwork, RSS enclosures,
+      Xiaoyuzhou, Apple Podcasts, Discord); closed blocklist gaps (CGNAT,
+      Alibaba metadata, IPv4-mapped IPv6, unspecified/multicast)
+- [x] API auth on the realtime WebSocket + extract-presets routers; SSRF check
+      on AI `base_url`; scope restriction on Obsidian `vault_path`
+- [x] Tauri Rust backend: parameterized `get_jobs` SQL, restricted CORS off the
+      wildcard, removed the `/bin/sh -c` yt-dlp invocation, RFC 5987
+      Content-Disposition, streamed file responses, dropped unused shell caps
+- [x] Secrets: warn when the fallback encryption key is used; require `API_KEY`
+      in Docker Compose; HSTS + CSP headers; deduped the Twitter bearer token;
+      YAML-safe Obsidian frontmatter
+- [x] Frontend: nginx CSP/HSTS, removed `TAURI_` from Vite `envPrefix`, added
+      `.dockerignore`, gitignore `output/`
+
+Deferred / follow-up:
+
+- [ ] Socket-level DNS pinning to fully close the SSRF DNS-rebinding TOCTOU
+      window (current mitigation: per-hop re-validation, no pinning)
+- [ ] Allow updating a valid `output_dir` on existing subscriptions (currently
+      blocked by the column allowlist)
+- [ ] Persist + encrypt cloud-provider credentials (currently in-memory only)
+- [ ] Per-endpoint rate limits on expensive download/transcribe/upload routes
+
 ## Priority Matrix
 
 ### v1.5 — Desktop App (Complete)

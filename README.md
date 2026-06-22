@@ -145,8 +145,11 @@ HOST=127.0.0.1            # Use 0.0.0.0 to expose to network
 PORT=8000
 DOWNLOAD_DIR=./output
 
-# API Authentication (optional)
+# API Authentication (optional for localhost; REQUIRED if exposed to a network)
 # API_KEY=your-secret-key  # If set, requires X-API-Key header
+
+# Secret encryption (set for production — encrypts stored AI provider keys at rest)
+# ENCRYPTION_KEY=your-strong-random-secret
 
 # Telegram Bot
 TELEGRAM_BOT_TOKEN=xxx
@@ -299,6 +302,16 @@ The **Agentic Pipeline** (on the roadmap) will make this entire chain automatic:
 - [Queue & Scheduling](docs/queue-scheduling.md) - Batch downloads, priority queue, scheduling
 - [Webhooks & Annotations](docs/webhooks-annotations.md) - Notifications and collaboration
 - [Feature Roadmap](docs/todo.md) - Full v1.x and v2.0 AI-Native roadmap
+
+## Security
+
+Sift is safe-by-default for **local, single-user** use. Before exposing it on a
+network, set `API_KEY` (request auth) and `ENCRYPTION_KEY` (encrypts stored
+provider keys at rest), and terminate TLS at a reverse proxy. The Docker Compose
+setup requires `API_KEY` because the container binds `0.0.0.0`.
+
+Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md).
+Don't open a public issue.
 
 ## License
 
