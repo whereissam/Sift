@@ -214,9 +214,9 @@ async def translate_text(request: TranslateRequest):
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Translation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
+    except Exception:
+        logger.error("Translation failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="Translation failed")
 
 
 @router.post("/job", response_model=TranslateResponse)
@@ -304,6 +304,6 @@ async def translate_job(request: TranslateFromJobRequest):
             tokens_used=result.tokens_used,
         )
 
-    except Exception as e:
-        logger.error(f"Translation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
+    except Exception:
+        logger.error("Translation failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="Translation failed")

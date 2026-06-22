@@ -4,15 +4,16 @@ import base64
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from .auth import verify_api_key
 from ..core.realtime_transcriber import RealtimeTranscriptionSession, TranscriptPolisher
 from ..core.transcriber import WhisperModel
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["realtime"])
+router = APIRouter(tags=["realtime"], dependencies=[Depends(verify_api_key)])
 
 
 class TranscriptionConfig(BaseModel):

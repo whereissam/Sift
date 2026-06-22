@@ -1,6 +1,8 @@
 """API routes for Obsidian integration."""
 
 import logging
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from .auth import verify_api_key
@@ -11,12 +13,38 @@ from .schemas import (
     ObsidianExportResponse,
     ObsidianValidateResponse,
 )
+from ..config import get_settings
 from ..core.job_store import get_job_store
 from ..core.obsidian_exporter import ObsidianExporter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/obsidian", tags=["Obsidian"], dependencies=[Depends(verify_api_key)])
+
+
+def _validate_vault_path_scope(vault_path: str) -> None:
+    """Reject vault paths outside the user's home dir or the configured download dir.
+
+    Raises HTTPException(400) if the resolved path escapes both allowed roots.
+    """
+    try:
+        resolved = Path(vault_path).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid vault path")
+
+    allowed_roots = [
+        Path.home().resolve(),
+        Path(get_settings().download_dir).resolve(),
+    ]
+
+    for root in allowed_roots:
+        if resolved == root or root in resolved.parents:
+            return
+
+    raise HTTPException(
+        status_code=400,
+        detail="Vault path must be under your home directory or the download directory",
+    )
 
 
 @router.get("/settings", response_model=ObsidianSettingsResponse)
@@ -48,6 +76,9 @@ async def save_obsidian_settings(
     request: ObsidianSettingsRequest,
 ) -> ObsidianSettingsResponse:
     """Save Obsidian settings."""
+    # Restrict the vault path to allowed roots before doing anything else
+    _validate_vault_path_scope(request.vault_path)
+
     # Validate the vault path first
     exporter = ObsidianExporter(request.vault_path)
     is_valid, error = exporter.validate_vault()
@@ -75,6 +106,8 @@ async def save_obsidian_settings(
 @router.post("/validate", response_model=ObsidianValidateResponse)
 async def validate_vault(vault_path: str) -> ObsidianValidateResponse:
     """Validate that a vault path is accessible and writable."""
+    _validate_vault_path_scope(vault_path)
+
     exporter = ObsidianExporter(vault_path)
     is_valid, error = exporter.validate_vault()
 

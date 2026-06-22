@@ -177,7 +177,7 @@ async def get_extraction(job_id: str):
 
 
 # This route has a unique prefix so it doesn't conflict with job_id routes
-presets_router = APIRouter(prefix="/extract", tags=["Extraction"])
+presets_router = APIRouter(prefix="/extract", tags=["Extraction"], dependencies=[Depends(verify_api_key)])
 
 
 @presets_router.get("/presets", response_model=list[ExtractionPresetInfo])

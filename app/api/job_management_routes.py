@@ -160,7 +160,7 @@ async def create_backup():
 
     return {
         "status": "success",
-        "backup_path": str(backup_path),
+        "backup_path": Path(backup_path).name,
         "message": "Database backup created",
     }
 

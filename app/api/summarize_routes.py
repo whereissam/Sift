@@ -66,9 +66,9 @@ async def summarize_text(request: Request, body: SummarizeRequest):
             "provider": result.provider,
             "tokens_used": result.tokens_used,
         }
-    except Exception as e:
+    except Exception:
         logger.exception("Summarization failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Summarization failed")
 
 
 @router.post("/summarize/job/{job_id}")
@@ -127,9 +127,9 @@ async def summarize_job(request: Request, job_id: str, summary_type: str = "bull
             "provider": result.provider,
             "tokens_used": result.tokens_used,
         }
-    except Exception as e:
+    except Exception:
         logger.exception("Summarization failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Summarization failed")
 
 
 @router.get("/summarize/providers")

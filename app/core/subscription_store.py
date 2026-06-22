@@ -11,6 +11,26 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+def _validate_output_dir(output_dir: Optional[str]) -> None:
+    """Ensure a custom output_dir stays under the configured download dir.
+
+    Raises ValueError if the resolved path escapes the download directory.
+    """
+    if not output_dir:
+        return
+
+    from ..config import get_settings
+
+    download_root = Path(get_settings().download_dir).resolve()
+    try:
+        resolved = Path(output_dir).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        raise ValueError("Invalid output_dir")
+
+    if resolved != download_root and download_root not in resolved.parents:
+        raise ValueError("output_dir must be under the download directory")
+
+
 class SubscriptionType(str, Enum):
     """Subscription types."""
     RSS = "rss"
@@ -141,6 +161,7 @@ class SubscriptionStore:
         output_dir: Optional[str] = None,
     ) -> dict:
         """Create a new subscription."""
+        _validate_output_dir(output_dir)
         now = datetime.utcnow().isoformat()
 
         with self._get_conn() as conn:
@@ -356,8 +377,19 @@ class SubscriptionStore:
             limit=limit,
         )
 
+    # Allowlist of item columns that can be updated
+    _UPDATABLE_ITEM_COLUMNS = {
+        "content_id", "content_url", "title", "published_at", "status",
+        "job_id", "file_path", "transcription_path", "error", "downloaded_at",
+    }
+
     def update_item(self, item_id: str, **kwargs) -> Optional[dict]:
         """Update item fields."""
+        # Reject any column names not in the allowlist
+        invalid_keys = set(kwargs.keys()) - self._UPDATABLE_ITEM_COLUMNS
+        if invalid_keys:
+            raise ValueError(f"Invalid column names: {invalid_keys}")
+
         # Convert enum fields to value
         if "status" in kwargs and isinstance(kwargs["status"], SubscriptionItemStatus):
             kwargs["status"] = kwargs["status"].value

@@ -1,5 +1,6 @@
 """Cloud storage API routes."""
 
+import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -10,6 +11,8 @@ from ..core.cloud import (
     ProviderConfig,
     ProviderType,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cloud", tags=["cloud"], dependencies=[Depends(verify_api_key)])
 
@@ -310,8 +313,9 @@ async def list_provider_files(
     try:
         files = await provider.list_files(path, limit)
         return {"files": files, "path": path}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.error("Cloud file listing failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="Cloud export failed")
 
 
 @router.get("/providers/{provider_id}/url")
@@ -334,8 +338,9 @@ async def get_file_url(
         return {"url": url, "expires_in": expires_in}
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.error("Cloud file URL generation failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="Cloud export failed")
 
 
 @router.delete("/providers/{provider_id}/files")
@@ -357,5 +362,6 @@ async def delete_provider_file(
         return {"status": "deleted", "path": path}
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.error("Cloud file delete failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="Cloud export failed")

@@ -16,6 +16,7 @@ from .schemas import (
 )
 from ..core.job_store import get_job_store
 from ..core.summarizer import LiteLLMProvider, TranscriptSummarizer
+from ..core.url_validator import validate_url_ssrf
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,13 @@ async def save_ai_settings(request: AISettingsRequest):
             detail=f"{request.provider.value} requires an API key",
         )
 
+    # Prevent SSRF via attacker-controlled base_url (validate user input only;
+    # the server-set Ollama default below is trusted).
+    if request.base_url:
+        is_valid, error = validate_url_ssrf(request.base_url)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=f"Invalid base_url: {error}")
+
     # Set default base_url for Ollama if not provided
     base_url = request.base_url
     if request.provider == AIProvider.OLLAMA and not base_url:
@@ -156,6 +164,12 @@ async def get_providers():
 @router.post("/test", response_model=AITestResponse)
 async def test_connection(request: AITestRequest):
     """Test connection to an AI provider."""
+    # Prevent SSRF via attacker-controlled base_url (validate user input only).
+    if request.base_url:
+        is_valid, error = validate_url_ssrf(request.base_url)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=f"Invalid base_url: {error}")
+
     try:
         # Build the LiteLLM model string
         model = TranscriptSummarizer._build_litellm_model(

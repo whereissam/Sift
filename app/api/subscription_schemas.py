@@ -2,8 +2,27 @@
 
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _validate_output_dir_scope(value: Optional[str]) -> Optional[str]:
+    """Reject output_dir values that resolve outside the configured download dir."""
+    if not value:
+        return value
+
+    from ..config import get_settings
+
+    download_root = Path(get_settings().download_dir).resolve()
+    try:
+        resolved = Path(value).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        raise ValueError("Invalid output_dir")
+
+    if resolved != download_root and download_root not in resolved.parents:
+        raise ValueError("output_dir must be under the download directory")
+    return value
 
 
 class SubscriptionType(str, Enum):
@@ -76,6 +95,11 @@ class CreateSubscriptionRequest(BaseModel):
         description="Custom output directory for downloads",
     )
 
+    @field_validator("output_dir")
+    @classmethod
+    def _check_output_dir(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_output_dir_scope(v)
+
 
 class UpdateSubscriptionRequest(BaseModel):
     """Request to update a subscription."""
@@ -120,6 +144,11 @@ class UpdateSubscriptionRequest(BaseModel):
         default=None,
         description="Custom output directory for downloads",
     )
+
+    @field_validator("output_dir")
+    @classmethod
+    def _check_output_dir(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_output_dir_scope(v)
 
 
 class SubscriptionResponse(BaseModel):
