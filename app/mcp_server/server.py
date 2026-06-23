@@ -4,10 +4,11 @@
 single ``SiftClient`` so the whole surface shares one HTTP connection pool and a
 test can inject an in-process (ASGI) client.
 
-Scope: tools backed by P18 + existing routes. Tools that need unbuilt phases —
-``ask_episode`` / ``ask_at_timestamp`` (P11 RAG), ``search_library`` (P10),
-``compare_episodes`` / ``find_contradictions`` / ``summarize_trend`` (P13 + P20),
-``export_to_vault`` (P21) — are intentionally absent until their substrate ships.
+Scope: tools backed by P18 + existing routes, plus ``export_to_vault`` (P21).
+Tools that need unbuilt phases — ``ask_episode`` / ``ask_at_timestamp`` (P11 RAG),
+``search_library`` (P10), ``compare_episodes`` / ``find_contradictions`` /
+``summarize_trend`` (P13 + P20) — are intentionally absent until their substrate
+ships.
 """
 
 from __future__ import annotations
@@ -251,5 +252,28 @@ def build_server(
             except Exception:  # noqa: BLE001 - a prediction row may not exist yet
                 continue
         return {"episode_id": episode_id, "predictions": predictions}
+
+    # ===== export (P21) =====
+
+    @mcp.tool()
+    async def export_to_vault(
+        episode_id: str,
+        target: str = "obsidian",
+        template: str = "episode",
+        vault_path: str | None = None,
+        preview: bool = False,
+    ) -> dict:
+        """Export an episode as a templated markdown note. `target`: obsidian |
+        logseq | markdown. `template`: episode | highlights. Writes into the
+        configured (or given) vault; set `preview=true` to return the rendered
+        note content instead of writing it."""
+        body = {
+            "target": target,
+            "template": template,
+            "write": not preview,
+        }
+        if vault_path:
+            body["vault_path"] = vault_path
+        return await sift.export_job(episode_id, body)
 
     return mcp

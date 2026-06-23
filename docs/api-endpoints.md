@@ -206,6 +206,17 @@ A digest is a named set of subscriptions synthesized on a schedule into a cross-
 | POST | `/api/digests/{id}/run` | Generate a digest now (synchronous) |
 | GET | `/api/digests/{id}/runs` | List past runs for a digest |
 
+### Export Endpoints (P21 — Vault & Note-App Export)
+
+Render an episode into a templated markdown note for Obsidian / Logseq / plain markdown.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/export-templates` | List note templates (episode, highlights, …) + targets (obsidian/logseq/markdown) |
+| POST | `/api/jobs/{job_id}/export` | Render an episode → write to a vault, or return content (`write=false`) |
+
+Body: `{target, template, vault_path?, subfolder?, min_confidence?, max_segments?, write?}`. Vault paths are restricted to the home or download directory; the subfolder is `..`/absolute-path contained. Notion export is deferred. Also exposed as the MCP `export_to_vault` tool.
+
 ### MCP Server (P19)
 
 Not a REST surface — a separate [MCP](https://modelcontextprotocol.io) server (`sift-mcp`, stdio transport) that wraps the endpoints above as agent tools for Claude Desktop / Cursor. It's an HTTP client of this API with `X-API-Key` passthrough; see the [MCP Server](../README.md#mcp-server) section in the root README for tool list and client config.

@@ -34,6 +34,7 @@
 - **Content Distiller** - Feed multiple URLs and get a single synthesized briefing (coming soon)
 
 ### Automate & Integrate
+- **Vault & Note-App Export** - Turn any episode into a templated markdown note for **Obsidian / Logseq / plain markdown** — YAML frontmatter, clickable timestamp links, claim cards, pull-quote highlights, a collapsible transcript, and `[[wikilinks]]` for canonical entities. Served over the API and the MCP `export_to_vault` tool. See [Vault Export](#vault--note-app-export).
 - **Subscription Digests (Cross-Episode Synthesis)** - Define a digest over a set of subscriptions and Sift generates a scheduled cross-source brief: what several episodes agreed on, where they disagreed, repeated narratives, and predictions worth tracking. The differentiator over single-episode summaries is reading *across* sources. Also on-demand per-topic synthesis. See [Subscription Digests](#subscription-digests).
 - **MCP Server (Capability Surface)** - Expose Sift to Claude Desktop, Cursor, and custom agents as MCP tools (`ingest_url`, `get_transcript`, `get_claims`, `get_entities`, `get_topics`, `get_predictions`, …). One server, N agent skills. See [MCP Server](#mcp-server) below.
 - **Agentic Ingest Pipeline** - Paste a URL and Sift auto-triggers summarization, entity extraction, and search indexing (coming soon)
@@ -280,6 +281,29 @@ docker-compose up -d    # API + Frontend + Whisper + Ollama
 
 See [Deployment Guide](docs/deployment.md) for Docker, cloud, and systemd setup.
 
+## Vault & Note-App Export
+
+Export an episode as a templated markdown note, built on Sift's primitives (transcript + the P18 knowledge layer) rather than a one-off plugin.
+
+- **Targets:** `obsidian` (`[[wikilinks]]` + collapsible `> [!note]` callout transcript), `logseq` (outline bullets), `markdown` (portable plain text).
+- **Templates:** `episode` (frontmatter, claim cards, clickable timestamps, full transcript) and `highlights` (top claims by confidence, no transcript).
+- **Frontmatter:** title, source, date, speakers, topics, entities, tags — YAML-safe (anti-injection).
+
+```bash
+# Write an Obsidian note into a configured vault
+curl -X POST http://localhost:8000/api/jobs/{id}/export -H "X-API-Key: $KEY" -H "Content-Type: application/json" -d '{
+  "target": "obsidian", "template": "episode", "vault_path": "~/Vaults/Research", "subfolder": "Sift"
+}'
+
+# Preview the rendered markdown without writing
+curl -X POST http://localhost:8000/api/jobs/{id}/export -H "X-API-Key: $KEY" -d '{"write": false, "template": "highlights"}'
+
+# List templates + targets
+curl http://localhost:8000/api/export-templates -H "X-API-Key: $KEY"
+```
+
+Vault paths are restricted to your home directory or the configured download dir, with `..`/absolute-path containment on the subfolder. Agents can call the same thing via the MCP `export_to_vault(episode_id, target, template?, preview?)` tool. **Notion** export (database rows per claim) is deferred — it needs an external integration token + SDK.
+
 ## Subscription Digests
 
 A **digest** turns Sift from an on-demand tool into an always-on knowledge pipeline. Define a digest over one or more [subscriptions](#subscriptions), and a background runner periodically gathers the new episodes in a time window, extracts their structured knowledge (P18), and runs **cross-episode synthesis** with the `synthesize` LLM preset — producing a brief of:
@@ -316,7 +340,7 @@ Endpoints: `POST/GET/PATCH/DELETE /api/digests`, `GET /api/digests/{id}` (config
 
 Sift ships an [MCP](https://modelcontextprotocol.io) server (`sift-mcp`) that exposes its primitives as tools to Claude Desktop, Cursor, and any MCP client. It's a thin HTTP client of the Sift REST API — point it at a local or remote Sift instance with `SIFT_API_URL` / `SIFT_API_KEY` (the key is sent as `X-API-Key`). The MCP process holds no database of its own.
 
-**Tools (this release):** `ingest_url`, `get_transcript`, `get_segment`, `get_summary`, `get_chapters`, `get_clips`, `get_highlights`, `get_claims`, `get_entities`, `get_topics`, `get_predictions`. The knowledge tools (`get_claims`/`entities`/`topics`/`predictions`) read the P18 layer and return `status: "pending"` while extraction is still running — just retry. Q&A, library-wide semantic search, cross-episode synthesis, and vault export are not yet exposed (they await P10/P11/P13/P20/P21).
+**Tools (this release):** `ingest_url`, `get_transcript`, `get_segment`, `get_summary`, `get_chapters`, `get_clips`, `get_highlights`, `get_claims`, `get_entities`, `get_topics`, `get_predictions`, `export_to_vault`. The knowledge tools (`get_claims`/`entities`/`topics`/`predictions`) read the P18 layer and return `status: "pending"` while extraction is still running — just retry. `export_to_vault` writes an Obsidian/Logseq note (P21). Q&A and library-wide semantic search are not yet exposed (they await P10/P11).
 
 **Install & run** (needs a running Sift API — see [Web Mode](#web-mode-self-hosted-full-features)):
 

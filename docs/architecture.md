@@ -56,6 +56,7 @@ Self-hosted server mode with full feature set including transcription, LLM summa
 | Real-time Transcription | Planned | Yes |
 | Knowledge Extraction (claims/entities/topics/predictions, P18) | No | Yes |
 | Subscription Digests (cross-episode synthesis, P20) | No | Yes |
+| Vault/Note Export (Obsidian/Logseq, P21) | No | Yes |
 | MCP Server (P19) | No | Yes |
 | Telegram Bot | No | Yes |
 | Subscriptions/RSS | Planned | Yes |
@@ -187,9 +188,10 @@ xdownloader/
 │   │   ├── prediction_extractor.py   # Prediction lifecycle enrichment
 │   │   │ # ── Digest Pipeline (P20) ──
 │   │   ├── digest_schema.py / digest_synthesizer.py  # Cross-episode synthesis
-│   │   └── digest_runner.py      # Scheduled digest worker
+│   │   ├── digest_runner.py      # Scheduled digest worker
+│   │   └── note_exporter.py      # P21: Obsidian/Logseq note templater + vault writer
 │   │
-│   ├── api/                 # FastAPI routes (33 modules)
+│   ├── api/                 # FastAPI routes (34 modules)
 │   │   ├── __init__.py
 │   │   ├── routes.py        # Download/transcribe endpoints
 │   │   ├── batch_routes.py  # Batch download endpoints
@@ -201,6 +203,7 @@ xdownloader/
 │   │   ├── knowledge_routes.py    # P18: knowledge / claims / backfill
 │   │   ├── entity_routes.py / topic_routes.py / prediction_routes.py  # P18
 │   │   ├── digest_routes.py       # P20: digests + topic synthesis
+│   │   ├── export_routes.py       # P21: vault/note export
 │   │   └── schemas.py       # Pydantic models
 │   │
 │   ├── mcp_server/          # MCP server (P19) — HTTP client of the API (sift-mcp)
@@ -697,6 +700,10 @@ digest_runs (JSON + rendered markdown)  →  webhook channel
 ```
 
 The differentiator over single-episode summaries is *cross-source* synthesis. On-demand per-topic synthesis is also available at `GET /api/topics/{id}/synthesis`.
+
+### Vault & note export (P21)
+
+`note_exporter.py` renders an episode (transcript + claims/entities/topics) into a templated markdown note — Obsidian (`[[wikilinks]]` + callout transcript), Logseq (outline bullets), or plain markdown — with YAML-safe frontmatter, clickable timestamp links, and claim cards. `POST /api/jobs/{id}/export` writes into a scope-restricted vault (home / download dir) or returns the rendered content (`write=false`); the same path backs the MCP `export_to_vault` tool. Notion is deferred (needs an external SDK + token).
 
 ## Telegram Bot Flow
 

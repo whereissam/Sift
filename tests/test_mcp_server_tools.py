@@ -71,6 +71,11 @@ class FakeSift:
     async def get_prediction(self, claim_id):
         return {"claim_id": claim_id, "resolution": "pending"}
 
+    async def export_job(self, job_id, body):
+        self.calls.append(("export_job", job_id, body))
+        return {"success": True, "written": body.get("write") is not False,
+                "template": body.get("template"), "target": body.get("target")}
+
 
 def _server(fake: FakeSift):
     return build_server(MCPConfig(api_url="http://x"), client=fake)
@@ -84,14 +89,14 @@ class TestRegistration:
         assert names == {
             "ingest_url", "get_transcript", "get_segment", "get_summary",
             "get_chapters", "get_clips", "get_highlights", "get_claims",
-            "get_entities", "get_topics", "get_predictions",
+            "get_entities", "get_topics", "get_predictions", "export_to_vault",
         }
 
     @pytest.mark.asyncio
     async def test_deferred_tools_absent(self):
         m = _server(FakeSift())
         names = {t.name for t in await m.list_tools()}
-        for absent in ("ask_episode", "search_library", "compare_episodes", "export_to_vault"):
+        for absent in ("ask_episode", "search_library", "compare_episodes", "summarize_trend"):
             assert absent not in names
 
 
@@ -229,3 +234,31 @@ class TestKnowledgeTools:
         m = _server(FakeSift(knowledge=(202, {"run_state": "pending"})))
         out = _parse(await m.call_tool("get_topics", {"episode_id": "ep1"}))
         assert out["status"] == "pending"
+
+
+class TestExportTool:
+    @pytest.mark.asyncio
+    async def test_export_to_vault_registered(self):
+        m = _server(FakeSift())
+        names = {t.name for t in await m.list_tools()}
+        assert "export_to_vault" in names
+
+    @pytest.mark.asyncio
+    async def test_export_writes_by_default(self):
+        fake = FakeSift()
+        m = _server(fake)
+        out = _parse(await m.call_tool(
+            "export_to_vault", {"episode_id": "ep1", "target": "logseq"}
+        ))
+        assert out["success"] is True
+        # write=True passed through (preview defaults to false).
+        _, job_id, body = fake.calls[-1]
+        assert job_id == "ep1" and body["write"] is True and body["target"] == "logseq"
+
+    @pytest.mark.asyncio
+    async def test_export_preview_sets_write_false(self):
+        fake = FakeSift()
+        m = _server(fake)
+        await m.call_tool("export_to_vault", {"episode_id": "ep1", "preview": True})
+        _, _, body = fake.calls[-1]
+        assert body["write"] is False

@@ -32,7 +32,7 @@ app/
 ├── cli.py                   # CLI interface
 ├── logging_config.py        # Structured logging (structlog)
 │
-├── api/                     # REST API routes (33 modules, 130+ routes)
+├── api/                     # REST API routes (34 modules, 136 routes)
 │   ├── __init__.py          # Router aggregation
 │   ├── routes.py            # Health, readyz, platforms, quick-add
 │   ├── download_routes.py   # POST /download, GET /download/{id}, file serving
@@ -48,6 +48,7 @@ app/
 │   ├── topic_routes.py      # P18: /topics, /topics/{id}/claims, /topics/{id}/synthesis
 │   ├── prediction_routes.py # P18: /predictions, resolve/revert
 │   ├── digest_routes.py     # P20: /digests CRUD + run, cross-episode synthesis
+│   ├── export_routes.py     # P21: /export-templates, /jobs/{id}/export (vault notes)
 │   ├── job_management_routes.py # Job listing, retry, cleanup
 │   ├── batch_routes.py      # Batch downloads
 │   ├── schedule_routes.py   # Scheduled downloads
@@ -123,6 +124,7 @@ app/
 │   ├── digest_synthesizer.py    # Cross-episode synthesis engine (synthesize preset)
 │   ├── digest_runner.py     # Scheduled digest worker + run_digest
 │   ├── digest_runner_helpers.py # Claim gathering across a subscription window
+│   ├── note_exporter.py     # P21: Obsidian/Logseq/markdown note templater + vault writer
 │   │
 │   ├── queue_manager.py     # Priority download queue
 │   ├── batch_manager.py     # Batch download operations

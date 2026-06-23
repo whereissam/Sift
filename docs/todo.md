@@ -97,7 +97,7 @@ Follow-up (completed 2026-06-22):
 | AI-Friendly Knowledge Schema (Claims, Entities, Predictions) | Medium | Very High | P18 ✅ |
 | Sift MCP Server (Capability Surface) | Medium | Very High | P19 🚧 (Phase 1 shipped) |
 | Subscription Digest Pipeline (Cross-Episode Synthesis) | High | Very High | P20 🚧 (Phase 1 shipped) |
-| Vault & Note-App Export Channels (Obsidian / Notion / Logseq) | Low | High | P21 |
+| Vault & Note-App Export Channels (Obsidian / Notion / Logseq) | Low | High | P21 🚧 (Obsidian/Logseq shipped; Notion deferred) |
 
 **Dependency order:** P18 is the substrate (canonical schema). P19 (MCP) and P20 (Digest) both read from it. P21 (Vault Export) consumes from P19 and P20.
 
@@ -1139,33 +1139,48 @@ Deferred: email/Notion/Obsidian delivery (email has no infra; Notion/Obsidian la
 
 > The "very convenient YouTube → note" UX, but built on primitives instead of a one-off plugin.
 
+> **Phase 1 status (✅ SHIPPED):** the markdown templater, Obsidian + Logseq + plain-markdown targets, the episode + highlights templates, the export API, and the MCP `export_to_vault` tool. Notion (external SDK + token), topic/digest note templates, per-subscription auto-export, and chapter ToC are deferred. See "P21 Phase 1 — what shipped" below.
+
 ### Tasks
 
-- [ ] Markdown templater (`app/core/note_exporter.py`):
-  - [ ] YAML frontmatter (title, source_url, date, speakers, topics, tags)
-  - [ ] Clickable timestamp links (`[12:42](https://youtu.be/...?t=762)`)
-  - [ ] Collapsible transcript blocks
-  - [ ] Claim cards (one block per extracted claim, with timestamp + confidence)
-  - [ ] Highlight blocks (pull quotes)
-  - [ ] Embedded chapter ToC
-- [ ] Built-in templates:
-  - [ ] **Episode note** (full episode → one note)
-  - [ ] **Highlights only** (just key quotes + claims)
-  - [ ] **Topic note** (cross-episode synthesis on a topic)
-  - [ ] **Daily digest** (one note per day, all subscriptions)
-- [ ] Output targets:
-  - [ ] **Obsidian vault**: write `.md` into configured folder, use `[[wikilinks]]` for normalized entities
-  - [ ] **Notion**: create page in configured database, claims as database rows
-  - [ ] **Logseq**: journal-friendly format with block references
-- [ ] Per-subscription auto-export setting
-- [ ] Vault config:
-  - [ ] Vault path (Obsidian)
-  - [ ] Database ID + integration token (Notion)
-  - [ ] Graph path (Logseq)
-- [ ] MCP integration: `export_to_vault(episode_id, target, template?)` calls this layer
-- [ ] API endpoints:
-  - [ ] `POST /jobs/{id}/export` with `target` and `template` params
-  - [ ] `GET /api/export-templates`
+- [x] Markdown templater (`app/core/note_exporter.py`):
+  - [x] YAML frontmatter (title, source, date, speakers, topics, entities, tags) — YAML-safe
+  - [x] Clickable timestamp links (`[12:42](https://youtu.be/...?t=762s)` for YouTube; plain otherwise)
+  - [x] Collapsible transcript blocks (Obsidian `> [!note]-` callout; bullets elsewhere)
+  - [x] Claim cards (one block per claim, with timestamp + confidence + evidence)
+  - [x] Highlight blocks (pull quotes — the `highlights` template, confidence-ranked)
+  - [ ] Embedded chapter ToC — renderer supports it; the route doesn't fetch chapters yet (would add a summarize LLM call)
+- [~] Built-in templates:
+  - [x] **Episode note** (full episode → one note)
+  - [x] **Highlights only** (just key quotes + claims)
+  - [~] **Topic note** (renderer `render_synthesis_note` exists; no endpoint yet — feed it P20 `/topics/{id}/synthesis`)
+  - [~] **Daily digest** (renderer exists; no endpoint yet — feed it a P20 digest run)
+- [~] Output targets:
+  - [x] **Obsidian vault**: write `.md` into configured/given folder, `[[wikilinks]]` for entities
+  - [ ] **Notion**: create page in configured database — deferred (needs `notion-client` + integration token)
+  - [x] **Logseq**: outline-bullet markdown with `[[links]]` (full block-reference graph not attempted)
+- [ ] Per-subscription auto-export setting — deferred
+- [~] Vault config:
+  - [x] Vault path — reuses the existing Obsidian vault setting (or per-request `vault_path`), scope-restricted to home/download dir
+  - [ ] Database ID + integration token (Notion) — deferred
+  - [ ] Graph path (Logseq) — uses the same vault-path mechanism
+- [x] MCP integration: `export_to_vault(episode_id, target, template?, preview?)` calls this layer
+- [x] API endpoints:
+  - [x] `POST /api/jobs/{id}/export` with `target` + `template` (+ `write`/`vault_path`/`subfolder`/`min_confidence`)
+  - [x] `GET /api/export-templates`
+
+### P21 Phase 1 — what shipped
+
+Generalized the one-off Obsidian transcript exporter into a multi-target note templater built on Sift's primitives (transcript + P18 knowledge). Deterministic rendering — no LLM — since the knowledge is already extracted.
+
+- `app/core/note_exporter.py` — `NoteTarget` (obsidian/logseq/markdown) + `NoteTemplate` (episode/highlights/topic/digest) enums; `render_episode_note` (frontmatter + entity wikilinks + claim cards + clickable timestamps + collapsible transcript), `render_highlights_note` (confidence-ranked claims), `render_synthesis_note` (wraps a P20 topic/digest synthesis); `write_note_to_vault` — the secure filesystem writer (vault validation, `..`/absolute path-containment, filename sanitization, dedup) generalized from `ObsidianExporter`. YAML-safe frontmatter preserved (anti-injection).
+- `app/api/export_routes.py` — `GET /api/export-templates`; `POST /api/jobs/{id}/export` gathers the episode (transcript segments + claims + resolved entities/topics) → renders → writes into the configured (or given) vault, or returns the rendered content when `write=false` (preview). Reuses the Obsidian vault-path scope check (home/download dir only). Topic/digest templates are rejected on the job route with a 400.
+- `app/mcp_server/` — `export_to_vault(episode_id, target, template?, vault_path?, preview?)` tool + `SiftClient.export_job`. The P19 server is now 12 tools.
+- `app/api/__init__.py` — export router wired.
+- `README.md` — Vault Export section with curl + preview examples; MCP tool list updated.
+- `tests/` — `test_note_exporter.py` (17: timestamp links, wikilinks per target, frontmatter safety, claim cards, highlights ranking, vault write + containment + dedup), `test_export_api.py` (9: templates list, write + preview, highlights, 404/400 guards, vault-scope rejection), +3 MCP export-tool tests — **29 new tests**, 541/541 suite green.
+
+Deferred: **Notion** (external `notion-client` + integration token + database), topic/digest *export endpoints* (renderers exist, just need wiring to P20 synthesis), per-subscription auto-export, and chapter ToC fetching (avoids an extra summarize LLM call on export).
 
 ---
 

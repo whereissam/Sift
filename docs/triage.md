@@ -1,6 +1,6 @@
 # Roadmap Triage — Open Items
 
-Auto-extracted from [todo.md](todo.md) on 2026-06-23. **314 open items** across 27 sections. Checked items from the roadmap are omitted. Use this to prioritize; the source of truth remains todo.md.
+Auto-extracted from [todo.md](todo.md) on 2026-06-23. **294 open items** across 27 sections. Checked items from the roadmap are omitted. Use this to prioritize; the source of truth remains todo.md.
 
 ## P0: Smart Metadata & Tagging ✅ COMPLETED › Tasks  (1)
 
@@ -359,33 +359,13 @@ Auto-extracted from [todo.md](todo.md) on 2026-06-23. **314 open items** across 
 
 - [ ] Source ranking (per-user trust weights) — deferred
 
-## P21: Vault & Note-App Export Channels › Tasks  (25)
+## P21: Vault & Note-App Export Channels › Tasks  (5)
 
-- [ ] Markdown templater (`app/core/note_exporter.py`):
-  - [ ] YAML frontmatter (title, source_url, date, speakers, topics, tags)
-  - [ ] Clickable timestamp links (`[12:42](https://youtu.be/...?t=762)`)
-  - [ ] Collapsible transcript blocks
-  - [ ] Claim cards (one block per extracted claim, with timestamp + confidence)
-  - [ ] Highlight blocks (pull quotes)
-  - [ ] Embedded chapter ToC
-- [ ] Built-in templates:
-  - [ ] **Episode note** (full episode → one note)
-  - [ ] **Highlights only** (just key quotes + claims)
-  - [ ] **Topic note** (cross-episode synthesis on a topic)
-  - [ ] **Daily digest** (one note per day, all subscriptions)
-- [ ] Output targets:
-  - [ ] **Obsidian vault**: write `.md` into configured folder, use `[[wikilinks]]` for normalized entities
-  - [ ] **Notion**: create page in configured database, claims as database rows
-  - [ ] **Logseq**: journal-friendly format with block references
-- [ ] Per-subscription auto-export setting
-- [ ] Vault config:
-  - [ ] Vault path (Obsidian)
-  - [ ] Database ID + integration token (Notion)
-  - [ ] Graph path (Logseq)
-- [ ] MCP integration: `export_to_vault(episode_id, target, template?)` calls this layer
-- [ ] API endpoints:
-  - [ ] `POST /jobs/{id}/export` with `target` and `template` params
-  - [ ] `GET /api/export-templates`
+  - [ ] Embedded chapter ToC — renderer supports it; the route doesn't fetch chapters yet (would add a summarize LLM call)
+  - [ ] **Notion**: create page in configured database — deferred (needs `notion-client` + integration token)
+- [ ] Per-subscription auto-export setting — deferred
+  - [ ] Database ID + integration token (Notion) — deferred
+  - [ ] Graph path (Logseq) — uses the same vault-path mechanism
 
 ## v2.0 Backlog (Future Ideas)  (7)
 

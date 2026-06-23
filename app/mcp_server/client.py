@@ -157,6 +157,13 @@ class SiftClient:
         _, data = await self._request("GET", f"/api/predictions/{claim_id}")
         return data
 
+    # ===== export (P21) =====
+
+    async def export_job(self, job_id: str, body: dict) -> dict:
+        """POST /api/jobs/{job_id}/export — render + (optionally) write a note."""
+        _, data = await self._request("POST", f"/api/jobs/{job_id}/export", json=body)
+        return data
+
 
 def _safe_json(resp: httpx.Response) -> Any:
     try:
