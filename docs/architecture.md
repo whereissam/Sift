@@ -54,6 +54,9 @@ Self-hosted server mode with full feature set including transcription, LLM summa
 | Social Media Clips | Planned | Yes |
 | Translation | Planned | Yes |
 | Real-time Transcription | Planned | Yes |
+| Knowledge Extraction (claims/entities/topics/predictions, P18) | No | Yes |
+| Subscription Digests (cross-episode synthesis, P20) | No | Yes |
+| MCP Server (P19) | No | Yes |
 | Telegram Bot | No | Yes |
 | Subscriptions/RSS | Planned | Yes |
 | Webhooks | Planned | Yes |
@@ -160,7 +163,8 @@ xdownloader/
 │   │   ├── downloader.py    # yt-dlp based downloader
 │   │   ├── converter.py     # FFmpeg audio converter
 │   │   ├── transcriber.py   # Whisper transcription
-│   │   ├── job_store.py     # SQLite job persistence (+ batches, annotations)
+│   │   ├── job_store/       # SQLite persistence (composed mixins: jobs, batches,
+│   │   │                    #   annotations, settings, knowledge, backfill, digest)
 │   │   ├── queue_manager.py # Priority-based download queue
 │   │   ├── batch_manager.py # Batch download operations
 │   │   ├── scheduler.py     # Scheduled downloads worker
@@ -171,9 +175,21 @@ xdownloader/
 │   │   ├── subscription_worker.py  # Background subscription worker
 │   │   ├── parser.py        # URL parsing
 │   │   ├── realtime_transcriber.py  # Real-time streaming transcription
-│   │   └── exceptions.py    # Custom exceptions
+│   │   ├── exceptions.py    # Custom exceptions
+│   │   │ # ── AI Knowledge Layer (P18) ──
+│   │   ├── llm_presets.py        # Task-based LLM provider resolution
+│   │   ├── knowledge_extractor.py    # LLM claim/entity extraction
+│   │   ├── knowledge_schema.py   # Claim/Entity/Topic/Prediction models
+│   │   ├── knowledge_backfill.py # Background backfill worker
+│   │   ├── knowledge_budget.py   # Per-day LLM spend guardrail
+│   │   ├── embedding_store.py    # Embeddings + cosine search
+│   │   ├── entity_canonicalizer.py / topic_canonicalizer.py  # Cross-episode dedup
+│   │   ├── prediction_extractor.py   # Prediction lifecycle enrichment
+│   │   │ # ── Digest Pipeline (P20) ──
+│   │   ├── digest_schema.py / digest_synthesizer.py  # Cross-episode synthesis
+│   │   └── digest_runner.py      # Scheduled digest worker
 │   │
-│   ├── api/                 # FastAPI routes
+│   ├── api/                 # FastAPI routes (33 modules)
 │   │   ├── __init__.py
 │   │   ├── routes.py        # Download/transcribe endpoints
 │   │   ├── batch_routes.py  # Batch download endpoints
@@ -182,7 +198,15 @@ xdownloader/
 │   │   ├── annotation_routes.py   # Annotation CRUD + WebSocket
 │   │   ├── realtime_routes.py     # Real-time transcription WebSocket
 │   │   ├── subscription_routes.py # Subscription endpoints
+│   │   ├── knowledge_routes.py    # P18: knowledge / claims / backfill
+│   │   ├── entity_routes.py / topic_routes.py / prediction_routes.py  # P18
+│   │   ├── digest_routes.py       # P20: digests + topic synthesis
 │   │   └── schemas.py       # Pydantic models
+│   │
+│   ├── mcp_server/          # MCP server (P19) — HTTP client of the API (sift-mcp)
+│   │   ├── __main__.py      # stdio entry point
+│   │   ├── server.py        # FastMCP tools
+│   │   └── client.py        # Async Sift API client
 │   │
 │   └── bot/                 # Telegram bot
 │       ├── __init__.py
@@ -621,6 +645,58 @@ CREATE TABLE subscription_items (
     UNIQUE(subscription_id, content_id)
 );
 ```
+
+## AI Knowledge Layer (P18 → P20)
+
+Sift's "AI-first" layer turns transcripts into a queryable knowledge base and synthesizes across episodes. See [knowledge-schema.md](./knowledge-schema.md) for the canonical schema contract.
+
+### Knowledge extraction (P18)
+
+```
+Transcript (segments)
+        │  auto-enqueued when a transcription completes (KNOWLEDGE_AUTO_EXTRACT)
+        ▼
+KnowledgeBackfillWorker  ── claim-lock, per-day budget guardrail, model downgrade ──┐
+        │  (or POST /jobs/{id}/extract-knowledge for an immediate run)              │
+        ▼                                                                           │
+KnowledgeExtractor (synthesize via the `extract` LLM preset, JSON mode)            │
+        │                                                                           │
+        ├─▶ Claims    (fact / opinion / prediction / question / recommendation)     │
+        ├─▶ Entities  → entity_canonicalizer (cosine ≥ 0.85 cross-episode merge)    │
+        ├─▶ Topics    → topic_canonicalizer  (cosine ≥ 0.90 cross-episode merge)    │
+        └─▶ Predictions (lifecycle: target horizon, conditions, resolution)         │
+        │                                                                           │
+        ▼                                                                           │
+job_store (claims / entities / topics / predictions / embeddings tables) ◀──────────┘
+        │
+        ▼
+Query: GET /api/claims · /api/entities · /api/topics · /api/predictions
+```
+
+- **Storage floor 0.1**, surface thresholds filter per query (API 0.5, UI 0.6, digest 0.7).
+- **Embeddings** live in a generic `embeddings` table (`object_type`, `object_id`, `model`, `vector_blob`, `norm`) behind a thin `EmbeddingStore` interface — a Chroma/pgvector swap is one file.
+- **Run-state machine** on the `jobs` row: `none → pending → running → ready|failed`, with a stale-lock reaper for crashed workers.
+
+### MCP server (P19)
+
+`sift-mcp` is a standalone [MCP](https://modelcontextprotocol.io) server that exposes the primitives above as agent tools (`ingest_url`, `get_transcript`, `get_claims`, `get_entities`, `get_topics`, `get_predictions`, …) to Claude Desktop / Cursor. It is an **HTTP client** of this REST API (`X-API-Key` passthrough, stdio transport) — no DB coupling, works against a local or remote Sift.
+
+### Subscription digests (P20)
+
+```
+Digest config (subscriptions[] + window + cadence)
+        │  DigestRunner tick (due configs) — or POST /api/digests/{id}/run
+        ▼
+gather claims across the window's episodes (via subscription_items.job_id, deduped by claim_id)
+        ▼
+DigestSynthesizer (the `synthesize` LLM preset)
+        ▼
+DigestSynthesis  →  themes · consensus · disagreements · predictions · narratives
+        ▼
+digest_runs (JSON + rendered markdown)  →  webhook channel
+```
+
+The differentiator over single-episode summaries is *cross-source* synthesis. On-demand per-topic synthesis is also available at `GET /api/topics/{id}/synthesis`.
 
 ## Telegram Bot Flow
 

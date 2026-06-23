@@ -8,6 +8,9 @@ This project provides:
 - **CLI Tool**: Download audio/video and convert formats
 - **Core Library**: Python module for programmatic access
 - **FastAPI Backend**: REST API for web integrations
+- **AI Knowledge Layer** (P18): structured, citable claims / entities / topics / predictions extracted from transcripts, queryable across your library
+- **Subscription Digests** (P20): scheduled cross-episode synthesis over a set of subscriptions (themes, consensus, disagreements, predictions)
+- **MCP Server** (P19): `sift-mcp` exposes Sift primitives as tools to Claude Desktop, Cursor, and custom agents
 - **Real-Time Transcription**: WebSocket-based live audio transcription from microphone
 - **Telegram Bot**: Download, format selection, and transcription via Telegram (all 10 platforms, polling + webhook modes)
 
@@ -103,12 +106,14 @@ Requires a `sp_dc` cookie for authentication. To get it:
 
 ## Documentation
 
-- [Architecture Details](./architecture.md) (includes real-time transcription flow)
+- [Architecture Details](./architecture.md) (includes real-time transcription + AI knowledge layer)
+- [Knowledge Schema](./knowledge-schema.md) (P18 claims/entities/topics/predictions — the canonical contract)
 - [Deployment Guide](./deployment.md)
-- [API Reference](./api-endpoints.md) (REST & WebSocket endpoints)
+- [API Reference](./api-endpoints.md) (REST & WebSocket endpoints, incl. knowledge & digests)
 - [Authentication Guide](./authentication.md) (for private Spaces)
 - [Queue & Scheduling](./queue-scheduling.md) (batch downloads, priority queue)
 - [Webhooks & Annotations](./webhooks-annotations.md) (notifications, collaboration)
+- [Feature Roadmap](./todo.md) (phased plan; P18–P20 shipped)
 
 ## License
 

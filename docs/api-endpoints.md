@@ -172,6 +172,44 @@ Server -> Client:
 | GET | `/api/settings/storage` | Get cloud storage settings |
 | POST | `/api/settings/storage` | Save cloud storage settings |
 
+### Knowledge Endpoints (P18 — AI Knowledge Layer)
+
+Structured, citable knowledge extracted from transcripts. See [knowledge-schema.md](./knowledge-schema.md) for the full schema, versioning, and confidence model.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/jobs/{job_id}/extract-knowledge` | Run (or re-run) claim/entity/topic/prediction extraction |
+| GET | `/api/jobs/{job_id}/knowledge?min_confidence=` | All knowledge for an episode (202 + `run_state` while extracting) |
+| POST | `/api/jobs/{job_id}/knowledge/enqueue` | Idempotently queue an episode for background extraction |
+| GET | `/api/knowledge/backfill-status` | Pending/running/ready counts, today's spend, downgrades |
+| GET | `/api/claims?topic=&speaker=&entity=&since=&type=&min_confidence=` | Library-wide claim query |
+| GET | `/api/entities` · `/api/entities/{id_or_slug}` · `/api/entities/{id_or_slug}/mentions` | Canonical entities (accepts hash id or slug) |
+| GET | `/api/topics` · `/api/topics/{id}` · `/api/topics/{id}/claims` | Topic graph |
+| GET | `/api/topics/{id}/synthesis` | On-demand cross-source synthesis for a topic (P20) |
+| GET | `/api/predictions?resolution=pending` · `/api/predictions/{claim_id}` | Forward-looking claims with lifecycle |
+| POST | `/api/predictions/{claim_id}/resolve` | Set a prediction's resolution |
+| DELETE | `/api/predictions/{claim_id}/resolve` | Revert a prediction to pending |
+
+Newly completed transcriptions are auto-queued for extraction (toggle `KNOWLEDGE_AUTO_EXTRACT`); a background worker drains the queue under a per-day LLM budget (`KNOWLEDGE_DAILY_BUDGET_USD`).
+
+### Digest Endpoints (P20 — Cross-Episode Synthesis)
+
+A digest is a named set of subscriptions synthesized on a schedule into a cross-source brief (themes, consensus, disagreements, predictions, narratives).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/digests` | Create a digest config (subscriptions + window + cadence + webhook) |
+| GET | `/api/digests` | List digest configs |
+| GET | `/api/digests/{id}` | Config + latest generated run |
+| PATCH | `/api/digests/{id}` | Update a digest config |
+| DELETE | `/api/digests/{id}` | Delete a digest config + its runs |
+| POST | `/api/digests/{id}/run` | Generate a digest now (synchronous) |
+| GET | `/api/digests/{id}/runs` | List past runs for a digest |
+
+### MCP Server (P19)
+
+Not a REST surface — a separate [MCP](https://modelcontextprotocol.io) server (`sift-mcp`, stdio transport) that wraps the endpoints above as agent tools for Claude Desktop / Cursor. It's an HTTP client of this API with `X-API-Key` passthrough; see the [MCP Server](../README.md#mcp-server) section in the root README for tool list and client config.
+
 ---
 
 # X/Twitter API Endpoints Reference

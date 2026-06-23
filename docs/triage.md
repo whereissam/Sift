@@ -1,6 +1,6 @@
 # Roadmap Triage — Open Items
 
-Auto-extracted from [todo.md](todo.md) on 2026-06-22. **365 open items** across 28 sections. Checked items from the roadmap are omitted. Use this to prioritize; the source of truth remains todo.md.
+Auto-extracted from [todo.md](todo.md) on 2026-06-23. **314 open items** across 27 sections. Checked items from the roadmap are omitted. Use this to prioritize; the source of truth remains todo.md.
 
 ## P0: Smart Metadata & Tagging ✅ COMPLETED › Tasks  (1)
 
@@ -18,12 +18,12 @@ Auto-extracted from [todo.md](todo.md) on 2026-06-22. **365 open items** across 
 
 ## P4: Watch Folders & Subscriptions ✅ COMPLETED › Tasks  (1)
 
-- [ ] X user's Spaces (if API allows)
+  - [ ] X user's Spaces (if API allows)
 
 ## P5: Audio Pre-processing (Voice Isolation) ✅ COMPLETED › Tasks  (2)
 
-- [ ] DeepFilterNet (ML-based noise reduction)
-- [ ] Silero VAD for voice activity detection
+  - [ ] DeepFilterNet (ML-based noise reduction)
+  - [ ] Silero VAD for voice activity detection
 
 ## P7: Sentiment & Vibe Analysis ✅ COMPLETED › Future Enhancements (moved to P13)  (3)
 
@@ -33,8 +33,8 @@ Auto-extracted from [todo.md](todo.md) on 2026-06-22. **365 open items** across 
 
 ## P8: Social Media Clip Generator ✅ COMPLETED › Tasks  (2)
 
-- [ ] Consider speaker energy/sentiment in selection (future enhancement)
-- [ ] Download clips as batch (future enhancement)
+  - [ ] Consider speaker energy/sentiment in selection (future enhancement)
+  - [ ] Download clips as batch (future enhancement)
 
 ## P9: AI Translation & Dubbing (Translation ✅ COMPLETED) › Dubbing Tasks (Future)  (18)
 
@@ -311,86 +311,38 @@ Auto-extracted from [todo.md](todo.md) on 2026-06-22. **365 open items** across 
   - [ ] `GET /api/topics`
   - [ ] `GET /api/predictions?resolution=pending`
 
-## P18: AI-Friendly Knowledge Schema › Phase C.3 — tasks  (14)
+## P19: Sift MCP Server (Capability Surface) › Tool surface (stable JSON Schema per tool)  (10)
 
-- [ ] `app/core/job_store.py` — migration: add `knowledge_version INTEGER DEFAULT 0`, `knowledge_locked_at TEXT`, `knowledge_worker_id TEXT` to `jobs` table; tighten `knowledge_status` values to the locked enum.
-- [ ] `app/core/job_store.py` — `acquire_knowledge_lock(job_id, worker_id, ttl_seconds)` (atomic UPDATE with status check), `release_knowledge_lock`, `list_pending_knowledge_jobs(priority_bucket)`.
-- [ ] `app/workers/knowledge_backfill.py` **(new)** — priority queue (recent → user-opened → subscribed → rest); per-feed daily budget check; model-downgrade on budget exceeded; stale-lock reaper for crashed workers.
-- [ ] Register worker in startup path with cron schedule / APScheduler wiring.
-- [ ] `app/api/knowledge_routes.py` — `GET /jobs/{id}/knowledge` returns 202 + `run_state` when `pending`/`running`; acquires lock + runs inline when cheap-enough threshold allows; returns cached rows otherwise.
-- [ ] `app/core/config.py` — add `knowledge_daily_budget_usd` + `knowledge_model_downgrade_threshold_usd` global settings.
-- [ ] Subscription model — optional `knowledge_budget_override_usd` + `knowledge_priority_tier` per subscription.
-- [ ] `app/core/llm_presets.py` — downgrade helper: given a task + remaining budget, return a cheaper model when over threshold.
-- [ ] `POST /api/jobs/{id}/knowledge/enqueue` — idempotent enqueue for a pending job.
-- [ ] `GET /api/knowledge/backfill-status` — stats endpoint (pending/running/ready counts, today's spend, downgrades applied).
-- [ ] `tests/test_knowledge_backfill.py` — priority ordering, lock acquire/release, budget cap, model downgrade, stale-lock reaper.
-- [ ] Extend `tests/test_knowledge_api.py` — 202 path, inline run path, cached read path, state-transition correctness.
-- [ ] `docs/todo.md` — add "Phase C.3 — what shipped" summary.
-- [ ] `README.md` — note on-demand + background backfill behavior.
-
-## P19: Sift MCP Server (Capability Surface) › Tool surface (stable JSON Schema per tool)  (23)
-
-- [ ] **Ingest & retrieval**
-  - [ ] `ingest_url(url, profile?)` — submit URL, return `episode_id` + pipeline status
-  - [ ] `get_transcript(episode_id, format?)` — text / SRT / JSON with timestamps
-  - [ ] `get_chapters(episode_id)` — auto-generated chapter markers
-  - [ ] `get_segment(episode_id, start, end)` — pull a specific time range
-  - [ ] `get_clips(episode_id, criteria?)` — viral / insightful / topic-filtered clips
-- [ ] **Understanding**
-  - [ ] `get_summary(episode_id, mode?)` — bullets / chapters / topics / action items
-  - [ ] `get_highlights(episode_id)` — pull-quote-grade excerpts with timestamps
-  - [ ] `get_claims(episode_id)` — structured claims (reads from P18)
-  - [ ] `get_entities(episode_id)` — people / companies / tickers / projects
-  - [ ] `get_topics(episode_id)` — topic graph
-  - [ ] `get_predictions(episode_id)` — falsifiable forward-looking claims
-- [ ] **Q&A**
+- [ ] **Q&A** (deferred — depends on P10/P11)
   - [ ] `ask_episode(episode_id, question)` — RAG against single episode (depends on P11)
   - [ ] `ask_at_timestamp(episode_id, time_range, question)` — scoped Q&A
   - [ ] `search_library(query, filters?)` — semantic search across all episodes (depends on P10)
-- [ ] **Cross-episode synthesis**
+- [ ] **Cross-episode synthesis** (deferred — depends on P13/P20)
   - [ ] `compare_episodes(episode_ids[], topic?)` — agreements / disagreements
   - [ ] `find_contradictions(speaker?, topic?, timeframe?)` — surface inconsistencies
   - [ ] `summarize_trend(topic, last_n_days)` — narrative evolution over time
-- [ ] **Export**
+- [ ] **Export** (deferred — depends on P21)
   - [ ] `export_to_vault(episode_id, target, template?)` — Obsidian / Notion / Logseq (depends on P21)
 
-## P19: Sift MCP Server (Capability Surface) › Tasks  (16)
+## P19: Sift MCP Server (Capability Surface) › Tasks  (8)
 
-- [ ] Implement `sift-mcp` server:
-  - [ ] stdio transport (Claude Desktop, local agents)
-  - [ ] HTTP transport (remote agents, Cursor)
-  - [ ] Auth via Sift API key (passthrough)
-  - [ ] Streaming for long-running tools (`ingest_url`, `ask_episode`)
-- [ ] Schema-first: every tool ships with a stable JSON Schema and example call
+  - [ ] HTTP transport (remote agents, Cursor) — `run_streamable_http_async` exists in the SDK; stdio-only for now
+  - [ ] Streaming for long-running tools (`ingest_url`, `ask_episode`) — deferred
 - [ ] Reference agent skills (shipped in repo):
   - [ ] **Episode → Obsidian note** (claims + highlights + clickable timestamps)
   - [ ] **Weekly recap** (cross-source synthesis from subscriptions)
   - [ ] **Topic research** (search → claims → contradictions → brief)
   - [ ] **Language learning** (transcript + translation + key vocabulary)
 - [ ] Distribution:
-  - [ ] `uvx sift-mcp` install path
-  - [ ] Claude Desktop config snippet in README
-  - [ ] Cursor MCP config snippet
-  - [ ] Test suite covering Claude Desktop + Cursor + raw MCP client
 
-## P20: Subscription Digest Pipeline (Cross-Episode Synthesis) › Phase 1 — Subscription-driven brief  (6)
+## P20: Subscription Digest Pipeline (Cross-Episode Synthesis) › Phase 1 — Subscription-driven brief  (2)
 
-- [ ] Cron-driven nightly ingest job (`app/workers/digest_runner.py`)
-- [ ] Per-subscription pipeline profile (Quick / Deep / Full — reuses P12)
-- [ ] Auto-extract structured knowledge per new episode (depends on P18)
-- [ ] Daily digest email per subscription set
-- [ ] Cost guardrails (per-feed daily budget, model downgrade when over)
-- [ ] Failure handling: caption-missing fallback, low-quality transcript flag, retry queue
+- [ ] Per-subscription pipeline profile (Quick / Deep / Full — reuses P12) — deferred
+- [ ] Daily digest **email** per subscription set — deferred (no SMTP infra); webhook channel shipped instead
 
-## P20: Subscription Digest Pipeline (Cross-Episode Synthesis) › Phase 2 — Topic synthesis  (7)
+## P20: Subscription Digest Pipeline (Cross-Episode Synthesis) › Phase 2 — Topic synthesis  (1)
 
-- [ ] User-defined topic tracking (BTC, AI agents, ETH ETF, stablecoins, etc.)
-- [ ] Daily topic answers:
-  - [ ] Which episodes mentioned it
-  - [ ] New claims / predictions on this topic
-  - [ ] Cross-source agreement / disagreement
-  - [ ] Repeated-narrative detection (who is amplifying which framing)
-- [ ] Topic-scoped digest (per topic, not per feed)
+- [ ] Topic-scoped *scheduled* digest (per topic, not per feed) — deferred (on-demand only for now)
 
 ## P20: Subscription Digest Pipeline (Cross-Episode Synthesis) › Phase 3 — Reusable intelligence layer  (8)
 
@@ -403,15 +355,9 @@ Auto-extracted from [todo.md](todo.md) on 2026-06-22. **365 open items** across 
   - [ ] Markdown export → Obsidian vault folder (consumes P21)
 - [ ] Inbox UI: pin / mute / follow topics, mark-read, archive
 
-## P20: Subscription Digest Pipeline (Cross-Episode Synthesis) › Cross-cutting  (7)
+## P20: Subscription Digest Pipeline (Cross-Episode Synthesis) › Cross-cutting  (1)
 
-- [ ] Dedup across feeds (same news mentioned by N podcasts → single digest item)
-- [ ] Source ranking (per-user trust weights)
-- [ ] API endpoints:
-  - [ ] `POST /api/digests` - Create / configure a digest
-  - [ ] `GET /api/digests/{id}` - Get latest digest output
-  - [ ] `POST /api/topics` - Track a topic
-  - [ ] `GET /api/topics/{id}/synthesis` - Cross-source synthesis for a topic
+- [ ] Source ranking (per-user trust weights) — deferred
 
 ## P21: Vault & Note-App Export Channels › Tasks  (25)
 
@@ -450,4 +396,3 @@ Auto-extracted from [todo.md](todo.md) on 2026-06-22. **365 open items** across 
 - [ ] Voice search within transcripts (speak a query, find the answer)
 - [ ] Multi-language UI
 - [ ] Export to cloud storage (S3, Google Drive, Dropbox)
-
