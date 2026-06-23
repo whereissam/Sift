@@ -130,6 +130,11 @@ class Settings(BaseSettings):
     # backfill worker picks them up; enqueue is non-blocking and idempotent.
     knowledge_auto_extract: bool = True
 
+    # P20: subscription digest pipeline (cross-episode synthesis)
+    digest_enabled: bool = True  # Background digest runner worker
+    digest_interval: int = 3600  # Runner tick interval (seconds) — hourly
+    digest_max_claims: int = 200  # Cap claims fed to one synthesis call
+
     # Queue
     queue_enabled: bool = True  # Enable priority queue processing
     default_priority: int = 5  # Default priority level (1-10)

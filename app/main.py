@@ -104,6 +104,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to start knowledge backfill worker: {e}")
 
+    # Start digest runner (P20)
+    try:
+        from .core.digest_runner import start_digest_runner
+        await start_digest_runner()
+    except Exception as e:
+        logger.error(f"Failed to start digest runner: {e}")
+
     # Start Telegram bot in webhook mode
     telegram_app = None
     if settings.telegram_bot_token and settings.telegram_bot_mode == "webhook":
@@ -133,6 +140,13 @@ async def lifespan(app: FastAPI):
         await stop_backfill_worker()
     except Exception as e:
         logger.error(f"Failed to stop knowledge backfill worker: {e}")
+
+    # Stop digest runner
+    try:
+        from .core.digest_runner import stop_digest_runner
+        await stop_digest_runner()
+    except Exception as e:
+        logger.error(f"Failed to stop digest runner: {e}")
 
     # Stop storage manager
     try:

@@ -10,6 +10,7 @@ from typing import Optional
 from ._annotations import _AnnotationsMixin
 from ._backfill import _BackfillMixin
 from ._batches import _BatchesMixin
+from ._digest import _DigestMixin
 from ._jobs import _JobsMixin
 from ._knowledge import _KnowledgeMixin
 from ._schema import _SchemaMixin
@@ -24,6 +25,7 @@ class JobStore(
     _SettingsMixin,
     _KnowledgeMixin,
     _BackfillMixin,
+    _DigestMixin,
 ):
     """SQLite-based persistent job storage.
 

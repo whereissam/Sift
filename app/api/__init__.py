@@ -27,6 +27,7 @@ from .knowledge_routes import router as knowledge_router
 from .entity_routes import router as entity_router
 from .topic_routes import router as topic_router
 from .prediction_routes import router as prediction_router
+from .digest_routes import router as digest_router
 
 # Create combined router
 router = APIRouter()
@@ -57,5 +58,6 @@ router.include_router(knowledge_router)  # P18: /jobs/{id}/knowledge, /jobs/{id}
 router.include_router(entity_router)  # P18 Phase B: /entities, /entities/{id_or_slug}[/mentions]
 router.include_router(topic_router)  # P18 Phase C.1: /topics, /topics/{id}[/claims]
 router.include_router(prediction_router)  # P18 Phase C.2: /predictions, /predictions/{claim_id}[/resolve]
+router.include_router(digest_router)  # P20: /digests[/{id}[/run|/runs]], /topics/{id}/synthesis
 
 __all__ = ["router"]

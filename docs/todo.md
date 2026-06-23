@@ -96,7 +96,7 @@ Follow-up (completed 2026-06-22):
 |---------|------------|--------|----------|
 | AI-Friendly Knowledge Schema (Claims, Entities, Predictions) | Medium | Very High | P18 ✅ |
 | Sift MCP Server (Capability Surface) | Medium | Very High | P19 🚧 (Phase 1 shipped) |
-| Subscription Digest Pipeline (Cross-Episode Synthesis) | High | Very High | P20 |
+| Subscription Digest Pipeline (Cross-Episode Synthesis) | High | Very High | P20 🚧 (Phase 1 shipped) |
 | Vault & Note-App Export Channels (Obsidian / Notion / Logseq) | Low | High | P21 |
 
 **Dependency order:** P18 is the substrate (canonical schema). P19 (MCP) and P20 (Digest) both read from it. P21 (Vault Export) consumes from P19 and P20.
@@ -1074,24 +1074,26 @@ Deferred: HTTP/streamable transport (SDK supports it; stdio covers Claude Deskto
 
 > Single-episode summary is a feature; continuous knowledge monitoring is the product.
 
+> **Phase 1 status (✅ SHIPPED):** the cross-episode synthesis core is live — digest configs, the scheduled runner, synchronous run-now, and on-demand topic synthesis. Email/Notion/Obsidian channels, inbox UI, source ranking, and semantic cross-feed dedup are deferred. See "P20 Phase 1 — what shipped" below.
+
 ### Phase 1 — Subscription-driven brief
 
-- [ ] Cron-driven nightly ingest job (`app/workers/digest_runner.py`)
-- [ ] Per-subscription pipeline profile (Quick / Deep / Full — reuses P12)
-- [ ] Auto-extract structured knowledge per new episode (depends on P18)
-- [ ] Daily digest email per subscription set
-- [ ] Cost guardrails (per-feed daily budget, model downgrade when over)
-- [ ] Failure handling: caption-missing fallback, low-quality transcript flag, retry queue
+- [x] Scheduled digest runner (`app/core/digest_runner.py` — `app/core/` to match the worker convention, not the aspirational `app/workers/`)
+- [ ] Per-subscription pipeline profile (Quick / Deep / Full — reuses P12) — deferred
+- [x] Auto-extract structured knowledge per new episode (delivered by P18 Phase D auto-run; the digest reads the resulting claims)
+- [ ] Daily digest **email** per subscription set — deferred (no SMTP infra); webhook channel shipped instead
+- [x] Cost guardrails (shared per-UTC-day LLM budget; runner records spend + skips when over)
+- [~] Failure handling: empty-window / no-provider / malformed-output all degrade to a recorded run; caption/transcript-quality fallbacks deferred
 
 ### Phase 2 — Topic synthesis
 
-- [ ] User-defined topic tracking (BTC, AI agents, ETH ETF, stablecoins, etc.)
-- [ ] Daily topic answers:
-  - [ ] Which episodes mentioned it
-  - [ ] New claims / predictions on this topic
-  - [ ] Cross-source agreement / disagreement
-  - [ ] Repeated-narrative detection (who is amplifying which framing)
-- [ ] Topic-scoped digest (per topic, not per feed)
+- [x] On-demand cross-source synthesis for a topic (`GET /api/topics/{id}/synthesis`)
+- [~] Daily topic answers — the synthesis covers which episodes touched it, cross-source agreement/disagreement, predictions, and narratives; *scheduled* per-topic digests + new-since-yesterday diffing deferred
+  - [x] Which episodes mentioned it
+  - [x] New claims / predictions on this topic
+  - [x] Cross-source agreement / disagreement
+  - [x] Repeated-narrative detection (who is amplifying which framing)
+- [ ] Topic-scoped *scheduled* digest (per topic, not per feed) — deferred (on-demand only for now)
 
 ### Phase 3 — Reusable intelligence layer
 
@@ -1106,13 +1108,28 @@ Deferred: HTTP/streamable transport (SDK supports it; stdio covers Claude Deskto
 
 ### Cross-cutting
 
-- [ ] Dedup across feeds (same news mentioned by N podcasts → single digest item)
-- [ ] Source ranking (per-user trust weights)
-- [ ] API endpoints:
-  - [ ] `POST /api/digests` - Create / configure a digest
-  - [ ] `GET /api/digests/{id}` - Get latest digest output
-  - [ ] `POST /api/topics` - Track a topic
-  - [ ] `GET /api/topics/{id}/synthesis` - Cross-source synthesis for a topic
+- [~] Dedup across feeds — claims deduped by stable `claim_id` (collapses the same claim re-found across overlapping feeds); *semantic* same-news dedup deferred
+- [ ] Source ranking (per-user trust weights) — deferred
+- [x] API endpoints:
+  - [x] `POST /api/digests` - Create / configure a digest
+  - [x] `GET /api/digests/{id}` - Get config + latest digest output (+ `GET /api/digests`, `PATCH`, `DELETE`, `POST /{id}/run`, `GET /{id}/runs`)
+  - [~] `POST /api/topics` - Track a topic — topics are auto-created by P18 extraction; explicit user-tracked topics deferred
+  - [x] `GET /api/topics/{id}/synthesis` - Cross-source synthesis for a topic
+
+### P20 Phase 1 — what shipped
+
+The differentiator — **cross-episode synthesis** — end to end. A *digest config* is a first-class entity (a named set of subscriptions + window + cadence + optional webhook), deliberately more general than per-subscription so a digest can span feeds ("what 5 podcasts said this week"). The subscription→episode link uses the existing `subscription_items.job_id` (no new column on `jobs`).
+
+- `app/core/digest_schema.py` — `DigestSynthesis` (headline, themes, consensus, disagreements, predictions, narratives) + sub-models + `DigestRunResult`; `render_digest_markdown` (deterministic, no-LLM rendering for channels/preview); `DIGEST_SCHEMA_VERSION`.
+- `app/core/digest_synthesizer.py` — `DigestSynthesizer.from_settings()` resolves the `synthesize` task preset (better model allowed). `synthesize(claims, …)` formats source-attributed claim lines (confidence-ordered, capped), JSON-mode prompt, defensive parse. Graceful degradation: too-few-claims / no-provider / malformed-output / provider-exception all return a non-success `DigestRunResult` instead of raising.
+- `app/core/job_store/_digest.py` (new `_DigestMixin`) + tables in `_schema.py` (`digest_configs`, `digest_runs`) — config CRUD, `list_due_digests` (cadence-elapsed selection), run persistence + history + latest-run. `subscription_ids` stored as a JSON array.
+- `app/core/digest_runner.py` + `digest_runner_helpers.py` — `gather_claims_for_digest` (window-filter via `downloaded_at`, dedup by `claim_id`, min-confidence floor) and `run_digest` (gather → synthesize → persist run → advance `last_run_at` → record spend → best-effort webhook). Background `DigestRunner` worker (singleton start/stop/tick mirroring `scheduler`/`knowledge_backfill`), over-budget skip. Registered in `app/main.py` lifespan.
+- `app/api/digest_routes.py` — `POST/GET/PATCH/DELETE /api/digests`, `GET /api/digests/{id}` (config + latest run), `POST /api/digests/{id}/run` (synchronous, rate-limited), `GET /api/digests/{id}/runs`, `GET /api/topics/{id}/synthesis` (on-demand, library-wide topic synthesis). Wired in `app/api/__init__.py`.
+- `app/config.py` — `digest_enabled` / `digest_interval` / `digest_max_claims` (all default-safe).
+- `README.md` — Subscription Digests section with curl examples + endpoint list.
+- `tests/` — `test_digest_synthesis.py` (9: markdown render, claim formatting/cap, degradation paths, structured + fenced-JSON success, malformed handling), `test_digest_store.py` (15: config CRUD, due-selection, runs), `test_digest_runner.py` (11: gather window/dedup/min-conf, run ok/empty/over-budget, worker tick + lifecycle), `test_digest_api.py` (11: CRUD, run-now, topic synthesis) — **46 new tests**, 512/512 suite green.
+
+Deferred: email/Notion/Obsidian delivery (email has no infra; Notion/Obsidian land with **P21**), inbox UI, per-user source ranking, semantic cross-feed dedup, P12 pipeline profiles, and *scheduled* per-topic digests (topic synthesis is on-demand for now).
 
 ---
 

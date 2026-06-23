@@ -34,6 +34,7 @@
 - **Content Distiller** - Feed multiple URLs and get a single synthesized briefing (coming soon)
 
 ### Automate & Integrate
+- **Subscription Digests (Cross-Episode Synthesis)** - Define a digest over a set of subscriptions and Sift generates a scheduled cross-source brief: what several episodes agreed on, where they disagreed, repeated narratives, and predictions worth tracking. The differentiator over single-episode summaries is reading *across* sources. Also on-demand per-topic synthesis. See [Subscription Digests](#subscription-digests).
 - **MCP Server (Capability Surface)** - Expose Sift to Claude Desktop, Cursor, and custom agents as MCP tools (`ingest_url`, `get_transcript`, `get_claims`, `get_entities`, `get_topics`, `get_predictions`, …). One server, N agent skills. See [MCP Server](#mcp-server) below.
 - **Agentic Ingest Pipeline** - Paste a URL and Sift auto-triggers summarization, entity extraction, and search indexing (coming soon)
 - **Telegram Research Assistant** - Send a link, then ask questions about the content — the bot answers instantly
@@ -278,6 +279,38 @@ docker-compose up -d    # API + Frontend + Whisper + Ollama
 ```
 
 See [Deployment Guide](docs/deployment.md) for Docker, cloud, and systemd setup.
+
+## Subscription Digests
+
+A **digest** turns Sift from an on-demand tool into an always-on knowledge pipeline. Define a digest over one or more [subscriptions](#subscriptions), and a background runner periodically gathers the new episodes in a time window, extracts their structured knowledge (P18), and runs **cross-episode synthesis** with the `synthesize` LLM preset — producing a brief of:
+
+- **Themes** that surfaced across multiple sources
+- **Consensus** — what the sources broadly agreed on
+- **Disagreements** — where they took opposing positions
+- **Predictions to track** — falsifiable forward-looking claims, attributed
+- **Narratives** — repeated framings and who is amplifying them
+
+The output is stored as structured JSON + rendered markdown, and (if configured) pushed to a webhook. The differentiator vs. a single-episode summary is *cross-source synthesis*: "what 5 podcasts said about the same topic this week."
+
+```bash
+# Create a digest over two subscriptions, synthesized daily over a 7-day window
+curl -X POST http://localhost:8000/api/digests -H "X-API-Key: $KEY" -H "Content-Type: application/json" -d '{
+  "name": "Crypto Weekly",
+  "subscription_ids": ["sub_abc", "sub_def"],
+  "window_days": 7,
+  "schedule_hours": 24,
+  "webhook_url": "https://hooks.example.com/digest"
+}'
+
+# Generate one now (synchronous) and read it back
+curl -X POST http://localhost:8000/api/digests/{id}/run -H "X-API-Key: $KEY"
+curl http://localhost:8000/api/digests/{id} -H "X-API-Key: $KEY"   # config + latest run
+
+# On-demand cross-source synthesis for a single topic (across the whole library)
+curl http://localhost:8000/api/topics/{topic_id}/synthesis -H "X-API-Key: $KEY"
+```
+
+Endpoints: `POST/GET/PATCH/DELETE /api/digests`, `GET /api/digests/{id}` (config + latest run), `POST /api/digests/{id}/run`, `GET /api/digests/{id}/runs`, `GET /api/topics/{id}/synthesis`. The runner respects the same per-day LLM budget guardrail as knowledge extraction (`KNOWLEDGE_DAILY_BUDGET_USD`); toggle the worker with `DIGEST_ENABLED`. Email / Notion / Obsidian delivery channels land with P21.
 
 ## MCP Server
 

@@ -345,6 +345,42 @@ class _SchemaMixin:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_failures_episode ON extraction_failures(episode_id)")
 
+            # P20: subscription digest pipeline — configs + generated runs.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS digest_configs (
+                    digest_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    subscription_ids TEXT NOT NULL,
+                    window_days INTEGER NOT NULL DEFAULT 7,
+                    schedule_hours INTEGER NOT NULL DEFAULT 24,
+                    min_confidence REAL NOT NULL DEFAULT 0.6,
+                    webhook_url TEXT,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    last_run_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS digest_runs (
+                    run_id TEXT PRIMARY KEY,
+                    digest_id TEXT NOT NULL,
+                    window_start TEXT,
+                    window_end TEXT,
+                    status TEXT NOT NULL,
+                    episode_count INTEGER NOT NULL DEFAULT 0,
+                    claim_count INTEGER NOT NULL DEFAULT 0,
+                    synthesis_json TEXT,
+                    markdown TEXT,
+                    model TEXT,
+                    tokens_used INTEGER NOT NULL DEFAULT 0,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (digest_id) REFERENCES digest_configs(digest_id)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_digest_runs_digest ON digest_runs(digest_id, created_at)")
+
             # Run migrations for existing databases
             self._migrate_schema(conn)
 
