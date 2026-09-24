@@ -1,6 +1,7 @@
 """Retry utilities with exponential backoff."""
 
 import httpx
+import structlog
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -9,9 +10,7 @@ from tenacity import (
     before_sleep_log,
 )
 
-from ...logging_config import get_logger
-
-logger = get_logger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 # Retryable HTTP exceptions (network errors, timeouts, 5xx)

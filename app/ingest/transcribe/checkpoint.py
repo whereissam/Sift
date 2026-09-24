@@ -47,8 +47,8 @@ class CheckpointManager:
         if checkpoint_dir:
             self.checkpoint_dir = checkpoint_dir
         else:
-            from ...config import get_settings
-            settings = get_settings()
+            from ..settings import get_ingest_settings
+            settings = get_ingest_settings()
             self.checkpoint_dir = Path(settings.download_dir) / "checkpoints"
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 

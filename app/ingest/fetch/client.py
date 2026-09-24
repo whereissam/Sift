@@ -4,6 +4,7 @@ import json
 from urllib.parse import quote
 
 import httpx
+import structlog
 from cachetools import TTLCache
 
 from .auth import AuthManager
@@ -16,9 +17,8 @@ from ..exceptions import (
     XDownloaderError,
 )
 from .retry import request_with_retry
-from ...logging_config import get_logger
 
-logger = get_logger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class TwitterClient:

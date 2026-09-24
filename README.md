@@ -97,6 +97,20 @@ uv run sift "https://youtube.com/watch?v=xxx" -f mp3
 uv run sift "https://podcasts.apple.com/..." -q highest
 ```
 
+### As a Python library
+
+The ingestion core (`app/ingest/`) runs without the server, database, or bot.
+Pass settings explicitly, or leave them out to read the same env vars / `.env`:
+
+```python
+import asyncio
+from app.ingest import IngestSettings, download_audio, get_metadata
+
+settings = IngestSettings(download_dir="./downloads", youtube_cookies_from_browser="chrome")
+result = asyncio.run(download_audio("https://podcasts.apple.com/...", settings=settings))
+print(result.file_path, result.metadata.title if result.metadata else None)
+```
+
 ### Audio → YouTube-ready video
 
 Turn a downloaded audio file into an MP4 with a still image (H.264 + AAC,

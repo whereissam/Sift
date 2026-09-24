@@ -10,7 +10,7 @@ from urllib.parse import urlparse, unquote
 
 import httpx
 
-from ...config import get_settings
+from ..settings import IngestSettings, get_ingest_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
 from ..exceptions import SiftError, ContentNotFoundError
 from ..fetch.url_validator import safe_get
@@ -43,9 +43,13 @@ class DiscordAudioDownloader(PlatformDownloader):
     # Supported audio extensions
     AUDIO_EXTENSIONS = {".mp3", ".m4a", ".wav", ".ogg", ".flac", ".aac", ".opus", ".webm"}
 
-    def __init__(self, download_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        download_dir: Optional[Path] = None,
+        settings: Optional[IngestSettings] = None,
+    ):
         """Initialize the Discord audio downloader."""
-        self.settings = get_settings()
+        self.settings = settings or get_ingest_settings()
 
         if download_dir:
             self.download_dir = Path(download_dir)

@@ -6,6 +6,7 @@ from typing import Optional, Type
 
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
 from ..exceptions import UnsupportedPlatformError
+from ..settings import IngestSettings
 
 logger = logging.getLogger(__name__)
 
@@ -71,15 +72,19 @@ class DownloaderFactory:
         return None
 
     @classmethod
-    def get_downloader(cls, url: str) -> PlatformDownloader:
+    def get_downloader(
+        cls, url: str, settings: Optional[IngestSettings] = None
+    ) -> PlatformDownloader:
         """Get appropriate downloader for URL."""
         for downloader_cls in _get_platform_downloaders():
             if downloader_cls.can_handle_url(url):
-                return downloader_cls()
+                return downloader_cls(settings=settings)
         raise UnsupportedPlatformError(f"No downloader found for URL: {url}")
 
     @classmethod
-    def get_downloader_for_platform(cls, platform: Platform) -> PlatformDownloader:
+    def get_downloader_for_platform(
+        cls, platform: Platform, settings: Optional[IngestSettings] = None
+    ) -> PlatformDownloader:
         """Get downloader for specific platform."""
         from ..platforms import (
             XSpacesDownloader,
@@ -115,7 +120,7 @@ class DownloaderFactory:
         if not downloader_cls:
             raise UnsupportedPlatformError(f"Unknown platform: {platform}")
 
-        return downloader_cls()
+        return downloader_cls(settings=settings)
 
     @classmethod
     def is_url_supported(cls, url: str) -> bool:
@@ -144,6 +149,7 @@ async def download_audio(
     output_path: Optional[Path] = None,
     output_format: str = "m4a",
     quality: str = "high",
+    settings: Optional[IngestSettings] = None,
 ) -> DownloadResult:
     """
     Download audio from any supported platform.
@@ -153,11 +159,12 @@ async def download_audio(
         output_path: Optional output path
         output_format: Output format (m4a, mp3, mp4)
         quality: Quality preset
+        settings: Download dir and platform cookies; defaults to env / `.env`
 
     Returns:
         DownloadResult
     """
-    downloader = DownloaderFactory.get_downloader(url)
+    downloader = DownloaderFactory.get_downloader(url, settings=settings)
     return await downloader.download(
         url,
         output_path=output_path,
@@ -166,17 +173,20 @@ async def download_audio(
     )
 
 
-async def get_metadata(url: str) -> Optional[AudioMetadata]:
+async def get_metadata(
+    url: str, settings: Optional[IngestSettings] = None
+) -> Optional[AudioMetadata]:
     """
     Get metadata for content without downloading.
 
     Args:
         url: URL to get metadata for
+        settings: Platform cookies; defaults to env / `.env`
 
     Returns:
         AudioMetadata or None
     """
-    downloader = DownloaderFactory.get_downloader(url)
+    downloader = DownloaderFactory.get_downloader(url, settings=settings)
     return await downloader.get_metadata(url)
 
 

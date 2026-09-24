@@ -58,7 +58,15 @@ a higher layer, the fix is to move the caller up or invert the dependency
 and the injected polisher in `RealtimeTranscriptionSession`), never to add the
 import.
 
-1. **Ingestion Core** (`app/ingest/`) - Downloads audio/video from every supported platform, converts formats, and transcribes. Nothing in this layer may import `app/knowledge`, `app/delivery`, or `app/pipeline` — enforced by `tests/test_layering.py`
+The same goes for configuration: ingest may not import `app.config` or
+`app.store` either (the test allows nothing from `app.*` outside
+`app.ingest`). The core reads only `IngestSettings` from
+`app/ingest/settings.py` — callers pass one explicitly, the app registers its
+own `Settings` (a subclass) at import, and with neither it loads from env.
+Cloud transcription credentials arrive the same way, through a provider that
+`app.store` registers, never by the core opening the database.
+
+1. **Ingestion Core** (`app/ingest/`) - Downloads audio/video from every supported platform, converts formats, and transcribes. Nothing in this layer may import anything from `app/` outside `app/ingest/` — enforced by `tests/test_layering.py`
 2. **FastAPI Backend** (`app/api/`) - REST API for external integrations
 3. **Telegram Bot** (`app/bot/`) - User-friendly chat interface
 4. **CLI** (`app/cli.py`) - Command-line interface

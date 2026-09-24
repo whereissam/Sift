@@ -60,6 +60,22 @@ def test_ingest_never_imports_an_upper_layer(path: Path):
 
 
 @pytest.mark.parametrize(
+    "path", _python_files("ingest"), ids=lambda p: str(p.relative_to(APP))
+)
+def test_ingest_imports_nothing_from_app_outside_itself(path: Path):
+    """Stricter than the layer list: no `app.config`, `app.store`, or any
+    future sibling either. The core gets configuration through
+    `app.ingest.settings`, which the app feeds from above."""
+    for module in _imported_modules(path):
+        if module == "app" or module.startswith("app."):
+            assert module == "app.ingest" or module.startswith("app.ingest."), (
+                f"{path.relative_to(APP)} imports {module}. The ingestion core "
+                f"may only import from app.ingest — take the value as a "
+                f"parameter or through app.ingest.settings instead."
+            )
+
+
+@pytest.mark.parametrize(
     "path", _python_files("knowledge"), ids=lambda p: str(p.relative_to(APP))
 )
 def test_knowledge_never_imports_the_api_or_pipeline(path: Path):

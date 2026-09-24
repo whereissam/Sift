@@ -535,24 +535,35 @@ class AppleSpeechEngine(BaseTranscriptionEngine):
 class CloudTranscriptionEngine(BaseTranscriptionEngine):
     """Cloud-based transcription via OpenAI or Groq APIs."""
 
-    def __init__(self):
-        self._provider = None
-        self._api_key = None
+    # The only endpoint `transcribe` calls. A stored key for any other
+    # provider (anthropic, groq, ...) must never be sent there.
+    _SUPPORTED_PROVIDERS = {"openai"}
+
+    def __init__(self, api_key: Optional[str] = None, provider: str = "openai"):
+        """Pass `api_key` directly, or leave it None to use the credentials
+        provider the app registers (see `app.ingest.settings`)."""
+        self._explicit = api_key is not None
+        self._provider = provider if self._explicit else None
+        self._api_key = api_key
 
     def _load_settings(self):
-        """Load AI provider settings."""
+        """Load AI provider settings from the registered credentials provider."""
+        if self._explicit:
+            return
         try:
-            from ...config import get_settings
-            settings = get_settings()
-            # Try to get from AI settings in database
-            from ...store import JobStore
-            store = JobStore(settings.download_dir)
-            ai_settings = store.get_ai_settings()
-            if ai_settings:
-                self._provider = ai_settings.get("provider")
-                self._api_key = ai_settings.get("api_key")
+            from ..settings import get_cloud_credentials
+
+            creds = get_cloud_credentials()
         except Exception:
-            pass
+            logger.warning("Cloud transcription credentials lookup failed", exc_info=True)
+            creds = None
+        provider = (creds or {}).get("provider")
+        if provider in self._SUPPORTED_PROVIDERS:
+            self._provider = provider
+            self._api_key = (creds or {}).get("api_key")
+        else:
+            self._provider = None
+            self._api_key = None
 
     async def transcribe(
         self,
@@ -566,7 +577,7 @@ class CloudTranscriptionEngine(BaseTranscriptionEngine):
         if not self._api_key:
             return TranscriptionResult(
                 success=False,
-                error="No cloud API key configured. Set up an AI provider in Settings.",
+                error="No OpenAI API key configured. Set OpenAI as the AI provider in Settings.",
             )
 
         audio_path = Path(audio_path)

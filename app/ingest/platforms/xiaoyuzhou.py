@@ -7,7 +7,7 @@ from typing import Optional
 
 import httpx
 
-from ...config import get_settings
+from ..settings import IngestSettings, get_ingest_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
 from ..exceptions import SiftError, ContentNotFoundError
 from ..fetch.url_validator import safe_stream
@@ -28,9 +28,13 @@ class XiaoyuzhouDownloader(PlatformDownloader):
 
     API_BASE = "https://api.xiaoyuzhoufm.com/v1"
 
-    def __init__(self, download_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        download_dir: Optional[Path] = None,
+        settings: Optional[IngestSettings] = None,
+    ):
         """Initialize the Xiaoyuzhou downloader."""
-        self.settings = get_settings()
+        self.settings = settings or get_ingest_settings()
 
         if download_dir:
             self.download_dir = Path(download_dir)

@@ -183,9 +183,9 @@ class TranscriptFetcher:
 
     async def _fetch_spotify_transcript(self, episode_id: str) -> FetchedTranscript:
         """Fetch transcript from Spotify Read Along API."""
-        from ...config import get_settings
+        from ..settings import get_ingest_settings
 
-        settings = get_settings()
+        settings = get_ingest_settings()
         sp_dc = settings.spotify_sp_dc
 
         if not sp_dc:

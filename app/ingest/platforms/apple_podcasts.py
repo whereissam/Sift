@@ -8,7 +8,7 @@ from typing import Optional
 import httpx
 import feedparser
 
-from ...config import get_settings
+from ..settings import IngestSettings, get_ingest_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
 from ..exceptions import SiftError, ContentNotFoundError
 from ..fetch.url_validator import safe_get, safe_stream
@@ -31,9 +31,13 @@ class ApplePodcastsDownloader(PlatformDownloader):
 
     ITUNES_LOOKUP_API = "https://itunes.apple.com/lookup"
 
-    def __init__(self, download_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        download_dir: Optional[Path] = None,
+        settings: Optional[IngestSettings] = None,
+    ):
         """Initialize the Apple Podcasts downloader."""
-        self.settings = get_settings()
+        self.settings = settings or get_ingest_settings()
 
         if download_dir:
             self.download_dir = Path(download_dir)

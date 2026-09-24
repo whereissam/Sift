@@ -565,6 +565,42 @@ _Shipped — see [shipped.md](shipped.md). Remaining:_
 - [ ] Scene-cut alignment — snap cue boundaries to camera cuts (needs the ffmpeg scene-detection work)
 - [ ] Surface `SubtitleViolation` counts in the job artifact so an editor UI can highlight unfixable cues
 
+## P25: Extractable Ingest Core (library / standalone CLI / local MCP) — 7 open
+
+**Goal:** ship `app/ingest/` as something people can use without the app around
+it — a Python library, a standalone CLI, and an MCP server that calls the core
+in-process (no REST server, no database). The layer fence already existed; the
+remaining coupling was configuration.
+
+- [x] **Phase 1: settings seam** — `app/ingest/settings.py` owns `IngestSettings`
+  (download dir, platform cookies, transcription). `app.config.Settings`
+  subclasses it and registers itself; library callers pass
+  `download_audio(url, settings=IngestSettings(...))` or rely on env.
+  - [x] Every platform downloader, `DownloaderFactory`, `download_audio`,
+    `get_metadata` and `twitter_ytdlp_cookies` accept `settings`
+  - [x] Cloud transcription reads credentials through a registered provider
+    (`set_cloud_credentials_provider`, registered by `app.store`) instead of
+    opening `JobStore` itself
+  - [x] Fixed: cloud transcription never found its key — the old lookup built
+    `JobStore(settings.download_dir)` with a `str` and swallowed the error
+  - [x] Cloud engine only uses a stored key when the provider is `openai` (the
+    only endpoint it calls), so an Anthropic/Groq key is never sent to OpenAI
+  - [x] `tests/test_layering.py`: ingest may import nothing from `app.*` outside
+    `app.ingest` (closes the `app.store` / `app.config` gap)
+- [ ] **Phase 2: single platform registry** — platforms self-register once;
+  `detect_platform`, `get_downloader_for_platform` and the available list all
+  read it (today the class list is hardcoded twice in `fetch/downloader.py`)
+  - [ ] Entry-point discovery so third-party packages can add platforms
+- [ ] **Phase 3: package split** — `sift-core` as a uv workspace member with
+  only ingest deps (`httpx`, `yt-dlp`, `mutagen`, `av`, `pydantic-settings`);
+  transcription behind a `[transcribe]` extra; the app depends on it
+  - [ ] Move `app/cli.py` into the core package (it already imports only ingest)
+- [ ] **Phase 4: local MCP server** — in-process tools (`download`, `metadata`,
+  `fetch_transcript`, `transcribe`) over the core; keep the HTTP `sift-mcp` for
+  the hosted backend (jobs, knowledge, evidence)
+- [ ] Rename the `AudioMetadata` / `DownloadResult` public types before the
+  package is published, if at all — after that they are an API
+
 ## Transcription Engine Ideas — 1 open
 
 - [ ] **Breeze-ASR-25 engine** (MediaTek, Whisper-large-v2 fine-tune) for
