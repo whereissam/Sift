@@ -7,7 +7,7 @@ from typing import Optional
 import httpx
 
 from ..config import get_settings
-from ..ingest.fetch.url_validator import validate_url_ssrf
+from sift_core.fetch.url_validator import validate_url_ssrf
 
 logger = logging.getLogger(__name__)
 

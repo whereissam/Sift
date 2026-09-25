@@ -18,7 +18,7 @@ from telegram.ext import (
 )
 
 from ..config import get_settings
-from ..ingest import (
+from sift_core import (
     SiftError,
     AuthenticationError,
     ContentNotAvailableError,
@@ -467,7 +467,7 @@ class SiftBot:
         audio_path: Path,
     ) -> None:
         try:
-            from ..ingest.transcribe.transcriber import AudioTranscriber
+            from sift_core.transcribe.transcriber import AudioTranscriber
 
             transcriber = AudioTranscriber(
                 remote_service_url=self.settings.whisper_service_url,

@@ -1,0 +1,51 @@
+[project]
+name = "sift-core"
+version = "0.1.0"
+description = "Sift's ingestion core: download audio/video from X Spaces, podcasts, YouTube, Spotify and more, then transcribe it"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+# Only what downloading and fetching need. The server, database, bot, and
+# LLM stack live in the `sift` app and are not pulled in here.
+dependencies = [
+    "httpx>=0.27.0",
+    "pydantic-settings>=2.0.0",
+    "structlog>=24.1.0",
+    "tenacity>=8.2.0",
+    "cachetools>=5.3.0",
+    "feedparser>=6.0.0",
+    "mutagen>=1.47.0",
+    "youtube-transcript-api>=1.0.0",
+    # Run as a binary, but installed here so the pinned version is the one
+    # `resolve_yt_dlp` finds next to the interpreter.
+    "yt-dlp>=2026.8.19",
+]
+
+[project.optional-dependencies]
+transcribe = [
+    "faster-whisper>=1.0.0",
+    "numpy>=2.2.6",
+]
+diarize = [
+    "pyannote.audio>=3.1.0",
+    "torch>=2.0.0",
+]
+mcp = [
+    # Pinned below 2.0: mcp 2.0 removed mcp.server.fastmcp, which the
+    # local server is built on (same pin as the app's sift-mcp).
+    "mcp>=1.2.0,<2",
+]
+
+[project.scripts]
+sift = "sift_core.cli:cli"
+# Backward compatibility alias
+xdownloader = "sift_core.cli:cli"
+# Local MCP server: tools call the core in-process, no Sift server needed
+sift-core-mcp = "sift_core.local_mcp:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sift_core"]

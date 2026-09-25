@@ -13,7 +13,7 @@ from .schemas import (
     ScheduledJob,
 )
 from ..store import get_job_store, JobType, JobStatus
-from ..ingest.fetch.downloader import DownloaderFactory
+from sift_core.fetch.downloader import DownloaderFactory
 
 logger = logging.getLogger(__name__)
 
