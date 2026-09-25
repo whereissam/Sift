@@ -127,10 +127,6 @@ class SpotifyDownloader(PlatformDownloader):
         # external tool, so absence is reported at download time, not here.
         self._spotdl_path = shutil.which("spotdl")
 
-    @property
-    def platform(self) -> Platform:
-        return Platform.SPOTIFY
-
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Spotify URL."""

@@ -56,10 +56,6 @@ class DiscordAudioDownloader(PlatformDownloader):
         else:
             self.download_dir = self.settings.get_download_path()
 
-    @property
-    def platform(self) -> Platform:
-        return Platform.DISCORD
-
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Discord audio URL."""
