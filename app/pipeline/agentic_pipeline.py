@@ -206,7 +206,7 @@ class PipelineRunner:
         knowledge (global gate), and auto-indexes for search, so downstream
         stages are mostly confirmations with an on-demand fallback.
         """
-        from ..ingest.fetch.downloader import DownloaderFactory
+        from sift_core.fetch.downloader import DownloaderFactory
         from .ingestion_service import _safe_metadata_dict
         from .workflow import WorkflowProcessor
 

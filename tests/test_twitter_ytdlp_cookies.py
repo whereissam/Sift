@@ -2,8 +2,8 @@
 
 import os
 
-from app.ingest.fetch import auth
-from app.ingest.fetch.auth import _netscape_cookie_content, twitter_ytdlp_cookies
+from sift_core.fetch import auth
+from sift_core.fetch.auth import _netscape_cookie_content, twitter_ytdlp_cookies
 
 
 class _FakeSettings:

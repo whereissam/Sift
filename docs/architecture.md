@@ -41,7 +41,7 @@ The codebase is organized as five layers, in dependency order. Each may import
 the ones above it in this list, never the ones below.
 
 ```
-app/ingest/      THE CORE — platforms/ fetch/ media/ transcribe/
+sift_core        THE CORE — packages/sift-core: platforms/ fetch/ media/ transcribe/ cli
 app/store/       SQLite persistence (jobs, assets, artifacts, knowledge, ...)
 app/knowledge/   claims, entities, topics, search, synthesis
 app/delivery/    notes, clips, webhooks, cloud, websockets
@@ -49,27 +49,29 @@ app/pipeline/    workflows, queue, scheduler, subscriptions, batches
 app/api/         FastAPI routers  ·  app/mcp_server/  ·  app/bot/
 ```
 
-`app/ingest/` is the layer the product is built on and the one that must stay
-extractable on its own, so it may not import from any layer above it.
-`tests/test_layering.py` asserts this per-file on every test run — the fence is
-enforced by CI, not by discipline. When a module in ingest needs something from
+`sift_core` is the layer the product is built on, and it ships as its own
+package (`packages/sift-core`, a uv workspace member the app depends on) so it
+can be used as a library or CLI without the server. It may not import the `app`
+package at all. `tests/test_layering.py` asserts this per-file on every test
+run — the fence is enforced by CI, not by discipline. When a module in the core needs something from
 a higher layer, the fix is to move the caller up or invert the dependency
 (see `register_warm_segment_source` in `app/knowledge/knowledge_backfill.py`
 and the injected polisher in `RealtimeTranscriptionSession`), never to add the
 import.
 
-The same goes for configuration: ingest may not import `app.config` or
-`app.store` either (the test allows nothing from `app.*` outside
-`app.ingest`). The core reads only `IngestSettings` from
-`app/ingest/settings.py` — callers pass one explicitly, the app registers its
+The same goes for configuration: the core reads only `IngestSettings` from
+`sift_core/settings.py` — callers pass one explicitly, the app registers its
 own `Settings` (a subclass) at import, and with neither it loads from env.
 Cloud transcription credentials arrive the same way, through a provider that
 `app.store` registers, never by the core opening the database.
 
-1. **Ingestion Core** (`app/ingest/`) - Downloads audio/video from every supported platform, converts formats, and transcribes. Nothing in this layer may import anything from `app/` outside `app/ingest/` — enforced by `tests/test_layering.py`
+`app/ingest/` survives only as a deprecation shim that re-exports the top-level
+`sift_core` names for one release; nothing in the repo imports it.
+
+1. **Ingestion Core** (`sift_core`, in `packages/sift-core/`) - Downloads audio/video from every supported platform, converts formats, and transcribes. Imports nothing from the `app` package — enforced by `tests/test_layering.py`
 2. **FastAPI Backend** (`app/api/`) - REST API for external integrations
 3. **Telegram Bot** (`app/bot/`) - User-friendly chat interface
-4. **CLI** (`app/cli.py`) - Command-line interface
+4. **CLI** (`sift_core/cli.py`) - Command-line interface, shipped with the core
 
 ### Desktop vs Web Feature Comparison
 
@@ -188,13 +190,10 @@ boundary per file on every run.
 
 ```
 xdownloader/
-├── app/
-│   ├── main.py              # FastAPI application entry
-│   ├── cli.py               # CLI interface
-│   ├── config.py            # Configuration management
-│   │
-│   ├── ingest/              # ── THE CORE ──────────────────────────────
-│   │   │                    #   May not import knowledge/delivery/pipeline/api
+├── packages/sift-core/src/sift_core/   # ── THE CORE (own package) ─────
+│   │   │                    #   May not import the app package at all
+│   │   ├── settings.py      # IngestSettings — the only config the core reads
+│   │   ├── cli.py           # The `sift` command
 │   │   ├── base.py          # Platform, AudioMetadata, DownloadResult
 │   │   ├── exceptions.py    # Custom exceptions
 │   │   ├── asset_identity.py    # Content-addressed asset identity
@@ -214,6 +213,11 @@ xdownloader/
 │   │       ├── diarizer.py          # Speaker diarization
 │   │       ├── subtitles.py         # P23: SRT/VTT reflow + canonical writer
 │   │       └── checkpoint.py        # Resumable transcription state
+│
+├── app/
+│   ├── main.py              # FastAPI application entry
+│   ├── config.py            # Configuration management (subclasses IngestSettings)
+│   ├── ingest/__init__.py   # Deprecated re-export of sift_core, one release
 │   │
 │   ├── store/               # ── PERSISTENCE ──────────────────────────
 │   │   │                    #   SQLite, composed from mixins
@@ -308,7 +312,7 @@ The frontend uses an **Industrial Utility** aesthetic — dense, left-aligned, a
 
 ## Core Components
 
-### 1. SpaceDownloader (`app/ingest/fetch/downloader.py`)
+### 1. SpaceDownloader (`sift_core/fetch/downloader.py`)
 
 Downloads Twitter Spaces using yt-dlp:
 
@@ -331,7 +335,7 @@ class SpaceDownloader:
         pass
 ```
 
-### 2. AudioConverter (`app/ingest/media/converter.py`)
+### 2. AudioConverter (`sift_core/media/converter.py`)
 
 Converts audio between formats using FFmpeg:
 
@@ -361,7 +365,7 @@ class AudioConverter:
 
 **Quality presets:** low (64k), medium (128k), high (192k), highest (320k)
 
-### 3. SpaceURLParser (`app/ingest/fetch/parser.py`)
+### 3. SpaceURLParser (`sift_core/fetch/parser.py`)
 
 URL validation and parsing:
 
@@ -551,10 +555,10 @@ Browser Microphone
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `AudioBuffer` | `app/ingest/transcribe/realtime_transcriber.py` | Circular buffer for streaming audio |
-| `SegmentMerger` | `app/ingest/transcribe/realtime_transcriber.py` | Deduplication and segment finalization |
-| `TranscriptPolisher` | `app/ingest/transcribe/realtime_transcriber.py` | LLM-powered transcript cleanup |
-| `RealtimeTranscriptionSession` | `app/ingest/transcribe/realtime_transcriber.py` | Orchestrates the streaming pipeline |
+| `AudioBuffer` | `sift_core/transcribe/realtime_transcriber.py` | Circular buffer for streaming audio |
+| `SegmentMerger` | `sift_core/transcribe/realtime_transcriber.py` | Deduplication and segment finalization |
+| `TranscriptPolisher` | `sift_core/transcribe/realtime_transcriber.py` | LLM-powered transcript cleanup |
+| `RealtimeTranscriptionSession` | `sift_core/transcribe/realtime_transcriber.py` | Orchestrates the streaming pipeline |
 | `useAudioCapture` | `frontend/src/hooks/` | MediaRecorder API hook |
 | `useRealtimeTranscription` | `frontend/src/hooks/` | WebSocket hook for transcription |
 | `LiveTranscriber` | `frontend/src/components/live/` | Main UI component |

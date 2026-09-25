@@ -541,7 +541,7 @@ class CloudTranscriptionEngine(BaseTranscriptionEngine):
 
     def __init__(self, api_key: Optional[str] = None, provider: str = "openai"):
         """Pass `api_key` directly, or leave it None to use the credentials
-        provider the app registers (see `app.ingest.settings`)."""
+        provider the app registers (see `sift_core.settings`)."""
         self._explicit = api_key is not None
         self._provider = provider if self._explicit else None
         self._api_key = api_key

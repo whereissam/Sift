@@ -4,7 +4,7 @@ from functools import lru_cache
 
 from pydantic_settings import SettingsConfigDict
 
-from .ingest.settings import IngestSettings, set_settings_provider
+from sift_core.settings import IngestSettings, set_settings_provider
 
 
 class Settings(IngestSettings):

@@ -1,4 +1,4 @@
-"""The ingestion core's settings seam (`app.ingest.settings`).
+"""The ingestion core's settings seam (`sift_core.settings`).
 
 The core reads configuration only through `IngestSettings`: callers can pass
 one explicitly, the app registers its own `Settings` (a subclass), and with
@@ -16,12 +16,12 @@ from pathlib import Path
 import pytest
 
 from app.config import Settings, get_settings
-from app.ingest import IngestSettings, download_audio
-from app.ingest import settings as ingest_settings
-from app.ingest.fetch import auth
-from app.ingest.fetch.downloader import DownloaderFactory
-from app.ingest.platforms import XimalayaDownloader
-from app.ingest.transcribe.transcription_engine import CloudTranscriptionEngine
+from sift_core import IngestSettings, download_audio
+from sift_core import settings as ingest_settings
+from sift_core.fetch import auth
+from sift_core.fetch.downloader import DownloaderFactory
+from sift_core.platforms import XimalayaDownloader
+from sift_core.transcribe.transcription_engine import CloudTranscriptionEngine
 
 XIMALAYA_URL = "https://www.ximalaya.com/sound/123456"
 
@@ -36,19 +36,21 @@ def restore_providers():
     ingest_settings._cloud_credentials_provider = creds_provider
 
 
-def test_core_imports_without_loading_app_config_or_store():
-    """Using the core as a library must not drag in the app around it."""
+def test_core_imports_without_loading_the_app():
+    """Using the core as a library must not drag in the app around it.
+
+    Runs from the repo root, where `app` *is* importable — so an import of it
+    anywhere in the core would show up here.
+    """
     script = textwrap.dedent(
         """
         import sys
-        import app.ingest
-        from app.ingest.fetch.downloader import _get_platform_downloaders
-        from app.ingest.transcribe import transcription_engine, transcriber
+        import sift_core
+        from sift_core import cli
+        from sift_core.fetch.downloader import _get_platform_downloaders
+        from sift_core.transcribe import transcription_engine, transcriber
         _get_platform_downloaders()
-        leaked = sorted(
-            m for m in sys.modules
-            if m.startswith("app.") and not m.startswith("app.ingest")
-        )
+        leaked = sorted(m for m in sys.modules if m == "app" or m.startswith("app."))
         print(",".join(leaked))
         """
     )
@@ -100,7 +102,7 @@ def test_explicit_settings_reach_the_downloader(tmp_path):
 
 
 def test_explicit_settings_reach_the_platform_lookup(tmp_path):
-    from app.ingest import Platform
+    from sift_core import Platform
 
     custom = IngestSettings(download_dir=str(tmp_path))
     downloader = DownloaderFactory.get_downloader_for_platform(

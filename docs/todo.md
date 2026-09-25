@@ -740,7 +740,7 @@ setting. The spike extension for this lives at `output/phase0-spike/`
 - Real-time capture of anything. See above.
 - Replacing server-side ingestion for sites yt-dlp already handles well.
 
-## P25: Extractable Ingest Core (library / standalone CLI / local MCP) — 6 open
+## P25: Extractable Ingest Core (library / standalone CLI / local MCP) — 5 open
 
 **Goal:** ship `app/ingest/` as something people can use without the app around
 it — a Python library, a standalone CLI, and an MCP server that calls the core
@@ -773,12 +773,18 @@ remaining coupling was configuration.
     built-in adapter, not add a platform. Revisit only if `Platform` opens up.
 - [ ] CLI: `-o episode.m4a` on an Apple Podcasts MP3 saves MP3 data under the
   `.m4a` name instead of converting (seen during the Phase 2 live run)
-- [ ] README "CLI Usage" examples omit the required `download` subcommand
-  (`uv run sift download "<url>"`)
-- [ ] **Phase 3: package split** — `sift-core` as a uv workspace member with
-  only ingest deps (`httpx`, `yt-dlp`, `mutagen`, `av`, `pydantic-settings`);
-  transcription behind a `[transcribe]` extra; the app depends on it
-  - [ ] Move `app/cli.py` into the core package (it already imports only ingest)
+- [x] README "CLI Usage" examples omit the required `download` subcommand
+- [x] **Phase 3: package split** — `packages/sift-core` (import name
+  `sift_core`) is a uv workspace member the app depends on. Its base deps are
+  only what downloading needs (`httpx`, `pydantic-settings`, `structlog`,
+  `tenacity`, `cachetools`, `feedparser`, `mutagen`, `youtube-transcript-api`,
+  `yt-dlp`); `[transcribe]` and `[diarize]` extras for the heavy parts.
+  `app/ingest/` is now only a deprecation shim re-exporting the top-level names.
+  - [x] The CLI moved into the core (`sift_core/cli.py`); `sift` / `xdownloader`
+    console scripts come from `sift-core`
+  - [x] Dockerfile, Nuitka build (`--include-package=sift_core`), CI ruff path
+  - [ ] Delete the `app/ingest` shim after one release
+  - [ ] Publish `sift-core` to PyPI (name check, version policy, CI release job)
 - [ ] **Phase 4: local MCP server** — in-process tools (`download`, `metadata`,
   `fetch_transcript`, `transcribe`) over the core; keep the HTTP `sift-mcp` for
   the hosted backend (jobs, knowledge, evidence)
