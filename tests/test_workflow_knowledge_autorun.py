@@ -128,7 +128,7 @@ class TestProcessTranscriptionIntegration:
     async def test_completed_transcription_enqueues_knowledge(
         self, processor: WorkflowProcessor, store: JobStore, monkeypatch, tmp_path
     ):
-        import app.ingest.transcribe.transcriber as transcriber_mod
+        import sift_core.transcribe.transcriber as transcriber_mod
 
         monkeypatch.setattr(
             transcriber_mod, "AudioTranscriber", _FakeTranscriber

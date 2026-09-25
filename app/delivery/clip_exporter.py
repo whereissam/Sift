@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from .clip_generator import SocialPlatform
-from ..ingest.exceptions import FFmpegError
+from sift_core.exceptions import FFmpegError
 
 logger = logging.getLogger(__name__)
 

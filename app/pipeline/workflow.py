@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Optional
 
 from ..store import JobStore, JobStatus, JobType, get_job_store
-from ..ingest.fetch.downloader import DownloaderFactory
-from ..ingest.media.converter import AudioConverter
-from ..ingest.base import AudioMetadata, Platform
+from sift_core.fetch.downloader import DownloaderFactory
+from sift_core.media.converter import AudioConverter
+from sift_core.base import AudioMetadata, Platform
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ class WorkflowProcessor:
 
     async def _embed_metadata(self, file_path: Path, content_info: dict):
         """Embed metadata tags into the audio file."""
-        from ..ingest.media.metadata_tagger import MetadataTagger
+        from sift_core.media.metadata_tagger import MetadataTagger
 
         # Build AudioMetadata from content_info
         platform_str = content_info.get("platform", "")
@@ -217,7 +217,7 @@ class WorkflowProcessor:
             diarize: Enable speaker diarization
             num_speakers: Exact number of speakers (if known)
         """
-        from ..ingest.transcribe.transcriber import AudioTranscriber, TranscriptionSegment
+        from sift_core.transcribe.transcriber import AudioTranscriber, TranscriptionSegment
 
         job = self.job_store.get_job(job_id)
         if not job:
@@ -247,7 +247,7 @@ class WorkflowProcessor:
             # Run diarization if requested
             if diarize:
                 try:
-                    from ..ingest.transcribe.diarizer import SpeakerDiarizer
+                    from sift_core.transcribe.diarizer import SpeakerDiarizer
 
                     if SpeakerDiarizer.is_available():
                         logger.info(f"[{job_id}] Running speaker diarization...")

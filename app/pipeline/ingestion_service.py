@@ -11,7 +11,7 @@ import logging
 from enum import Enum
 from typing import Optional
 
-from ..ingest.fetch.downloader import DownloaderFactory
+from sift_core.fetch.downloader import DownloaderFactory
 from ..store import JobStatus, get_job_store
 from .workflow import WorkflowProcessor
 

@@ -122,7 +122,7 @@ class PlatformDownloader(ABC):
     """Abstract base class for platform-specific downloaders.
 
     Subclasses declare ``PLATFORM`` and are listed once, in URL-detection
-    order, in ``app.ingest.platforms.DOWNLOADERS``.
+    order, in ``sift_core.platforms.DOWNLOADERS``.
     """
 
     PLATFORM: ClassVar[Platform]

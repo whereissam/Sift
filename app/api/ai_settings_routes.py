@@ -16,7 +16,7 @@ from .schemas import (
 )
 from ..store import get_job_store
 from ..knowledge.summarizer import LiteLLMProvider, TranscriptSummarizer
-from ..ingest.fetch.url_validator import validate_url_ssrf
+from sift_core.fetch.url_validator import validate_url_ssrf
 
 logger = logging.getLogger(__name__)
 

@@ -16,8 +16,8 @@ from ..store.subscription_store import (
     SubscriptionItemStatus,
 )
 from .subscription_fetcher import get_fetcher
-from ..ingest.fetch.downloader import DownloaderFactory
-from ..ingest.fetch.url_validator import safe_stream
+from sift_core.fetch.downloader import DownloaderFactory
+from sift_core.fetch.url_validator import safe_stream
 
 
 def _is_direct_audio_url(url: str) -> bool:
@@ -84,7 +84,7 @@ async def _download_direct_audio(
         )
 
         if needs_conversion:
-            from ..ingest.media.converter import AudioConverter
+            from sift_core.media.converter import AudioConverter
             converter = AudioConverter()
             if converter.is_ffmpeg_available():
                 logger.info(f"Converting to {output_format}...")
@@ -391,7 +391,7 @@ async def _transcribe_item(
 ) -> Optional[Path]:
     """Transcribe an audio file."""
     try:
-        from ..ingest.transcribe.transcriber import AudioTranscriber
+        from sift_core.transcribe.transcriber import AudioTranscriber
 
         if not AudioTranscriber.is_available():
             logger.warning("Transcriber not available, skipping auto-transcription")

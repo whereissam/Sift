@@ -13,7 +13,7 @@ from typing import Optional
 import feedparser
 import httpx
 
-from ..ingest.fetch.url_validator import safe_get
+from sift_core.fetch.url_validator import safe_get
 
 logger = logging.getLogger(__name__)
 

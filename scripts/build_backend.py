@@ -64,6 +64,8 @@ def build(target_dir: Path) -> None:
         f"--output-dir={output_dir}",
         # Include the entire app package
         "--include-package=app",
+        # The ingestion core, a separate workspace package
+        "--include-package=sift_core",
         # Include data files (templates, etc.)
         f"--include-data-dir={ROOT / 'app'}=app",
         # Key packages that need explicit inclusion (C extensions, lazy imports)

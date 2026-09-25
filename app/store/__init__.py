@@ -11,7 +11,7 @@ here so tests can monkeypatch them at the package namespace.
 
 from typing import Optional
 
-from ..ingest.settings import set_cloud_credentials_provider
+from sift_core.settings import set_cloud_credentials_provider
 from ._enums import JobStatus, JobType
 from ._store import JobStore
 

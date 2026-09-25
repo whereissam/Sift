@@ -19,9 +19,9 @@ from .schemas import (
     ContentInfo,
     Platform,
 )
-from ..ingest.fetch.downloader import DownloaderFactory
-from ..ingest.base import Platform as CorePlatform
-from ..ingest.exceptions import ContentNotFoundError, UnsupportedPlatformError
+from sift_core.fetch.downloader import DownloaderFactory
+from sift_core.base import Platform as CorePlatform
+from sift_core.exceptions import ContentNotFoundError, UnsupportedPlatformError
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ async def _process_download(job_id: str, request: DownloadRequest):
             # Embed metadata if requested
             if request.embed_metadata and result.metadata:
                 try:
-                    from ..ingest.metadata import MetadataEmbedder
+                    from sift_core.metadata import MetadataEmbedder
                     embedder = MetadataEmbedder()
                     await embedder.embed_metadata(final_path, result.metadata)
                     logger.info(f"[{job_id}] Metadata embedded successfully")
@@ -329,7 +329,7 @@ async def cancel_download(job_id: str):
 @router.get("/platforms")
 async def get_platforms():
     """Get list of supported platforms and their availability."""
-    from ..ingest.platforms import (
+    from sift_core.platforms import (
         XSpacesDownloader,
         ApplePodcastsDownloader,
         SpotifyDownloader,

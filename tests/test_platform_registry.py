@@ -1,4 +1,4 @@
-"""`app.ingest.platforms.DOWNLOADERS` is the one list of adapters.
+"""`sift_core.platforms.DOWNLOADERS` is the one list of adapters.
 
 The factory used to hardcode the classes twice (a detection list and a
 Platform→class mapping) that could drift apart. These tests pin the invariants
@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-import app.ingest.platforms as platforms
-from app.ingest import Platform, PlatformDownloader, UnsupportedPlatformError
-from app.ingest.fetch.downloader import DownloaderFactory
-from app.ingest.platforms import DOWNLOADERS
+import sift_core.platforms as platforms
+from sift_core import Platform, PlatformDownloader, UnsupportedPlatformError
+from sift_core.fetch.downloader import DownloaderFactory
+from sift_core.platforms import DOWNLOADERS
 
 
 def test_every_platform_has_exactly_one_adapter():
