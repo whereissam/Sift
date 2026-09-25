@@ -712,6 +712,8 @@ Query: GET /api/claims · /api/entities · /api/topics · /api/predictions
 
 ### MCP server (P19)
 
+`sift-core-mcp` (`sift_core/local_mcp.py`, the `sift-core[mcp]` extra) is the local counterpart: its tools (`capabilities`, `get_metadata`, `download`, `fetch_transcript`, `transcribe`) call the core in-process, so it needs no server or database. Use it for "get this media / transcript" work; use `sift-mcp` below for jobs, knowledge, and search.
+
 `sift-mcp` is a standalone [MCP](https://modelcontextprotocol.io) server that exposes the primitives above as agent tools (`ingest_url`, `get_transcript`, `get_claims`, `get_entities`, `get_topics`, `get_predictions`, …) to Claude Desktop / Cursor. It is an **HTTP client** of this REST API (`X-API-Key` passthrough, stdio transport) — no DB coupling, works against a local or remote Sift.
 
 ### Subscription digests (P20)

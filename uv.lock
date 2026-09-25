@@ -5661,6 +5661,9 @@ diarize = [
     { name = "pyannote-audio" },
     { name = "torch" },
 ]
+mcp = [
+    { name = "mcp" },
+]
 transcribe = [
     { name = "faster-whisper" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -5674,6 +5677,7 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'transcribe'", specifier = ">=1.0.0" },
     { name = "feedparser", specifier = ">=6.0.0" },
     { name = "httpx", specifier = ">=0.27.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2.0,<2" },
     { name = "mutagen", specifier = ">=1.47.0" },
     { name = "numpy", marker = "extra == 'transcribe'", specifier = ">=2.2.6" },
     { name = "pyannote-audio", marker = "extra == 'diarize'", specifier = ">=3.1.0" },
@@ -5684,7 +5688,7 @@ requires-dist = [
     { name = "youtube-transcript-api", specifier = ">=1.0.0" },
     { name = "yt-dlp", specifier = ">=2026.8.19" },
 ]
-provides-extras = ["transcribe", "diarize"]
+provides-extras = ["transcribe", "diarize", "mcp"]
 
 [[package]]
 name = "six"

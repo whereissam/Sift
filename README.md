@@ -111,6 +111,10 @@ result = asyncio.run(download_audio("https://podcasts.apple.com/...", settings=s
 print(result.file_path, result.metadata.title if result.metadata else None)
 ```
 
+For agents, `sift-core-mcp` exposes download, metadata, caption fetch and
+transcription as local MCP tools, with no server needed. See
+[sift-core's README](packages/sift-core/README.md#local-mcp-server).
+
 ### Audio → YouTube-ready video
 
 Turn a downloaded audio file into an MP4 with a still image (H.264 + AAC,

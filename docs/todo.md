@@ -740,7 +740,7 @@ setting. The spike extension for this lives at `output/phase0-spike/`
 - Real-time capture of anything. See above.
 - Replacing server-side ingestion for sites yt-dlp already handles well.
 
-## P25: Extractable Ingest Core (library / standalone CLI / local MCP) — 5 open
+## P25: Extractable Ingest Core (library / standalone CLI / local MCP) — 6 open
 
 **Goal:** ship `app/ingest/` as something people can use without the app around
 it — a Python library, a standalone CLI, and an MCP server that calls the core
@@ -785,9 +785,15 @@ remaining coupling was configuration.
   - [x] Dockerfile, Nuitka build (`--include-package=sift_core`), CI ruff path
   - [ ] Delete the `app/ingest` shim after one release
   - [ ] Publish `sift-core` to PyPI (name check, version policy, CI release job)
-- [ ] **Phase 4: local MCP server** — in-process tools (`download`, `metadata`,
-  `fetch_transcript`, `transcribe`) over the core; keep the HTTP `sift-mcp` for
-  the hosted backend (jobs, knowledge, evidence)
+- [x] **Phase 4: local MCP server** — `sift-core-mcp` (`sift_core/local_mcp.py`,
+  `sift-core[mcp]` extra): `capabilities`, `get_metadata`, `download`,
+  `fetch_transcript`, `transcribe`, all in-process over the core. Every tool
+  returns `ok`/`error` instead of raising; transcripts capped by `max_chars`,
+  segments opt-in. The HTTP `sift-mcp` stays for the hosted backend (jobs,
+  knowledge, evidence).
+  - [ ] Progress notifications for long `download` / `transcribe` calls (some
+    hosts time out on multi-hour episodes)
+  - [ ] Optional allow-list of local directories `transcribe` may read from
 - [ ] Rename the `AudioMetadata` / `DownloadResult` public types before the
   package is published, if at all — after that they are an API
 
