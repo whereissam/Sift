@@ -47,10 +47,6 @@ class YouTubeVideoDownloader(PlatformDownloader):
         """Resolve yt-dlp, preferring the pinned build over a system one."""
         return resolve_yt_dlp()
 
-    @property
-    def platform(self) -> Platform:
-        return Platform.YOUTUBE_VIDEO
-
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid YouTube URL."""
