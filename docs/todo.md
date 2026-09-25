@@ -565,6 +565,181 @@ _Shipped — see [shipped.md](shipped.md). Remaining:_
 - [ ] Scene-cut alignment — snap cue boundaries to camera cuts (needs the ffmpeg scene-detection work)
 - [ ] Surface `SubtitleViolation` counts in the job artifact so an editor UI can highlight unfixable cues
 
+## P24: In-Page Audio Capture (Extension Ingest) — 16 open
+
+**Goal:** let the extension ingest what the server cannot reach. Today it is a URL
+forwarder — it detects a supported page and hands the URL to `GET /api/add`, and
+the server fetches it with yt-dlp. That fails for exactly the content the user
+most wants: auth-walled, private, region-locked, or session-gated media. The
+browser is already logged in; the extension should extract the audio there and
+upload only that.
+
+> **Why this is the moat and not a feature.** Ingest coverage is the part of Sift
+> nobody else wants to maintain, and it is the layer everything else is built on
+> (see `app/ingest/`). Every knowledge feature is worth nothing on an episode we
+> could not fetch. This closes the one gap a server-side downloader structurally
+> cannot.
+
+### The obvious approach is disqualified — say so before anyone tries it
+
+`<video>.captureStream()` + `MediaRecorder` is the first design everyone reaches
+for, and it is **wrong for this product**: it records in **real time**. A
+60-minute podcast takes 60 minutes, with the tab open and playing. Sift's domain
+is long-form audio. Any design whose capture time scales with content duration
+is out, which rules out `MediaRecorder`, and rules out intercepting
+`SourceBuffer.appendBuffer` as a primary path (it only sees bytes as fast as the
+player asks for them).
+
+Capture must run at **network speed, not playback speed**.
+
+### The insight that shrinks the problem
+
+Most adaptive streams **already ship audio as a separate rendition**. An HLS
+master playlist or a DASH manifest typically lists an audio-only track, because
+players need to switch video quality without re-downloading audio.
+
+So the common path needs **no demuxing at all** — find the manifest, pick the
+audio rendition, fetch its segments, concatenate, upload. The hand-written MP4
+parser is only needed for the *progressive* case, and even there the trick is
+HTTP Range: fetch the `moov` box, read the sample table, then range-fetch only
+the byte ranges belonging to the audio track. Never download the video.
+
+Two paths, in priority order:
+
+| Source | Method | Demux needed? |
+|---|---|---|
+| HLS / DASH with an audio rendition | fetch that rendition's segments | **no** |
+| Progressive MP4 | range-fetch `moov`, parse sample table, range-fetch audio samples | yes |
+| Anything else | out of scope for v1 — fall back to the existing URL hand-off | — |
+
+### Spike first — one unknown decides the whole design
+
+**Before any of this is built**, settle a single question empirically:
+
+> Can the extension fetch media segment URLs *with the user's session* and get
+> the bytes back?
+
+MV3 removed the CORS exemption from content scripts, so cross-origin fetches
+have to go through the background service worker under `host_permissions`. What
+is **not** established here is whether those requests carry the page's cookies
+in a way the origin accepts, across the platforms that matter. If they do not,
+the entire premise collapses and the fallback is a different design (asking the
+page to fetch on our behalf via a `MAIN`-world script).
+
+Spike deliverable: a throwaway build that, on one auth-walled page, logs the
+media URLs seen and reports whether a background-worker `fetch` of one segment
+returns 2xx with plausible bytes. Nothing else gets written until that answers
+yes or no, and the answer goes in this section.
+
+#### Phase 0 findings (2026-08-27)
+
+**Documented behaviour — resolved.** Chrome's docs state plainly: *"Requests
+from an extension to a third-party are treated as same-site if the extension
+has host permissions for the third-party. This means `SameSite=Strict` cookies
+can be sent."* Two caveats carried forward as risks rather than blockers:
+
+- It *"does not apply if third-party cookies are blocked"* — which is an
+  increasingly common browser default, so capture must detect and report that
+  case rather than silently returning a login page.
+- Content scripts get no such exemption (*"Cross-origin requests are always
+  treated as such in content scripts, even if the extension has host
+  permissions"*), which settles where the fetching lives: the **service
+  worker**, not the content script.
+
+**Audio-rendition assumption — confirmed, and stronger than assumed.** Probing
+the real format lists for the platforms Sift supports:
+
+| Platform | Audio source | Demux? |
+|---|---|---|
+| X / Twitter | `hls-audio-128000` HLS rendition (1.14 MiB) | no |
+| YouTube | `139` m4a / `233` HLS, audio only | no |
+| Instagram | `dash-…` m4a, audio only | no |
+| 喜马拉雅 | m4a audio only, 24k / 64k | no |
+| 小宇宙 | a single m4a — already audio | no |
+
+**Not one of them required demuxing.** The muxed-progressive-MP4 case that
+Phase 2 exists for did not appear on any supported platform. Phase 2 is
+therefore demoted: build it only if a real source turns up that needs it,
+rather than on the assumption that one will.
+
+**Still open — needs a browser.** Whether a real origin *accepts* the
+worker's credentialed request is not answerable from docs, because it depends
+on per-platform Referer/Origin checks and the user's third-party-cookie
+setting. The spike extension for this lives at `output/phase0-spike/`
+(gitignored); load it unpacked, play media on an auth-walled page, and probe.
+
+### Locked design decisions (pending the spike)
+
+- **Discovery via `chrome.webRequest` observation**, not DOM scraping. Media URLs
+  are requested by the player regardless of how the page is built, and observing
+  requests survives markup changes that break selectors. Non-blocking
+  observation is still available in MV3.
+- **The extension never uploads video.** Audio-only is the entire point: ~20x
+  less bandwidth, and it keeps video off the server, which is the better privacy
+  story for a paid backend.
+- **Upload lands on the existing `POST /api/transcribe/upload`.** It already
+  accepts m4a/mp4/webm/aac up to 500 MB. It needs provenance fields added
+  (source URL, title, platform) — without them the knowledge layer cannot cite
+  the episode, and a captured job would be a second-class citizen.
+- **Capture is opt-in per page, never automatic.** Silently uploading media from
+  whatever the user is viewing is not acceptable behaviour, whatever the
+  manifest permits.
+- **Existing URL hand-off stays the default.** In-page capture is the fallback
+  for what the server cannot fetch, not a replacement — server-side yt-dlp is
+  better maintained and handles far more sites. The extension should try the
+  server first and offer capture when the server reports it cannot reach the
+  content.
+
+### Phasing
+
+- [ ] **Phase 0 — spike.** Answer the fetch-with-session question. Record the
+      answer here. Stop if it is no.
+- [ ] **Phase 1 — HLS/DASH audio rendition.** Discovery, manifest parse, segment
+      fetch, concatenate, upload. No demuxing. Covers the majority case.
+- [ ] **Phase 2 — progressive MP4.** Range-fetch `moov`, parse the sample table,
+      range-fetch audio samples, repackage to a playable container.
+- [ ] **Phase 3 — provenance + UX.** Server-side upload metadata, capture
+      progress in the popup, graceful "cannot capture this page" messaging.
+
+### Tasks (Phase 0–1)
+
+- [ ] `extension/utils/media-discovery.ts` — collect candidate media URLs per tab
+      from `webRequest`, classified as `hls` / `dash` / `progressive` / `unknown`
+- [ ] `extension/utils/hls.ts` — parse a master playlist, select the audio-only
+      rendition, expand to a segment list (pure functions, unit-testable without
+      the network)
+- [ ] `extension/utils/capture.ts` — fetch segments with bounded concurrency,
+      report progress, concatenate
+- [ ] Background worker: own the fetching (host permissions live there), stream
+      to the server, surface progress to the popup
+- [ ] Popup: a capture affordance that appears only when the server reports it
+      cannot fetch the page itself
+- [ ] `manifest`: add `webRequest`; keep `*://*/*` optional and request it at
+      capture time rather than up front
+- [ ] Server: provenance fields on `POST /api/transcribe/upload`
+
+### Test plan
+
+- [ ] Pure-function tests for manifest parsing: master playlist with and without
+      a separate audio rendition, DASH manifest, malformed manifest, a playlist
+      whose audio rendition is a relative URL
+- [ ] Segment-list expansion: absolute vs relative URIs, `EXT-X-BYTERANGE`,
+      encrypted playlists rejected with a clear message rather than garbage
+- [ ] Capture orchestration against a stub fetcher: concurrency cap respected,
+      one failed segment aborts rather than uploading a corrupt file, progress
+      is monotonic
+- [ ] Upload: provenance round-trips onto the job so the knowledge layer can
+      cite it
+- [ ] **A real end-to-end capture on one live auth-walled page**, verified by
+      transcribing the result — this is the only test that proves the premise
+
+### Explicitly out of scope
+
+- DRM-protected media. Widevine/FairPlay content is not capturable and must fail
+  with a clear message rather than a corrupt file.
+- Real-time capture of anything. See above.
+- Replacing server-side ingestion for sites yt-dlp already handles well.
+
 ## P25: Extractable Ingest Core (library / standalone CLI / local MCP) — 5 open
 
 **Goal:** ship `app/ingest/` as something people can use without the app around
