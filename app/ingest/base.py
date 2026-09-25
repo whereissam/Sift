@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import ClassVar, Optional
 
 
 def resolve_yt_dlp() -> str:
@@ -119,13 +119,18 @@ class DownloadResult:
 
 
 class PlatformDownloader(ABC):
-    """Abstract base class for platform-specific downloaders."""
+    """Abstract base class for platform-specific downloaders.
+
+    Subclasses declare ``PLATFORM`` and are listed once, in URL-detection
+    order, in ``app.ingest.platforms.DOWNLOADERS``.
+    """
+
+    PLATFORM: ClassVar[Platform]
 
     @property
-    @abstractmethod
     def platform(self) -> Platform:
         """Return the platform this downloader handles."""
-        pass
+        return self.PLATFORM
 
     @classmethod
     @abstractmethod

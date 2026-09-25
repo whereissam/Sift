@@ -565,7 +565,7 @@ _Shipped — see [shipped.md](shipped.md). Remaining:_
 - [ ] Scene-cut alignment — snap cue boundaries to camera cuts (needs the ffmpeg scene-detection work)
 - [ ] Surface `SubtitleViolation` counts in the job artifact so an editor UI can highlight unfixable cues
 
-## P25: Extractable Ingest Core (library / standalone CLI / local MCP) — 7 open
+## P25: Extractable Ingest Core (library / standalone CLI / local MCP) — 6 open
 
 **Goal:** ship `app/ingest/` as something people can use without the app around
 it — a Python library, a standalone CLI, and an MCP server that calls the core
@@ -587,10 +587,19 @@ remaining coupling was configuration.
     only endpoint it calls), so an Anthropic/Groq key is never sent to OpenAI
   - [x] `tests/test_layering.py`: ingest may import nothing from `app.*` outside
     `app.ingest` (closes the `app.store` / `app.config` gap)
-- [ ] **Phase 2: single platform registry** — platforms self-register once;
-  `detect_platform`, `get_downloader_for_platform` and the available list all
-  read it (today the class list is hardcoded twice in `fetch/downloader.py`)
-  - [ ] Entry-point discovery so third-party packages can add platforms
+- [x] **Phase 2: single platform registry** — `app.ingest.platforms.DOWNLOADERS`
+  is the one list, in URL-detection order; `detect_platform`,
+  `get_downloader_for_platform` and `get_available_platforms` all read it
+  (it used to be hardcoded twice in `fetch/downloader.py`). `PLATFORM` is the
+  declared class attribute; the 11 duplicated `platform` properties are gone.
+  `tests/test_platform_registry.py` fails if an adapter is written but not listed.
+  - Entry-point plugin discovery: **dropped for now.** `Platform` is a closed
+    enum persisted in the DB and API schemas, so a plugin could only replace a
+    built-in adapter, not add a platform. Revisit only if `Platform` opens up.
+- [ ] CLI: `-o episode.m4a` on an Apple Podcasts MP3 saves MP3 data under the
+  `.m4a` name instead of converting (seen during the Phase 2 live run)
+- [ ] README "CLI Usage" examples omit the required `download` subcommand
+  (`uv run sift download "<url>"`)
 - [ ] **Phase 3: package split** — `sift-core` as a uv workspace member with
   only ingest deps (`httpx`, `yt-dlp`, `mutagen`, `av`, `pydantic-settings`);
   transcription behind a `[transcribe]` extra; the app depends on it

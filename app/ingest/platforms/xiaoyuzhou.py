@@ -41,10 +41,6 @@ class XiaoyuzhouDownloader(PlatformDownloader):
         else:
             self.download_dir = self.settings.get_download_path()
 
-    @property
-    def platform(self) -> Platform:
-        return Platform.XIAOYUZHOU
-
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Xiaoyuzhou URL."""

@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Optional, Type
+from typing import Optional
 
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
 from ..exceptions import UnsupportedPlatformError
@@ -10,43 +10,16 @@ from ..settings import IngestSettings
 
 logger = logging.getLogger(__name__)
 
-# Lazy imports to avoid circular dependencies
-_platform_downloaders: Optional[list[Type[PlatformDownloader]]] = None
 
+def _get_platform_downloaders() -> tuple[type[PlatformDownloader], ...]:
+    """The adapter list, in URL-detection order.
 
-def _get_platform_downloaders() -> list[Type[PlatformDownloader]]:
-    """Get list of platform downloader classes (lazy loaded)."""
-    global _platform_downloaders
-    if _platform_downloaders is None:
-        from ..platforms import (
-            XSpacesDownloader,
-            ApplePodcastsDownloader,
-            SpotifyDownloader,
-            YouTubeDownloader,
-            XiaoyuzhouDownloader,
-            XimalayaDownloader,
-            DiscordAudioDownloader,
-            XVideoDownloader,
-            YouTubeVideoDownloader,
-            InstagramVideoDownloader,
-            XiaohongshuVideoDownloader,
-        )
-        _platform_downloaders = [
-            # Audio
-            XSpacesDownloader,
-            ApplePodcastsDownloader,
-            SpotifyDownloader,
-            YouTubeDownloader,
-            XiaoyuzhouDownloader,
-            XimalayaDownloader,
-            DiscordAudioDownloader,
-            # Video
-            XVideoDownloader,
-            YouTubeVideoDownloader,
-            InstagramVideoDownloader,
-            XiaohongshuVideoDownloader,
-        ]
-    return _platform_downloaders
+    Imported lazily: the platform modules import from `fetch`, so pulling them
+    in at module load would be circular.
+    """
+    from ..platforms import DOWNLOADERS
+
+    return DOWNLOADERS
 
 
 class DownloaderFactory:
@@ -56,19 +29,12 @@ class DownloaderFactory:
     def detect_platform(cls, url: str) -> Optional[Platform]:
         """Auto-detect platform from URL.
 
-        Uses class-level PLATFORM attribute to avoid instantiation
-        (which may fail if external tools like spotdl aren't installed).
+        Reads the class-level ``PLATFORM`` so nothing is instantiated (which
+        may fail if external tools like spotdl aren't installed).
         """
         for downloader_cls in _get_platform_downloaders():
             if downloader_cls.can_handle_url(url):
-                # Use class attribute if available, otherwise instantiate
-                if hasattr(downloader_cls, 'PLATFORM'):
-                    return downloader_cls.PLATFORM
-                try:
-                    return downloader_cls().platform
-                except Exception:
-                    # Tool not installed — skip but still return platform from class name
-                    return None
+                return downloader_cls.PLATFORM
         return None
 
     @classmethod
@@ -86,41 +52,10 @@ class DownloaderFactory:
         cls, platform: Platform, settings: Optional[IngestSettings] = None
     ) -> PlatformDownloader:
         """Get downloader for specific platform."""
-        from ..platforms import (
-            XSpacesDownloader,
-            ApplePodcastsDownloader,
-            SpotifyDownloader,
-            YouTubeDownloader,
-            XiaoyuzhouDownloader,
-            XimalayaDownloader,
-            DiscordAudioDownloader,
-            XVideoDownloader,
-            YouTubeVideoDownloader,
-            InstagramVideoDownloader,
-            XiaohongshuVideoDownloader,
-        )
-
-        mapping = {
-            # Audio
-            Platform.X_SPACES: XSpacesDownloader,
-            Platform.APPLE_PODCASTS: ApplePodcastsDownloader,
-            Platform.SPOTIFY: SpotifyDownloader,
-            Platform.YOUTUBE: YouTubeDownloader,
-            Platform.XIAOYUZHOU: XiaoyuzhouDownloader,
-            Platform.XIMALAYA: XimalayaDownloader,
-            Platform.DISCORD: DiscordAudioDownloader,
-            # Video
-            Platform.X_VIDEO: XVideoDownloader,
-            Platform.YOUTUBE_VIDEO: YouTubeVideoDownloader,
-            Platform.INSTAGRAM: InstagramVideoDownloader,
-            Platform.XIAOHONGSHU: XiaohongshuVideoDownloader,
-        }
-
-        downloader_cls = mapping.get(platform)
-        if not downloader_cls:
-            raise UnsupportedPlatformError(f"Unknown platform: {platform}")
-
-        return downloader_cls(settings=settings)
+        for downloader_cls in _get_platform_downloaders():
+            if downloader_cls.PLATFORM == platform:
+                return downloader_cls(settings=settings)
+        raise UnsupportedPlatformError(f"Unknown platform: {platform}")
 
     @classmethod
     def is_url_supported(cls, url: str) -> bool:
@@ -130,17 +65,11 @@ class DownloaderFactory:
     @classmethod
     def get_available_platforms(cls) -> list[Platform]:
         """Get list of platforms with available dependencies."""
-        available = []
-        for downloader_cls in _get_platform_downloaders():
-            if downloader_cls.is_available():
-                if hasattr(downloader_cls, 'PLATFORM'):
-                    available.append(downloader_cls.PLATFORM)
-                else:
-                    try:
-                        available.append(downloader_cls().platform)
-                    except Exception:
-                        pass
-        return available
+        return [
+            downloader_cls.PLATFORM
+            for downloader_cls in _get_platform_downloaders()
+            if downloader_cls.is_available()
+        ]
 
 
 # Convenience function for simple usage
