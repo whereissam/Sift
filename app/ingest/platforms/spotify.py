@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ...config import get_settings
+from ..settings import IngestSettings, get_ingest_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
 from ..exceptions import SiftError, ContentNotFoundError, ToolNotFoundError
 from ..fetch.url_validator import safe_get, safe_stream
@@ -110,9 +110,13 @@ class SpotifyDownloader(PlatformDownloader):
         r"open\.spotify\.com/playlist/([a-zA-Z0-9]+)",
     ]
 
-    def __init__(self, download_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        download_dir: Optional[Path] = None,
+        settings: Optional[IngestSettings] = None,
+    ):
         """Initialize the Spotify downloader."""
-        self.settings = get_settings()
+        self.settings = settings or get_ingest_settings()
 
         if download_dir:
             self.download_dir = Path(download_dir)

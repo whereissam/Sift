@@ -1,30 +1,23 @@
 """Configuration management using Pydantic Settings."""
 
-from pathlib import Path
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+
+from .ingest.settings import IngestSettings, set_settings_provider
 
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+class Settings(IngestSettings):
+    """Application settings loaded from environment variables.
+
+    Ingest-only fields (download dir, platform cookies, transcription) live on
+    `IngestSettings`; this class adds everything the app layers need.
+    """
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
-    )
-
-    # Twitter Authentication
-    twitter_auth_token: str = ""
-    twitter_ct0: str = ""
-    twitter_cookie_file: str | None = None
-
-    # Public bearer token used by Twitter web client (not a secret)
-    # This is the same token used by twitter.com - can be overridden via TWITTER_BEARER_TOKEN env var
-    twitter_bearer_token: str = (
-        "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCgYR9Wk5bLLMNhyFz4%3D"
-        "sIHxcAabN8Z2cIUpYBUSsYGqNFtEGV1VTJFhD4ij8EV2YikPq3"
     )
 
     # Telegram Bot
@@ -59,8 +52,7 @@ class Settings(BaseSettings):
     sentry_environment: str = "development"
     sentry_traces_sample_rate: float = 0.1  # 10% of transactions
 
-    # Downloads
-    download_dir: str = "./output"
+    # Downloads (download_dir is on IngestSettings)
     max_concurrent_downloads: int = 5
     cleanup_after_hours: int = 24
 
@@ -69,32 +61,6 @@ class Settings(BaseSettings):
     min_free_space_gb: float | None = None  # Minimum free disk space to maintain
     storage_cleanup_interval: int = 3600  # Cleanup check interval in seconds
     storage_cleanup_enabled: bool = True  # Enable background cleanup
-
-    # Speaker Diarization (pyannote)
-    huggingface_token: str | None = None
-
-    # Remote Whisper Service (for Docker/GPU transcription)
-    whisper_service_url: str | None = None  # e.g., "http://whisper:8001"
-
-    # YouTube cookies (Netscape format file for yt-dlp authentication)
-    youtube_cookies_file: str | None = None  # path to cookies.txt
-    # Alternatively, read YouTube cookies straight from a local browser —
-    # needed when YouTube bot-blocks the server IP ("Sign in to confirm
-    # you're not a bot" / HTTP 429). Same syntax as Instagram's setting:
-    # chrome, chromium, brave, edge, firefox, safari, opera, vivaldi,
-    # optionally "browser:profile" (e.g. "chrome:Default").
-    youtube_cookies_from_browser: str | None = None
-
-    # Instagram cookies (Netscape format file for yt-dlp authentication).
-    # Instagram requires a logged-in session for most reels/posts.
-    instagram_cookies_file: str | None = None  # path to cookies.txt
-    # Alternatively, read Instagram cookies straight from a local browser.
-    # One of: chrome, chromium, brave, edge, firefox, safari, opera, vivaldi.
-    # Optionally "browser:profile" (e.g. "chrome:Default").
-    instagram_cookies_from_browser: str | None = None
-
-    # Spotify Transcript (sp_dc cookie for Read Along API)
-    spotify_sp_dc: str | None = None
 
     # LLM Summarization
     llm_provider: str = "ollama"  # ollama, openai, anthropic, groq, deepseek, custom
@@ -144,13 +110,6 @@ class Settings(BaseSettings):
     # backfill worker picks them up; enqueue is non-blocking and idempotent.
     knowledge_auto_extract: bool = True
 
-    # P23: subtitle reflow. Raw ASR segments are not subtitles -- Whisper
-    # emits 10-30 s cues, fetched YouTube captions emit 2-3 word ones. On by
-    # default because the un-reflowed output is the bug; set False to restore
-    # the raw one-cue-per-segment path.
-    subtitle_reflow: bool = True
-    subtitle_style_preset: str = "balanced"  # broadcast | balanced | youtube | single_line
-
     # P10: semantic search. Auto-index transcript segments into the embedding
     # store when a transcription completes (local model, no LLM cost).
     # Best-effort — an index failure never fails the transcription.
@@ -190,21 +149,13 @@ class Settings(BaseSettings):
     dropbox_app_key: str | None = None
     dropbox_app_secret: str | None = None
 
-    def get_download_path(self) -> Path:
-        """Get download directory as Path, creating if needed."""
-        path = Path(self.download_dir)
-        path.mkdir(parents=True, exist_ok=True)
-        return path
-
-    @property
-    def has_auth(self) -> bool:
-        """Check if authentication credentials are configured."""
-        return bool(self.twitter_auth_token and self.twitter_ct0) or bool(
-            self.twitter_cookie_file
-        )
-
 
 @lru_cache
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+
+# The ingestion core reads its settings through this, so it sees the same
+# cached instance (and any cache_clear()) as the rest of the app.
+set_settings_provider(get_settings)

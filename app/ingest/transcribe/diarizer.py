@@ -56,8 +56,8 @@ class SpeakerDiarizer:
                 # Use HF token from config if not provided
                 token = self.hf_token
                 if not token:
-                    from ...config import get_settings
-                    settings = get_settings()
+                    from ..settings import get_ingest_settings
+                    settings = get_ingest_settings()
                     token = settings.huggingface_token
 
                 # If still no token, try to use cached token from `huggingface-cli login`

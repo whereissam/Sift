@@ -144,7 +144,7 @@ async def test_x_retries_anonymously_when_cookies_are_rejected(monkeypatch):
     monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
     monkeypatch.setattr(
         "app.ingest.platforms.x_video.twitter_ytdlp_cookies",
-        lambda: _fake_cookie_ctx("/tmp/x.txt"),
+        lambda settings=None: _fake_cookie_ctx("/tmp/x.txt"),
     )
 
     returncode, _stdout, _stderr = await _run_ytdlp(["yt-dlp", "--print-json"], "https://x.com/a/status/1")
@@ -171,7 +171,7 @@ async def test_x_does_not_retry_when_the_failure_is_not_about_auth(monkeypatch):
     monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
     monkeypatch.setattr(
         "app.ingest.platforms.x_video.twitter_ytdlp_cookies",
-        lambda: _fake_cookie_ctx("/tmp/x.txt"),
+        lambda settings=None: _fake_cookie_ctx("/tmp/x.txt"),
     )
 
     returncode, _stdout, _stderr = await _run_ytdlp(["yt-dlp"], "https://x.com/a/status/1")
@@ -195,7 +195,7 @@ async def test_x_makes_one_call_when_no_cookies_are_configured(monkeypatch):
 
     monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
     monkeypatch.setattr(
-        "app.ingest.platforms.x_video.twitter_ytdlp_cookies", lambda: _fake_cookie_ctx(None)
+        "app.ingest.platforms.x_video.twitter_ytdlp_cookies", lambda settings=None: _fake_cookie_ctx(None)
     )
 
     await _run_ytdlp(["yt-dlp"], "https://x.com/a/status/1")

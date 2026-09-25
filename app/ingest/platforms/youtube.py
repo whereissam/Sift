@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from ...config import get_settings
+from ..settings import IngestSettings, get_ingest_settings
 from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available
 from ..exceptions import SiftError, ContentNotAvailableError, ContentNotFoundError
 
@@ -42,9 +42,13 @@ class YouTubeDownloader(PlatformDownloader):
         r"(?:https?://)?music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
     ]
 
-    def __init__(self, download_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        download_dir: Optional[Path] = None,
+        settings: Optional[IngestSettings] = None,
+    ):
         """Initialize the YouTube downloader."""
-        self.settings = get_settings()
+        self.settings = settings or get_ingest_settings()
 
         if download_dir:
             self.download_dir = Path(download_dir)

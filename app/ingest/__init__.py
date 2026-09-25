@@ -8,6 +8,8 @@ it on every run.
     platforms/   per-site adapters (X Spaces, Apple Podcasts, Spotify, YouTube,
                  Discord, Instagram, 小红书, 小宇宙, 喜马拉雅)
     fetch/       platform dispatch, downloading, existing-caption fetch
+    settings.py  the only configuration the core reads (`IngestSettings`);
+                 the app registers its own, library callers may pass one
     media/       conversion, merging, enhancement, metadata tagging
     transcribe/  Whisper engines, diarization, subtitle reflow
 """
@@ -26,6 +28,7 @@ from .exceptions import (
     ToolNotFoundError,
     UnsupportedPlatformError,
 )
+from .settings import IngestSettings
 from .base import Platform, AudioMetadata, DownloadResult, PlatformDownloader
 from .fetch.downloader import DownloaderFactory, download_audio, get_metadata, SpaceDownloader
 
@@ -43,6 +46,8 @@ __all__ = [
     "FFmpegError",
     "ToolNotFoundError",
     "UnsupportedPlatformError",
+    # Configuration
+    "IngestSettings",
     # Base classes
     "Platform",
     "AudioMetadata",

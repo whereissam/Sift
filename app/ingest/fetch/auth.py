@@ -6,7 +6,7 @@ import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
-from ...config import get_settings
+from ..settings import IngestSettings, get_ingest_settings
 from ..exceptions import AuthenticationError
 
 
@@ -22,14 +22,16 @@ def _netscape_cookie_content(auth_token: str, ct0: str) -> str:
 
 
 @contextlib.contextmanager
-def twitter_ytdlp_cookies() -> Iterator[str | None]:
+def twitter_ytdlp_cookies(
+    settings: IngestSettings | None = None,
+) -> Iterator[str | None]:
     """Yield a path to a Netscape cookie file for yt-dlp, or None if no auth.
 
     Prefers an explicit ``twitter_cookie_file``. Otherwise, if ``auth_token``
     and ``ct0`` are configured, writes them to a temporary cookie file that is
     removed on exit.
     """
-    settings = get_settings()
+    settings = settings or get_ingest_settings()
 
     if settings.twitter_cookie_file:
         yield settings.twitter_cookie_file
@@ -71,9 +73,9 @@ class AuthManager:
         self.ct0 = ct0
 
     @classmethod
-    def from_env(cls) -> "AuthManager":
-        """Load credentials from environment variables."""
-        settings = get_settings()
+    def from_env(cls, settings: IngestSettings | None = None) -> "AuthManager":
+        """Load credentials from settings (environment variables by default)."""
+        settings = settings or get_ingest_settings()
 
         if settings.twitter_cookie_file:
             return cls.from_cookie_file(settings.twitter_cookie_file)
@@ -165,7 +167,7 @@ class AuthManager:
             Dictionary of HTTP headers
         """
         return {
-            "Authorization": f"Bearer {get_settings().twitter_bearer_token}",
+            "Authorization": f"Bearer {get_ingest_settings().twitter_bearer_token}",
             "Cookie": f"auth_token={self.auth_token}; ct0={self.ct0}",
             "x-csrf-token": self.ct0,
             "x-twitter-auth-type": "OAuth2Session",

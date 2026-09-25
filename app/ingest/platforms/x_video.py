@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from ...config import get_settings
+from ..settings import IngestSettings, get_ingest_settings
 from ..fetch.auth import twitter_ytdlp_cookies
 from ..base import (
     Platform,
@@ -38,14 +38,16 @@ def _is_auth_rejection(stderr: str) -> bool:
     return any(marker in lowered for marker in _AUTH_REJECTED)
 
 
-async def _run_ytdlp(base_cmd: list[str], url: str):
+async def _run_ytdlp(
+    base_cmd: list[str], url: str, settings: Optional[IngestSettings] = None
+):
     """Run yt-dlp with X auth, retrying anonymously if the cookies are rejected.
 
     Returns ``(returncode, stdout, stderr)``. Protected and sensitive posts
     need the cookies; public ones do not, and this keeps both working whether
     or not the configured session is still valid.
     """
-    with twitter_ytdlp_cookies() as cookies_file:
+    with twitter_ytdlp_cookies(settings) as cookies_file:
         cmd = list(base_cmd)
         if cookies_file:
             cmd.extend(["--cookies", cookies_file])
@@ -86,9 +88,13 @@ class XVideoDownloader(PlatformDownloader):
         r"(?:https?://)?(?:mobile\.)?(?:twitter\.com|x\.com)/\w+/status/(\d+)",
     ]
 
-    def __init__(self, download_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        download_dir: Optional[Path] = None,
+        settings: Optional[IngestSettings] = None,
+    ):
         """Initialize the X video downloader."""
-        self.settings = get_settings()
+        self.settings = settings or get_ingest_settings()
 
         if download_dir:
             self.download_dir = Path(download_dir)
@@ -175,6 +181,7 @@ class XVideoDownloader(PlatformDownloader):
                     "--fragment-retries", "5",
                 ],
                 url,
+                settings=self.settings,
             )
 
             if returncode != 0:
@@ -195,7 +202,7 @@ class XVideoDownloader(PlatformDownloader):
                     or "private" in error_msg.lower()
                     or "--cookies" in error_msg.lower()
                 ):
-                    if not get_settings().has_auth:
+                    if not self.settings.has_auth:
                         raise ContentNotFoundError(
                             "This X post requires authentication (protected, "
                             "private, or age-restricted). Set TWITTER_AUTH_TOKEN "
@@ -280,7 +287,9 @@ class XVideoDownloader(PlatformDownloader):
             # Auth matters here too: without it, metadata fails on protected
             # and sensitive posts that the download path handles fine.
             returncode, stdout, stderr = await _run_ytdlp(
-                [self._yt_dlp_path, "--no-download", "--print-json"], url
+                [self._yt_dlp_path, "--no-download", "--print-json"],
+                url,
+                settings=self.settings,
             )
 
             if returncode != 0:

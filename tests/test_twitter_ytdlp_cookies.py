@@ -23,14 +23,14 @@ def test_netscape_content_has_both_domains_and_values():
 
 
 def test_yields_none_without_auth(monkeypatch):
-    monkeypatch.setattr(auth, "get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(auth, "get_ingest_settings", lambda: _FakeSettings())
     with twitter_ytdlp_cookies() as path:
         assert path is None
 
 
 def test_prefers_explicit_cookie_file(monkeypatch):
     monkeypatch.setattr(
-        auth, "get_settings", lambda: _FakeSettings(cookie_file="/tmp/my-cookies.txt")
+        auth, "get_ingest_settings", lambda: _FakeSettings(cookie_file="/tmp/my-cookies.txt")
     )
     with twitter_ytdlp_cookies() as path:
         assert path == "/tmp/my-cookies.txt"
@@ -38,7 +38,7 @@ def test_prefers_explicit_cookie_file(monkeypatch):
 
 def test_writes_temp_file_from_tokens_and_cleans_up(monkeypatch):
     monkeypatch.setattr(
-        auth, "get_settings", lambda: _FakeSettings(auth_token="A", ct0="C")
+        auth, "get_ingest_settings", lambda: _FakeSettings(auth_token="A", ct0="C")
     )
     seen = None
     with twitter_ytdlp_cookies() as path:

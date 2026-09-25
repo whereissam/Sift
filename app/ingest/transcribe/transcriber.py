@@ -109,8 +109,8 @@ class AudioTranscriber:
     def _get_remote_service_url(self) -> Optional[str]:
         """Get remote whisper service URL from config."""
         try:
-            from ...config import get_settings
-            return get_settings().whisper_service_url
+            from ..settings import get_ingest_settings
+            return get_ingest_settings().whisper_service_url
         except Exception:
             return None
 
@@ -585,9 +585,9 @@ class AudioTranscriber:
 def _configured_subtitle_style() -> Optional[SubtitleStyle]:
     """The configured style, or None when `subtitle_reflow` is off."""
     try:
-        from ...config import get_settings
+        from ..settings import get_ingest_settings
 
-        return style_from_settings(get_settings())
+        return style_from_settings(get_ingest_settings())
     except Exception:  # pragma: no cover - config unavailable
         return SubtitleStyle.preset("balanced")
 
