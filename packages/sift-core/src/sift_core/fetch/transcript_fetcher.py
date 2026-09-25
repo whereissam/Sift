@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from ..settings import IngestSettings, get_ingest_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,6 +53,10 @@ def _is_spotify_url(url: str) -> bool:
 
 class TranscriptFetcher:
     """Fetches existing transcripts from YouTube captions and Spotify Read Along."""
+
+    def __init__(self, settings: IngestSettings | None = None):
+        """`settings` supplies the Spotify `sp_dc` cookie; defaults to env."""
+        self.settings = settings
 
     def can_fetch_transcript(self, url: str) -> bool:
         """Check if the URL is from a platform that supports transcript fetching."""
@@ -183,9 +189,7 @@ class TranscriptFetcher:
 
     async def _fetch_spotify_transcript(self, episode_id: str) -> FetchedTranscript:
         """Fetch transcript from Spotify Read Along API."""
-        from ..settings import get_ingest_settings
-
-        settings = get_ingest_settings()
+        settings = self.settings or get_ingest_settings()
         sp_dc = settings.spotify_sp_dc
 
         if not sp_dc:

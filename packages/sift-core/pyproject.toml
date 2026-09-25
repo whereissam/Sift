@@ -30,11 +30,18 @@ diarize = [
     "pyannote.audio>=3.1.0",
     "torch>=2.0.0",
 ]
+mcp = [
+    # Pinned below 2.0: mcp 2.0 removed mcp.server.fastmcp, which the
+    # local server is built on (same pin as the app's sift-mcp).
+    "mcp>=1.2.0,<2",
+]
 
 [project.scripts]
 sift = "sift_core.cli:cli"
 # Backward compatibility alias
 xdownloader = "sift_core.cli:cli"
+# Local MCP server: tools call the core in-process, no Sift server needed
+sift-core-mcp = "sift_core.local_mcp:main"
 
 [build-system]
 requires = ["hatchling"]
