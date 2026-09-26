@@ -227,9 +227,10 @@ class XiaoyuzhouDownloader(PlatformDownloader):
             # Download the audio file
             await self._download_file(audio_url, file_path)
 
-            # Convert format if needed
-            original_ext = file_path.suffix.lower()
-            if output_format and f".{output_format}" != original_ext:
+            # Convert format if needed. The converter checks the actual bytes,
+            # so this is a no-op when they already match; comparing extensions
+            # here missed MP3 data saved under `-o episode.m4a`.
+            if output_format:
                 from ..media.converter import AudioConverter
                 logger.info(f"Converting to {output_format}...")
                 converter = AudioConverter()

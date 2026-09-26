@@ -174,20 +174,21 @@ class DiscordAudioDownloader(PlatformDownloader):
             temp_path.write_bytes(response.content)
             logger.info(f"Downloaded to temp file: {temp_path}")
 
-            # Convert format if needed
-            needs_conversion = output_format and f".{output_format}" != original_ext
-            if needs_conversion:
+            # Convert format if needed, straight into the requested location.
+            # The converter checks the actual bytes (a no-op move when they
+            # already match); converting next to the temp file used to leave
+            # the result at discord_temp_* and ignore `output_path`.
+            if output_format:
                 from ..media.converter import AudioConverter
 
-                logger.info(f"Converting from {original_ext} to {output_format}...")
                 converter = AudioConverter()
-                converted_path = await converter.convert(
+                file_path = await converter.convert(
                     input_path=temp_path,
+                    output_path=Path(file_path).with_suffix(f".{output_format}"),
                     output_format=output_format,
                     quality=quality,
                     keep_original=False,
                 )
-                file_path = converted_path
             else:
                 # Just move the temp file to final location
                 if temp_path != file_path:
