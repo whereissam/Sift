@@ -10,6 +10,7 @@ import {
   PLATFORM_LABELS,
 } from '@/components/downloader'
 import { DownloadForm, DownloadSuccess } from '@/components/downloader'
+import { apiUrl } from '@/lib/desktop'
 
 export const Route = createFileRoute('/video')({
   component: VideoPage,
@@ -82,7 +83,7 @@ function VideoPage() {
 
         if (job.status === 'completed') {
           setStatus('success')
-          setDownloadUrl(`/api/download/${jobId}/file`)
+          setDownloadUrl(apiUrl(`/api/download/${jobId}/file`))
           const info = job.content_info || job.space_info
           setContentInfo({
             title: info?.title || 'Downloaded Media',

@@ -38,8 +38,11 @@ pub async fn start_server(download_dir: PathBuf, port: u16) -> Result<(), String
     });
 
     // CORS — restrict to the Tauri webview origin and the dev server only.
+    // tauri://localhost on macOS/Linux, http(s)://tauri.localhost on Windows.
     let allowed_origins: Vec<HeaderValue> = [
         "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
         "http://localhost:5173",
     ]
     .iter()
