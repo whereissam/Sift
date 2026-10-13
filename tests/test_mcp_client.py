@@ -102,3 +102,55 @@ class TestErrors:
             await client.get_clips("j1")
         assert exc.value.status is None
         assert "Could not reach Sift API" in str(exc.value)
+
+
+class TestIdsStayInOnePathSegment:
+    """An id can never reach another endpoint (security audit regression)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "job_id",
+        [
+            "../cleanup?delete_all=true&max_age_hours=0#",
+            "../../add?url=https://www.youtube.com/watch?v=x&action=download",
+            "a/b",
+            "x#frag",
+        ],
+    )
+    async def test_path_tricks_are_encoded(self, job_id):
+        seen = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append((request.method, request.url.raw_path.decode()))
+            return httpx.Response(200, json={})
+
+        client = _client(handler)
+        await client.analyze_contradictions(job_id)
+        await client.get_transcription(job_id)
+        (post, get) = seen
+        assert post[0] == "POST"
+        assert post[1].startswith("/api/jobs/") and post[1].endswith("/analyze-contradictions")
+        assert post[1].count("/") == 4 and "?" not in post[1]
+        assert get[1].startswith("/api/transcribe/") and get[1].count("/") == 3
+        assert "?" not in get[1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("job_id", ["..", ".", "", None])
+    async def test_dot_segments_are_refused(self, job_id):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise AssertionError(f"request sent: {request.url}")
+
+        client = _client(handler)
+        with pytest.raises(SiftAPIError):
+            await client.analyze_contradictions(job_id)
+
+    @pytest.mark.asyncio
+    async def test_int_ids_still_work(self):
+        seen = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.url.path)
+            return httpx.Response(200, json={})
+
+        await _client(handler).get_topic(42)
+        assert seen == ["/api/topics/42"]
