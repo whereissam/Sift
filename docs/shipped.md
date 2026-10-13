@@ -64,6 +64,9 @@ Second audit (security-audit skill, run 2026-10-12 on 406ba52). Fixed 2026-10-13
       checkpoints not exportable
 - [x] No env LLM key sent to a caller-chosen `base_url`; Whisper/Ollama
       published on loopback only in Compose
+- [x] Jobs for the same video share one file name; cleanup, job delete and
+      the `output_dir` move no longer remove a file another job still uses
+      (`JobStore.file_used_by_other_job`)
 
 ## P1: Speaker Diarization (Who Spoke When) ✅ COMPLETED
 
