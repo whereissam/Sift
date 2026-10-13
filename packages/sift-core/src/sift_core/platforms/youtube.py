@@ -127,8 +127,6 @@ class YouTubeDownloader(PlatformDownloader):
                 "--audio-format", download_format if download_format == "mp3" else "m4a",
                 "-o", output_template,
                 "--print-json",
-                # Workaround for YouTube SABR streaming issues
-                "--extractor-args", "youtube:player_client=web",
                 # Parallel fragment downloads
                 "--concurrent-fragments", "16",
                 "--fragment-retries", "5",
@@ -207,9 +205,12 @@ class YouTubeDownloader(PlatformDownloader):
                     except json.JSONDecodeError:
                         continue
 
-            # Find output file if not in JSON
+            # Find output file if not in JSON (--print-json reports the name
+            # before audio extraction). The requested format goes first, or an
+            # earlier download of the same video in another format is returned.
             if not file_path or not file_path.exists():
-                for ext in ['.m4a', '.mp3', '.aac', '.webm', '.opus']:
+                expected = ".mp3" if download_format == "mp3" else ".m4a"
+                for ext in [expected, '.m4a', '.mp3', '.aac', '.webm', '.opus']:
                     matches = list(self.download_dir.glob(f"*{video_id}*{ext}"))
                     if matches:
                         file_path = matches[0]

@@ -1,9 +1,10 @@
 """API routes for translation."""
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .auth import verify_api_key
+from .ratelimit import limiter
 from .schemas import (
     TranslateRequest,
     TranslateFromJobRequest,
@@ -104,7 +105,8 @@ async def check_availability():
 
 
 @router.post("", response_model=TranslateResponse)
-async def translate_text(request: TranslateRequest):
+@limiter.limit("5/minute")
+async def translate_text(request: Request, body: TranslateRequest):
     """Translate text from one language to another.
 
     Supports two translation backends:
@@ -123,13 +125,13 @@ async def translate_text(request: TranslateRequest):
     """
     # Validate languages
     try:
-        source_code = normalize_language_code(request.source_lang)
-        target_code = normalize_language_code(request.target_lang)
+        source_code = normalize_language_code(body.source_lang)
+        target_code = normalize_language_code(body.target_lang)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        if request.translator == TranslatorType.AI_PROVIDER:
+        if body.translator == TranslatorType.AI_PROVIDER:
             # Use configured AI provider
             translator = AITranslator.from_settings()
 
@@ -140,7 +142,7 @@ async def translate_text(request: TranslateRequest):
                 )
 
             result = await translator.translate(
-                text=request.text,
+                text=body.text,
                 source_lang=source_code,
                 target_lang=target_code,
             )
@@ -165,7 +167,7 @@ async def translate_text(request: TranslateRequest):
                 pass
 
             # Determine the model to use
-            requested_model = request.model or "latest"
+            requested_model = body.model or "latest"
             if not requested_model.startswith("translategemma"):
                 requested_model = f"translategemma:{requested_model}"
 
@@ -196,7 +198,7 @@ async def translate_text(request: TranslateRequest):
                 )
 
             result = await translator.translate(
-                text=request.text,
+                text=body.text,
                 source_lang=source_code,
                 target_lang=target_code,
             )
@@ -220,14 +222,15 @@ async def translate_text(request: TranslateRequest):
 
 
 @router.post("/job", response_model=TranslateResponse)
-async def translate_job(request: TranslateFromJobRequest):
+@limiter.limit("5/minute")
+async def translate_job(request: Request, body: TranslateFromJobRequest):
     """Translate a completed transcription job.
 
     Retrieves the transcript from a completed job and translates it
     to the target language.
     """
     job_store = get_job_store()
-    job = job_store.get_job(request.job_id)
+    job = job_store.get_job(body.job_id)
 
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -254,7 +257,7 @@ async def translate_job(request: TranslateFromJobRequest):
         )
 
     # Determine source language
-    source_lang = request.source_lang
+    source_lang = body.source_lang
     if not source_lang:
         # Try to get from transcription result
         source_lang = transcription.get("language", "en")
@@ -262,12 +265,12 @@ async def translate_job(request: TranslateFromJobRequest):
     # Validate languages
     try:
         source_code = normalize_language_code(source_lang)
-        target_code = normalize_language_code(request.target_lang)
+        target_code = normalize_language_code(body.target_lang)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     # Determine model
-    model = request.model or "translategemma:latest"
+    model = body.model or "translategemma:latest"
     if not model.startswith("translategemma"):
         model = f"translategemma:{model}"
 

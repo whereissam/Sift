@@ -252,9 +252,20 @@ def get_queue_manager() -> DownloadQueueManager:
     return _queue_manager
 
 
+async def run_queued_job(job_id: str) -> None:
+    """Run a queued (batch or scheduled) job from its stored row."""
+    from .workflow import WorkflowProcessor
+
+    await WorkflowProcessor(get_job_store()).retry_job(job_id)
+
+
 async def start_queue_manager():
     """Start the global queue manager."""
     manager = get_queue_manager()
+    # Without a processor every dequeued job was dropped with a warning, so
+    # batch and scheduled downloads never ran.
+    if manager._processor is None:
+        manager.set_processor(run_queued_job)
     await manager.start()
 
 

@@ -77,6 +77,14 @@ async def retry_job(
 
     if job["status"] == "completed":
         raise HTTPException(status_code=400, detail="Job already completed")
+    # Pending and in-progress jobs are already queued or running (and
+    # interrupted ones resume on startup); retrying them ran the same job
+    # twice at once.
+    if job["status"] != "failed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only failed jobs can be retried (status: {job['status']})",
+        )
 
     # Run retry in background
     async def _retry():

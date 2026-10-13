@@ -456,7 +456,14 @@ async def recover_unfinished_jobs():
     job_store = get_job_store()
     processor = WorkflowProcessor(job_store)
 
-    unfinished = job_store.get_unfinished_jobs()
+    # Jobs scheduled for later belong to the scheduler; running them here
+    # started every scheduled download as soon as the server restarted.
+    now = datetime.utcnow().isoformat()
+    unfinished = [
+        job
+        for job in job_store.get_unfinished_jobs()
+        if not (job.get("scheduled_at") and job["scheduled_at"] > now)
+    ]
     if not unfinished:
         logger.info("No unfinished jobs to recover")
         return
