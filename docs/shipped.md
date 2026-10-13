@@ -99,6 +99,15 @@ Audit follow-ups (2026-10-13):
       server
 - [x] Tauri webview CSP: IPC and API origins listed; `object-src`,
       `frame-src`, `base-uri`, `form-action`, `frame-ancestors` locked down
+- [x] Supply chain: Actions pinned by SHA with `permissions: contents: read`;
+      deno and uv from digest-pinned images; Docker installs from `uv.lock`
+      (`uv sync --frozen`); pinned SHA-256 for `scripts/download_ffmpeg.py`
+      downloads; `wxt` pinned
+- [x] Desktop app reaches its embedded backend: Tauri detected with
+      `isTauri()`, relative `/api` fetches and WebSockets sent to
+      localhost:8000 (`src/lib/desktop.ts`)
+- [x] `frontend/src/lib` is tracked (the root `lib/` ignore hid it, so fresh
+      clones could not build)
 
 ## P1: Speaker Diarization (Who Spoke When) ✅ COMPLETED
 

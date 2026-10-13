@@ -7,21 +7,13 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 > **Shipped work** — completed phases and their implementation notes moved to
 > [shipped.md](shipped.md). This file is open work only.
 
-## Priority Matrix — 3 open
+## Priority Matrix — 2 open
 
 ### Media output (2026-07-15)
 
 - [x] `to-video`: turn an audio file into a YouTube-ready MP4 (still image …
   - [ ] Follow-up: `--image` custom-image CLI flag (Python API already accepts `image`)
   - [ ] Follow-up: direct URL input for `to-video` (currently local files only)
-
-### Bugs
-
-- [ ] Desktop app (Tauri build): components call `fetch('/api/...')`
-      relative to the webview origin (`tauri://localhost`), and the
-      `apiBaseUrl` from `useTauriBackend` (http://localhost:8000) is unused,
-      so packaged builds likely never reach the embedded backend. Dev mode
-      hides it through the Vite proxy. Check in a real build.
 
 ### v2.0 — AI-Native Intelligence (Next)
 
@@ -48,18 +40,6 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 | Vault & Note-App Export Channels (Obsidian / Notion / Logseq) | Low | High | P21 🚧 (Obsidian/Logseq shipped; Notion deferred) |
 
 **Dependency order:** P18 is the substrate (canonical schema). P19 (MCP) and P20 (Digest) both read from it. P21 (Vault Export) consumes from P19 and P20.
-
----
-
-## Security audit follow-ups (2026-10-13) — 1 open
-
-Hardening notes from the 2026-10 audit, not fixed with its findings (those
-are in [shipped.md](shipped.md#security-hardening)).
-
-- [ ] Supply chain: pin Actions by SHA and add a `permissions:` block;
-      replace `curl | sh` for deno; install from `uv.lock`; checksum in
-      `scripts/download_ffmpeg.py`; pin `wxt` instead of `latest`
-
 
 ---
 
