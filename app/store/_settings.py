@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from ._crypto import _decrypt_secret, _encrypt_secret
+from ._crypto import _decrypt_secret, _encrypt_secret, rotate_secret
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,53 @@ class _SettingsMixin:
     write and decrypted on read so the raw SQLite file never carries
     plaintext credentials.
     """
+
+    def _rotate_legacy_secrets(self) -> None:
+        """Re-encrypt stored secrets still under the old DOWNLOAD_DIR key.
+
+        That key was a public constant on Docker installs, so values left
+        under it are readable by anyone holding a copy of the database.
+        """
+        try:
+            with self._get_conn() as conn:
+                rotated = 0
+                for row in conn.execute(
+                    "SELECT id, api_key, task_presets FROM ai_settings"
+                ).fetchall():
+                    new_key = rotate_secret(row["api_key"])
+                    presets = json.loads(row["task_presets"] or "{}")
+                    presets_changed = False
+                    if isinstance(presets, dict):
+                        for preset in presets.values():
+                            if isinstance(preset, dict):
+                                new = rotate_secret(preset.get("api_key"))
+                                if new:
+                                    preset["api_key"] = new
+                                    presets_changed = True
+                    if new_key or presets_changed:
+                        conn.execute(
+                            "UPDATE ai_settings SET api_key = ?, task_presets = ? WHERE id = ?",
+                            (
+                                new_key or row["api_key"],
+                                json.dumps(presets) if presets_changed else row["task_presets"],
+                                row["id"],
+                            ),
+                        )
+                        rotated += 1
+                for row in conn.execute(
+                    "SELECT id, credentials FROM cloud_providers"
+                ).fetchall():
+                    new = rotate_secret(row["credentials"])
+                    if new:
+                        conn.execute(
+                            "UPDATE cloud_providers SET credentials = ? WHERE id = ?",
+                            (new, row["id"]),
+                        )
+                        rotated += 1
+            if rotated:
+                logger.info("Re-encrypted %d stored secret row(s) under the current key", rotated)
+        except Exception:
+            logger.warning("Could not re-encrypt legacy secrets", exc_info=True)
 
     # ============ AI Settings Methods ============
 

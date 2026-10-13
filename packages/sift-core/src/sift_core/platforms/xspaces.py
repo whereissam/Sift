@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches
 from ..exceptions import SiftError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,9 @@ class XSpacesDownloader(PlatformDownloader):
     """Downloads Twitter/X Spaces using yt-dlp."""
 
     PLATFORM = Platform.X_SPACES
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("x.com", "twitter.com")
 
     # URL patterns for X Spaces
     URL_PATTERNS = [
@@ -47,7 +50,9 @@ class XSpacesDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid X Spaces URL."""
-        return any(re.search(pattern, url) for pattern in cls.URL_PATTERNS)
+        return url_host_matches(url, cls.HOSTS) and any(
+            re.search(pattern, url) for pattern in cls.URL_PATTERNS
+        )
 
     @classmethod
     def extract_content_id(cls, url: str) -> str:
@@ -111,7 +116,11 @@ class XSpacesDownloader(PlatformDownloader):
                 quality_map = {"low": "64K", "medium": "128K", "high": "192K", "highest": "320K"}
                 cmd.extend(["--audio-quality", quality_map.get(quality, "192K")])
 
-            cmd.append(url)
+            # "--" ends option parsing, so the URL can never be read as a
+
+            # yt-dlp option.
+
+            cmd.extend(["--", url])
 
             logger.info("Running yt-dlp...")
 
@@ -216,6 +225,7 @@ class XSpacesDownloader(PlatformDownloader):
                 self._yt_dlp_path,
                 "--no-download",
                 "--print-json",
+                "--",
                 url,
             ]
 

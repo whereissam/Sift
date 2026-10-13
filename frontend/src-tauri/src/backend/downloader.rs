@@ -77,6 +77,8 @@ fn build_audio_cmd(
         cmd.extend(["--audio-quality".to_string(), bitrate.to_string()]);
     }
 
+    // "--" ends option parsing: the URL can never be read as a yt-dlp option.
+    cmd.push("--".to_string());
     cmd.push(url.to_string());
     cmd
 }
@@ -145,6 +147,8 @@ fn build_video_cmd(
         ]);
     }
 
+    // "--" ends option parsing: the URL can never be read as a yt-dlp option.
+    cmd.push("--".to_string());
     cmd.push(url.to_string());
     cmd
 }

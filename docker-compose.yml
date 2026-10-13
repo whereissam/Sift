@@ -31,6 +31,11 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
       - API_KEY=${API_KEY:?API_KEY must be set when HOST=0.0.0.0 (the container binds publicly)}
+      # Secrets at rest (provider API keys, cloud credentials). Without
+      # ENCRYPTION_KEY a random key is generated into ./data, which is kept
+      # apart from ./output where jobs.db lives.
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - ENCRYPTION_KEY_FILE=/app/data/secret.key
       - SENTRY_DSN=${SENTRY_DSN:-}
       - STORAGE_CLEANUP_ENABLED=${STORAGE_CLEANUP_ENABLED:-true}
       - MAX_STORAGE_GB=${MAX_STORAGE_GB:-}
@@ -54,7 +59,9 @@ services:
       dockerfile: Dockerfile.service
     container_name: sift-whisper
     ports:
-      - "${WHISPER_PORT:-8001}:8001"
+      # Unauthenticated service: published on the host's loopback only. The
+      # api container reaches it over the compose network.
+      - "127.0.0.1:${WHISPER_PORT:-8001}:8001"
     volumes:
       - whisper-models:/root/.cache/huggingface
       - ./output:/app/output:ro
@@ -101,7 +108,8 @@ services:
     volumes:
       - ollama-models:/root/.ollama
     ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+      # Unauthenticated service: published on the host's loopback only.
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     # Uncomment below for GPU support (NVIDIA)
     # deploy:
     #   resources:

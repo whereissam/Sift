@@ -8,7 +8,45 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import ClassVar, Optional
+from typing import ClassVar, Iterable, Optional
+from urllib.parse import urlsplit
+
+
+def url_host_matches(url: str, domains: Iterable[str]) -> bool:
+    """True when ``url`` is an http(s) URL whose host is one of ``domains``.
+
+    A host matches a domain exactly or as a subdomain of it, so
+    ``www.youtube.com`` matches ``youtube.com``. A URL without a scheme is
+    read as https, which keeps ``youtube.com/watch?v=…`` working.
+
+    This is the gate between caller input and a yt-dlp argv. Platform
+    patterns used to match anywhere in the string, so a path such as
+    ``http://10.0.0.1/youtube.com/watch?v=…`` or an option-shaped token
+    containing ``ximalaya.com`` was taken for a platform URL.
+    """
+    if not isinstance(url, str):
+        return False
+    url = url.strip()
+    # A backslash splits the host differently in urlsplit and in WHATWG
+    # parsers (which read it as "/"), so the host checked here could differ
+    # from the host yt-dlp connects to.
+    if (
+        not url
+        or url.startswith("-")
+        or "\\" in url
+        or any(c.isspace() or ord(c) < 32 for c in url)
+    ):
+        return False
+    if "://" not in url:
+        url = "https://" + url
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https") or not host:
+        return False
+    return any(host == d or host.endswith("." + d) for d in domains)
 
 
 def resolve_yt_dlp() -> str:

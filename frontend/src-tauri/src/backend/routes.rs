@@ -1,10 +1,10 @@
 use axum::{
     body::Body,
     extract::{Path as AxumPath, Query, State},
-    http::StatusCode,
-    response::IntoResponse,
+    http::{HeaderMap, StatusCode},
+    response::{Html, IntoResponse, Response},
     routing::{delete, get, post},
-    Json, Router,
+    Form, Json, Router,
 };
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::Deserialize;
@@ -41,7 +41,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/jobs", get(list_jobs))
         .route("/api/queue", get(queue_status))
         // Quick add (browser extension)
-        .route("/api/add", get(quick_add))
+        .route("/api/add", get(quick_add).post(quick_add_confirmed))
         .with_state(state)
 }
 
@@ -127,8 +127,13 @@ async fn start_download(
                 );
             }
         }
-    } else {
+    } else if platform::url_matches_platform(&req.url, req.platform) {
         req.platform
+    } else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "URL does not belong to the requested platform"})),
+        );
     };
 
     // Create job
@@ -389,10 +394,53 @@ struct QuickAddQuery {
     action: Option<String>,
 }
 
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
+/// GET /api/add. A request another website triggers (a bookmarklet, or an
+/// `<img>` on any page) does not start a download: a navigation gets a page
+/// asking to confirm, which posts back to /api/add; anything else is refused.
 async fn quick_add(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Query(query): Query<QuickAddQuery>,
-) -> impl IntoResponse {
+) -> Response {
+    if super::is_cross_site(&headers) {
+        let navigate = headers
+            .get("sec-fetch-mode")
+            .and_then(|v| v.to_str().ok())
+            == Some("navigate");
+        if !navigate {
+            return (StatusCode::FORBIDDEN, "Cross-origin request rejected").into_response();
+        }
+        let url = html_escape(&query.url);
+        return Html(format!(
+            "<!doctype html><meta charset=utf-8><title>Add to Sift?</title>\
+             <p>Another site asked Sift to download:</p><p><code>{url}</code></p>\
+             <form method=post action=\"/api/add\">\
+             <input type=hidden name=url value=\"{url}\">\
+             <button type=submit>Add to Sift</button></form>"
+        ))
+        .into_response();
+    }
+    start_quick_add(state, query).await.into_response()
+}
+
+/// POST /api/add from the confirmation page. The local_only middleware has
+/// already refused it if another site sent it.
+async fn quick_add_confirmed(
+    State(state): State<Arc<AppState>>,
+    Form(query): Form<QuickAddQuery>,
+) -> Response {
+    start_quick_add(state, query).await.into_response()
+}
+
+async fn start_quick_add(state: Arc<AppState>, query: QuickAddQuery) -> impl IntoResponse {
     let req = DownloadRequest {
         url: query.url,
         platform: Platform::Auto,

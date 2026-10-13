@@ -1,12 +1,16 @@
 """Core API routes (health, readiness, quick-add)."""
 
+import html
 import logging
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse
 
+from ..config import get_settings
 from .auth import verify_api_key
+from .origin_guard import policy_from_settings
 from .schemas import (
     DownloadRequest,
     DownloadJob,
@@ -110,8 +114,25 @@ async def readiness_check():
     return {"status": "ready"}
 
 
+_QUICK_ADD_ACTIONS = ("transcribe", "download")
+
+
+def _quick_add_confirm_page(url: str, action: str) -> str:
+    """A page that asks before starting a job another site requested."""
+    u, a = html.escape(url, quote=True), html.escape(action, quote=True)
+    return (
+        "<!doctype html><meta charset=utf-8><title>Add to Sift?</title>"
+        f"<p>Another site asked Sift to <b>{a}</b>:</p><p><code>{u}</code></p>"
+        '<form method=post action="/api/add">'
+        f'<input type=hidden name=url value="{u}">'
+        f'<input type=hidden name=action value="{a}">'
+        "<button type=submit>Add to Sift</button></form>"
+    )
+
+
 @router.get("/add")
 async def quick_add(
+    request: Request,
     url: str,
     action: str = "transcribe",
     background_tasks: BackgroundTasks = None,
@@ -122,8 +143,34 @@ async def quick_add(
     Accepts a URL and action (transcribe or download) via query parameters.
     Starts the appropriate job and returns the job ID.
 
+    A request another website triggers (a bookmarklet opening this URL, or a
+    page embedding it) does not start a job: a navigation gets a confirmation
+    page that posts back here, anything else is refused.
+
     Example: /api/add?url=https://youtube.com/watch?v=abc&action=transcribe
     """
+    if policy_from_settings(get_settings()).is_cross_site(request.headers):
+        if request.headers.get("sec-fetch-mode") == "navigate":
+            return HTMLResponse(_quick_add_confirm_page(url, action))
+        raise HTTPException(status_code=403, detail="Cross-origin request rejected")
+    return await _start_quick_add(url, action, background_tasks)
+
+
+@router.post("/add")
+async def quick_add_confirmed(
+    url: str = Form(...),
+    action: str = Form("transcribe"),
+    background_tasks: BackgroundTasks = None,
+):
+    """Start the job confirmed on the quick-add page.
+
+    Only same-origin pages and first-party clients get here: the origin guard
+    middleware refuses cross-site POSTs.
+    """
+    return await _start_quick_add(url, action, background_tasks)
+
+
+async def _start_quick_add(url: str, action: str, background_tasks: BackgroundTasks):
     from fastapi import BackgroundTasks as BT
     from .download_routes import jobs, _process_download, _core_platform_to_schema
     from .transcription_routes import _process_transcription
@@ -131,6 +178,9 @@ async def quick_add(
 
     if background_tasks is None:
         background_tasks = BT()
+
+    if action not in _QUICK_ADD_ACTIONS:
+        raise HTTPException(status_code=400, detail="action must be transcribe or download")
 
     # Detect platform from URL
     detected_platform = DownloaderFactory.detect_platform(url)

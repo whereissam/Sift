@@ -1,5 +1,6 @@
 """Batch download manager."""
 
+import asyncio
 import logging
 import uuid
 from typing import Optional
@@ -155,6 +156,10 @@ class BatchManager:
                 priority = job.get("priority", 5)
                 await queue_manager.enqueue(job["job_id"], priority)
                 enqueued += 1
+                # enqueue never suspends (its lock is uncontended), so yield
+                # now and then to let other requests run.
+                if enqueued % 100 == 0:
+                    await asyncio.sleep(0)
 
         logger.info(f"Enqueued {enqueued} jobs from batch {batch_id}")
         return enqueued
