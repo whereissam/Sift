@@ -46,8 +46,11 @@ class Settings(IngestSettings):
     # API Authentication (optional - if set, requires X-API-Key header)
     api_key: str | None = None
 
-    # Encryption key for secrets at rest (auto-generated if not set)
+    # Encryption key for secrets at rest. If unset, a random key is
+    # generated into encryption_key_file (default ~/.config/sift/secret.key),
+    # which must live outside download_dir so a copy of the DB cannot be read.
     encryption_key: str | None = None
+    encryption_key_file: str | None = None
 
     # CORS (comma-separated origins, or "*" for all). These origins, the
     # browser extensions and the Tauri shell are also the only browser origins

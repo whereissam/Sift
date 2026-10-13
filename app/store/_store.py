@@ -64,6 +64,7 @@ class JobStore(
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._backup_before_migration()
         self._init_db()
+        self._rotate_legacy_secrets()
 
     def _backup_before_migration(self) -> None:
         """File-copy backup of an existing database before a schema-changing

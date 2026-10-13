@@ -54,6 +54,30 @@ class ExportJob:
         }
 
 
+
+# download_dir also holds the app's own state. The database carries every
+# job, transcript and setting plus the encrypted provider secrets, so it must
+# never be uploaded to a caller-chosen provider.
+_INTERNAL_DIRS = frozenset({"backups", "checkpoints"})
+_INTERNAL_SUFFIXES = frozenset(
+    {".db", ".db-wal", ".db-shm", ".db-journal", ".sqlite", ".sqlite3", ".key"}
+)
+
+
+def _is_internal_state(path: Path, base_dir: Path) -> bool:
+    """True for databases, their side files, backups and checkpoints."""
+    name = path.name.lower()
+    if any(name.endswith(suffix) for suffix in _INTERNAL_SUFFIXES):
+        return True
+    try:
+        parts = path.relative_to(base_dir).parts
+    except ValueError:
+        return False
+    return any(part.lower() in _INTERNAL_DIRS for part in parts[:-1]) or (
+        len(parts) == 1 and parts[0].lower() in _INTERNAL_DIRS
+    )
+
+
 class ExportManager:
     """Manages cloud storage exports."""
 
@@ -257,6 +281,8 @@ class ExportManager:
         _base_dir = Path(_get_settings().download_dir).resolve()
         if not str(path).startswith(str(_base_dir) + "/") and path != _base_dir:
             raise ValueError(f"file_path must be within the download directory: {_base_dir}")
+        if _is_internal_state(path, _base_dir):
+            raise ValueError("file_path refers to internal application state, not media")
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 

@@ -204,7 +204,8 @@ DOWNLOAD_DIR=./output
 # API Authentication (optional for localhost; REQUIRED if exposed to a network)
 # API_KEY=your-secret-key  # If set, requires X-API-Key header
 
-# Secret encryption (set for production — encrypts stored AI provider keys at rest)
+# Secret encryption for stored AI provider keys and cloud credentials.
+# Unset: a random key is generated into ~/.config/sift/secret.key
 # ENCRYPTION_KEY=your-strong-random-secret
 
 # Telegram Bot
@@ -612,9 +613,11 @@ app/api/         FastAPI routers · app/mcp_server/ · app/bot/
 ## Security
 
 Sift is safe-by-default for **local, single-user** use. Before exposing it on a
-network, set `API_KEY` (request auth) and `ENCRYPTION_KEY` (encrypts stored
-provider keys at rest), and terminate TLS at a reverse proxy. The Docker Compose
-setup requires `API_KEY` because the container binds `0.0.0.0`.
+network, set `API_KEY` (request auth) and terminate TLS at a reverse proxy. The
+Docker Compose setup requires `API_KEY` because the container binds `0.0.0.0`.
+Stored provider keys are encrypted with `ENCRYPTION_KEY`, or with a random key
+generated outside the data directory when it is unset. See
+[SECURITY.md](SECURITY.md#deployment-hardening) for the other settings.
 
 Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md).
 Don't open a public issue.
