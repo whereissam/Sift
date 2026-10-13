@@ -7,21 +7,13 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 > **Shipped work** — completed phases and their implementation notes moved to
 > [shipped.md](shipped.md). This file is open work only.
 
-## Priority Matrix — 3 open
+## Priority Matrix — 2 open
 
 ### Media output (2026-07-15)
 
 - [x] `to-video`: turn an audio file into a YouTube-ready MP4 (still image …
   - [ ] Follow-up: `--image` custom-image CLI flag (Python API already accepts `image`)
   - [ ] Follow-up: direct URL input for `to-video` (currently local files only)
-
-### Bugs
-
-- [ ] Two jobs for the same video share one output name
-      (`%(title)s [%(id)s].ext`), so converting one deletes the other's file:
-      a batch m4a disappeared when a scheduled mp3 of the same video
-      converted with `keep_original=False` (seen 2026-10-13). Give each job
-      its own name or directory.
 
 ### v2.0 — AI-Native Intelligence (Next)
 
