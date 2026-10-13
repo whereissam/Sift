@@ -80,6 +80,34 @@ Audit follow-ups (2026-10-13):
       host; all non-global addresses refused
 - [x] `/translate` capped at 100k chars, 5/minute; idempotency keys per
       principal; server-issued single-use OAuth `state`
+- [x] Default rate limit (`RATE_LIMIT`) enforced for writes; reads exempt so
+      the UI's polling is never throttled
+- [x] Translate/sentiment/extract/summarize spend recorded in the daily LLM
+      budget (local models free)
+- [x] Deleting a job (or `cleanup_old_jobs`) removes its search chunks,
+      segment embeddings, claims and their edges, mentions, annotations,
+      chat history and idempotency keys
+- [x] S3 requests to a caller-supplied endpoint go through a pinned client
+      (botocore `before-send`), closing the DNS-rebinding window
+- [x] Live transcription decodes incrementally (one ffmpeg per session)
+      instead of re-decoding the whole stream
+- [x] Live checks: a public name resolving to 127.0.0.1 (`127.0.0.1.nip.io`)
+      gets 400 from the loopback API; Compose publishes Whisper/Ollama on
+      127.0.0.1 only
+- [x] Extensions (WXT and legacy): platforms matched on the parsed hostname;
+      the WXT popup asks before sending `X-API-Key` to a remote `http://`
+      server
+- [x] Tauri webview CSP: IPC and API origins listed; `object-src`,
+      `frame-src`, `base-uri`, `form-action`, `frame-ancestors` locked down
+- [x] Supply chain: Actions pinned by SHA with `permissions: contents: read`;
+      deno and uv from digest-pinned images; Docker installs from `uv.lock`
+      (`uv sync --frozen`); pinned SHA-256 for `scripts/download_ffmpeg.py`
+      downloads; `wxt` pinned
+- [x] Desktop app reaches its embedded backend: Tauri detected with
+      `isTauri()`, relative `/api` fetches and WebSockets sent to
+      localhost:8000 (`src/lib/desktop.ts`)
+- [x] `frontend/src/lib` is tracked (the root `lib/` ignore hid it, so fresh
+      clones could not build)
 
 ## P1: Speaker Diarization (Who Spoke When) ✅ COMPLETED
 

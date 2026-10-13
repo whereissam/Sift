@@ -212,24 +212,62 @@ class _JobsMixin:
             ).fetchone()
         return row is not None
 
+    # Rows derived from one job, deleted with it. Entities, topics and their
+    # embeddings are shared across jobs, and transcript artifacts belong to
+    # the asset (other jobs on the same source reuse them), so those stay.
+    # foreign_keys is off and only annotations cascade from jobs, so the
+    # cleanup is explicit, ordered like replace_claims_for_job.
+    _JOB_DERIVED_DELETES = (
+        "DELETE FROM embeddings WHERE object_type = 'segment' AND object_id IN "
+        "(SELECT chunk_id FROM search_chunks WHERE job_id = :job_id)",
+        "DELETE FROM search_chunks WHERE job_id = :job_id",
+        "DELETE FROM claim_topics WHERE claim_id IN "
+        "(SELECT claim_id FROM claims WHERE episode_id = :job_id)",
+        "DELETE FROM predictions WHERE claim_id IN "
+        "(SELECT claim_id FROM claims WHERE episode_id = :job_id)",
+        "DELETE FROM contradictions WHERE "
+        "claim_id_a IN (SELECT claim_id FROM claims WHERE episode_id = :job_id) "
+        "OR claim_id_b IN (SELECT claim_id FROM claims WHERE episode_id = :job_id)",
+        "DELETE FROM claims WHERE episode_id = :job_id",
+        "DELETE FROM entity_mentions WHERE episode_id = :job_id",
+        "DELETE FROM extraction_failures WHERE episode_id = :job_id",
+        "DELETE FROM annotations WHERE job_id = :job_id",
+        "DELETE FROM chat_history WHERE job_id = :job_id",
+        "DELETE FROM idempotency_keys WHERE job_id = :job_id",
+    )
+
+    def _delete_jobs(self, conn, job_ids: list[str]) -> int:
+        deleted = 0
+        for job_id in job_ids:
+            for sql in self._JOB_DERIVED_DELETES:
+                conn.execute(sql, {"job_id": job_id})
+            deleted += conn.execute(
+                "DELETE FROM jobs WHERE job_id = ?", (job_id,)
+            ).rowcount
+        return deleted
+
     def delete_job(self, job_id: str) -> bool:
-        """Delete a job."""
+        """Delete a job and the rows derived from it (see _JOB_DERIVED_DELETES)."""
         with self._get_conn() as conn:
-            cursor = conn.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
-            return cursor.rowcount > 0
+            return self._delete_jobs(conn, [job_id]) > 0
 
     def cleanup_old_jobs(self, days: int = 7) -> int:
-        """Delete completed/failed jobs older than N days."""
+        """Delete completed/failed jobs older than N days, with their derived rows."""
         from datetime import timedelta
         cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
 
         with self._get_conn() as conn:
-            cursor = conn.execute("""
-                DELETE FROM jobs
-                WHERE status IN (?, ?) AND updated_at < ?
-            """, (JobStatus.COMPLETED.value, JobStatus.FAILED.value, cutoff))
-
-            deleted = cursor.rowcount
+            job_ids = [
+                r[0]
+                for r in conn.execute(
+                    """
+                    SELECT job_id FROM jobs
+                    WHERE status IN (?, ?) AND updated_at < ?
+                    """,
+                    (JobStatus.COMPLETED.value, JobStatus.FAILED.value, cutoff),
+                ).fetchall()
+            ]
+            deleted = self._delete_jobs(conn, job_ids)
             if deleted:
                 logger.info(f"Cleaned up {deleted} old jobs")
             return deleted

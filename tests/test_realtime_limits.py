@@ -7,8 +7,10 @@ unchecked.
 """
 
 import base64
+import shutil
+import subprocess
+import time
 
-import numpy as np
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -17,17 +19,34 @@ from app.api import realtime_routes
 from sift_core.transcribe import realtime_transcriber as rt
 
 
+needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+
+
+@pytest.fixture(scope="module")
+def webm_stream(tmp_path_factory):
+    """12 s of Opus in WebM, the shape MediaRecorder sends."""
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg not installed")
+    path = tmp_path_factory.mktemp("webm") / "tone.webm"
+    subprocess.run(
+        ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=12",
+         "-c:a", "libopus", "-b:a", "32k", "-f", "webm", "-cluster_time_limit", "1000", str(path)],
+        check=True,
+    )
+    return path.read_bytes()
+
+
 @pytest.fixture
-def ffmpeg_calls(monkeypatch):
-    """Replace ffmpeg: record the stream size and decode nothing."""
-    sizes = []
+def popen_count(monkeypatch):
+    calls = []
+    real = rt.subprocess.Popen
 
-    def fake_convert(webm_bytes, sample_rate=16000):
-        sizes.append(len(webm_bytes))
-        return np.array([], dtype=np.float32)
+    def counting(*args, **kwargs):
+        calls.append(args[0])
+        return real(*args, **kwargs)
 
-    monkeypatch.setattr(rt, "convert_webm_to_pcm", fake_convert)
-    return sizes
+    monkeypatch.setattr(rt.subprocess, "Popen", counting)
+    return calls
 
 
 def _session(**kwargs):
@@ -39,36 +58,62 @@ async def _feed(session, chunk: bytes):
         pass
 
 
-class TestAccumulator:
+class TestStreamingDecoder:
     def test_stream_size_is_capped(self, monkeypatch):
         monkeypatch.setattr(rt, "MAX_SESSION_BYTES", 100)
-        acc = rt.WebmAccumulator()
-        acc.add_chunk(b"x" * 100)
+        decoder = rt.StreamingWebmDecoder()
         with pytest.raises(rt.SessionLimitError):
-            acc.add_chunk(b"x")
+            decoder.add_chunk(b"x" * 101)
+        decoder.clear()
+
+    @needs_ffmpeg
+    def test_decodes_incrementally_with_one_process(self, webm_stream, popen_count):
+        decoder = rt.StreamingWebmDecoder()
+        step = len(webm_stream) // 12
+        decoded = 0
+        try:
+            for i in range(12):
+                decoder.add_chunk(webm_stream[i * step:(i + 1) * step if i < 11 else None])
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:  # wait for this chunk's audio
+                    got = len(decoder.decode_new())
+                    decoded += got
+                    if got:
+                        break
+                    time.sleep(0.02)
+            decoded += len(decoder.finish())
+        finally:
+            decoder.clear()
+        assert len(popen_count) == 1  # one ffmpeg for the whole stream
+        assert decoded == pytest.approx(12 * 16000, rel=0.01)
 
 
 class TestSession:
-    async def test_undecodable_input_is_throttled(self, ffmpeg_calls):
-        session = _session(min_chunk_duration=3.0)
-        for _ in range(30):
-            await _feed(session, b"\0" * 1024)
-        # Old behaviour: 30 decodes of a growing stream (quadratic work).
-        assert len(ffmpeg_calls) == 1
-
-    async def test_session_gives_up_on_undecodable_input(self, ffmpeg_calls, monkeypatch):
+    @needs_ffmpeg
+    async def test_session_gives_up_on_undecodable_input(self, monkeypatch, popen_count):
         session = _session(min_chunk_duration=3.0)
         clock = iter(range(0, 10_000, 10))
         monkeypatch.setattr(rt.time, "monotonic", lambda: float(next(clock)))
-        with pytest.raises(rt.SessionLimitError):
-            for _ in range(rt.MAX_FAILED_DECODES + 1):
-                await _feed(session, b"\0" * 1024)
-        assert len(ffmpeg_calls) == rt.MAX_FAILED_DECODES
+        try:
+            with pytest.raises(rt.SessionLimitError):
+                for _ in range(rt.MAX_FAILED_DECODES + 1):
+                    await _feed(session, b"\0" * 1024)
+        finally:
+            session.cleanup()
+        assert len(popen_count) == 1
+
+    @needs_ffmpeg
+    async def test_cleanup_stops_ffmpeg(self, webm_stream):
+        session = _session()
+        await _feed(session, webm_stream[:4096])
+        proc = session._webm_accumulator._proc
+        session.cleanup()
+        assert proc.poll() is not None
 
 
 class TestRoute:
     @pytest.fixture
-    def client(self, ffmpeg_calls):
+    def client(self):
         app = FastAPI()
         app.include_router(realtime_routes.router, prefix="/api")
         return TestClient(app)

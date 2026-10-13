@@ -13,7 +13,7 @@ from .bot.webhook import router as telegram_router
 from .config import get_settings
 from .api import router as api_router
 from .api.ingestion_routes import router as ingestion_router
-from .api.ratelimit import limiter
+from .api.ratelimit import WriteRateLimitMiddleware, limiter
 from .api.middleware import TimeoutMiddleware, RequestIDMiddleware
 from .api.origin_guard import OriginGuardMiddleware, OriginPolicy, loopback_only_hosts
 from .logging_config import configure_logging, get_logger
@@ -221,6 +221,8 @@ app = FastAPI(
 # Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# default_limits only take effect through a middleware.
+app.add_middleware(WriteRateLimitMiddleware)
 
 # CORS middleware
 _settings = get_settings()

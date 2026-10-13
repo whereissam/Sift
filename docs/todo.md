@@ -43,35 +43,6 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 
 ---
 
-## Security audit follow-ups (2026-10-13) — 9 open
-
-Hardening notes from the 2026-10 audit, not fixed with its findings (those
-are in [shipped.md](shipped.md#security-hardening)).
-
-- [ ] Default rate limit: `default_limits` never apply (no `SlowAPIMiddleware`),
-      but the 60/minute default would throttle the web UI's job polling —
-      exempt GETs or raise the default before installing it
-- [ ] Record translate/sentiment/extract LLM spend in the budget ledger
-- [ ] Deleting a job leaves its chunks, embeddings, claims and annotations.
-      `PRAGMA foreign_keys` alone is not the fix (only `annotations` cascades
-      from `jobs`, and it would start enforcing the non-cascading keys):
-      delete the derived rows explicitly, keeping shared entities
-- [ ] S3: pin the validated IP for botocore (the per-request re-check narrows
-      but does not close the DNS-rebinding window)
-- [ ] Live transcription: decode incrementally instead of re-decoding the
-      whole stream
-- [ ] Supply chain: pin Actions by SHA and add a `permissions:` block;
-      replace `curl | sh` for deno; install from `uv.lock`; checksum in
-      `scripts/download_ffmpeg.py`; pin `wxt` instead of `latest`
-- [ ] Extensions: match platforms on the parsed hostname; warn before sending
-      `X-API-Key` to a non-loopback `http://` server
-- [ ] Tauri webview: add a CSP (React's `javascript:` URL sanitising is the
-      only backstop today)
-- [ ] Re-run the Ollama/Whisper exposure and DNS-rebinding checks against a
-      live deployment (unverified in the audit sandbox)
-
----
-
 ## P0: Smart Metadata & Tagging ✅ COMPLETED — 1 open
 
 _Shipped — see [shipped.md](shipped.md). Remaining:_

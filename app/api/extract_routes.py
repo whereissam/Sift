@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .auth import verify_api_key
+from ..knowledge.knowledge_budget import record_llm_spend
 from .ratelimit import limiter
 from .schemas import (
     ExtractRequest,
@@ -125,6 +126,7 @@ async def extract_structured_data(request: Request, job_id: str, body: ExtractRe
         preset=preset,
         custom_schema=custom_schema,
     )
+    record_llm_spend(result)
 
     if not result.success:
         return ExtractionResponse(
