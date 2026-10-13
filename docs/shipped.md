@@ -38,6 +38,33 @@ Follow-up (completed 2026-06-22):
 - [x] Per-endpoint rate limits on expensive download/transcribe/upload routes
       (10/min each)
 
+Second audit (security-audit skill, run 2026-10-12 on 406ba52). Fixed 2026-10-13:
+
+- [x] yt-dlp option injection + SSRF: platform detection checks the parsed
+      http(s) host (`url_host_matches`, Rust `url_matches_platform`); `--`
+      before the URL in every yt-dlp argv (Python and Tauri)
+- [x] RSS enclosures: http(s) only, always fetched through the SSRF-checked
+      direct path, never a platform downloader
+- [x] Origin guard (independent of `API_KEY`): cross-site writes and WebSocket
+      upgrades refused; loopback-only Host when bound to loopback
+      (`ALLOWED_HOSTS`); cross-site `GET /api/add` gets a confirmation page;
+      same in the Tauri backend
+- [x] `/api/cleanup` rejects `max_age_hours < 1`
+- [x] Telegram bot limited to `TELEGRAM_ALLOWED_USER_IDS` (fail-closed)
+- [x] MCP client percent-encodes ids as one path segment
+- [x] Webhooks sent through a DNS-pinned client; `/webhooks/test` no longer
+      echoes response bodies
+- [x] S3 `endpoint_url` SSRF-validated (`S3_ALLOWED_ENDPOINTS` for private)
+- [x] Decoded-byte cap in `safe_get` (64 MiB) and Discord streaming (512 MiB)
+- [x] Live transcription: session/message byte caps, attempt-based decode
+      throttle, ffmpeg timeout, session limit; batch capped at 500 URLs with
+      off-loop inserts and O(1) enqueue dedupe
+- [x] Random secrets-at-rest key in `ENCRYPTION_KEY_FILE` instead of
+      sha256(DOWNLOAD_DIR); legacy values re-encrypted on startup; DB/backups/
+      checkpoints not exportable
+- [x] No env LLM key sent to a caller-chosen `base_url`; Whisper/Ollama
+      published on loopback only in Compose
+
 ## P1: Speaker Diarization (Who Spoke When) ✅ COMPLETED
 
 **Goal:** Identify different speakers in transcriptions, especially for X Spaces and Podcasts.
