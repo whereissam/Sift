@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
+import { API_BASE, IS_TAURI } from '@/lib/desktop';
 
 /**
  * Detects if we're running inside Tauri and manages backend readiness.
  * In browser mode, the backend is assumed to be running externally.
  */
 export function useTauriBackend() {
-  const isTauri = '__TAURI__' in window;
+  // `window.__TAURI__` only exists with app.withGlobalTauri, which is off,
+  // so the old check was always false in the desktop app.
+  const isTauri = IS_TAURI;
   const [backendReady, setBackendReady] = useState(!isTauri);
   const [backendError, setBackendError] = useState(false);
 
@@ -54,7 +57,7 @@ export function useTauriBackend() {
    * In Tauri, we hit localhost directly (no Vite proxy).
    * In browser, we use relative /api paths (proxied by Vite).
    */
-  const apiBaseUrl = isTauri ? 'http://localhost:8000' : '';
+  const apiBaseUrl = API_BASE;
 
   return { isTauri, backendReady, backendError, apiBaseUrl };
 }

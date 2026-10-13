@@ -4,6 +4,7 @@ import { MessageSquare, X, Loader2, Send, RefreshCw } from 'lucide-react'
 import { BottomSheet } from '@/components/ui/bottom-sheet'
 import { AnnotationThread } from './AnnotationThread'
 import { AnnotationForm } from './AnnotationForm'
+import { wsUrl } from '@/lib/desktop'
 
 export interface Annotation {
   id: string
@@ -67,8 +68,7 @@ export function AnnotationPanel({
     fetchAnnotations()
 
     // Connect to WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}/api/jobs/${jobId}/annotations/ws`)
+    const ws = new WebSocket(wsUrl(`/api/jobs/${jobId}/annotations/ws`))
 
     ws.onopen = () => {
       setConnected(true)
