@@ -16,6 +16,19 @@ from .transcriber import AudioTranscriber, TranscriptionSegment
 
 logger = logging.getLogger(__name__)
 
+# A live session re-decodes everything it has received on each decode, so
+# the stream it keeps is bounded. Opus from MediaRecorder runs ~32 kbit/s,
+# so this is several hours of audio.
+MAX_SESSION_BYTES = 64 * 1024 * 1024
+# Consecutive decode attempts that yield no audio before the session is
+# given up on: undecodable input otherwise costs a full ffmpeg pass forever.
+MAX_FAILED_DECODES = 10
+FFMPEG_TIMEOUT_SECONDS = 60
+
+
+class SessionLimitError(ValueError):
+    """A live session went over one of its resource limits."""
+
 
 class AudioBuffer:
     """Circular buffer for streaming audio with sliding window support."""
@@ -159,12 +172,16 @@ def convert_webm_to_pcm(webm_bytes: bytes, sample_rate: int = 16000) -> np.ndarr
                 "pipe:1"
             ],
             capture_output=True,
-            check=True
+            check=True,
+            timeout=FFMPEG_TIMEOUT_SECONDS,
         )
         audio = np.frombuffer(result.stdout, dtype=np.float32)
         return audio
     except subprocess.CalledProcessError as e:
         logger.error(f"FFmpeg conversion error: {e.stderr.decode()}")
+        return np.array([], dtype=np.float32)
+    except subprocess.TimeoutExpired:
+        logger.error("FFmpeg conversion timed out")
         return np.array([], dtype=np.float32)
     finally:
         Path(temp_path).unlink(missing_ok=True)
@@ -185,7 +202,13 @@ class WebmAccumulator:
         self._decoded_samples = 0
 
     def add_chunk(self, chunk: bytes) -> None:
-        """Add a WebM chunk from MediaRecorder."""
+        """Add a WebM chunk from MediaRecorder.
+
+        Raises:
+            SessionLimitError: if the stream would exceed MAX_SESSION_BYTES.
+        """
+        if len(self._data) + len(chunk) > MAX_SESSION_BYTES:
+            raise SessionLimitError("Live session audio limit reached")
         self._data.extend(chunk)
 
     def decode_new(self) -> np.ndarray:
@@ -401,7 +424,10 @@ class RealtimeTranscriptionSession:
 
         # WebM chunk accumulation (individual chunks are not standalone files)
         self._webm_accumulator = WebmAccumulator()
-        self._last_decode_time = 0.0
+        # Throttle on the last attempt, not the last success: undecodable
+        # input never succeeds and used to re-decode on every message.
+        self._last_decode_attempt = 0.0
+        self._failed_decodes = 0
 
         # Segment handling
         self.segment_merger = SegmentMerger()
@@ -441,15 +467,18 @@ class RealtimeTranscriptionSession:
             # Only decode when enough time has passed (avoid excessive FFmpeg calls)
             now = time.monotonic()
             min_decode_interval = self.min_chunk_samples / 16000
-            if self._last_decode_time > 0 and (now - self._last_decode_time) < min_decode_interval * 0.8:
+            if self._last_decode_attempt > 0 and (now - self._last_decode_attempt) < min_decode_interval * 0.8:
                 return
+            self._last_decode_attempt = now
 
             # Decode new audio from accumulated stream (in thread — FFmpeg is blocking)
             new_audio = await asyncio.to_thread(self._webm_accumulator.decode_new)
             if len(new_audio) == 0:
+                self._failed_decodes += 1
+                if self._failed_decodes >= MAX_FAILED_DECODES:
+                    raise SessionLimitError("Live audio could not be decoded")
                 return
-
-            self._last_decode_time = now
+            self._failed_decodes = 0
 
             # Append to buffer
             self.buffer.append(new_audio)

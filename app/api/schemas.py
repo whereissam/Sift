@@ -484,7 +484,8 @@ class BatchDownloadRequest(BaseModel):
     urls: list[str] = Field(
         ...,
         min_length=1,
-        description="List of URLs to download",
+        max_length=500,
+        description="List of URLs to download (at most 500)",
     )
     name: Optional[str] = Field(
         default=None,
