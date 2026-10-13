@@ -128,21 +128,55 @@ def _client_kwargs_with_pinning(client_kwargs: Optional[dict]) -> dict:
     return kwargs
 
 
+# Largest body safe_get will hold in memory, counted after Content-Encoding
+# is decoded. A gzip body expands ~1000x, so a cap on the wire alone would let
+# a few MB become GBs. Feeds, pages and API responses all fit well under it.
+DEFAULT_MAX_BYTES = 64 * 1024 * 1024
+
+
+class ResponseTooLargeError(ValueError):
+    """A response body exceeded the caller's byte limit."""
+
+
+async def iter_capped(resp: httpx.Response, max_bytes: int, chunk_size: int = 1 << 20):
+    """Yield a streamed response's decoded bytes, stopping past ``max_bytes``.
+
+    Content-Length is checked first so an honest oversized response fails
+    before any of it is read; the running count catches the rest, including
+    compressed bodies whose Content-Length is only the wire size.
+
+    Raises:
+        ResponseTooLargeError: once more than ``max_bytes`` would be returned.
+    """
+    declared = resp.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > max_bytes:
+        raise ResponseTooLargeError(f"Response exceeds {max_bytes} bytes")
+    total = 0
+    async for chunk in resp.aiter_bytes(chunk_size):
+        total += len(chunk)
+        if total > max_bytes:
+            raise ResponseTooLargeError(f"Response exceeds {max_bytes} bytes")
+        yield chunk
+
+
 async def safe_get(
     url: str,
     *,
     client_kwargs: Optional[dict] = None,
     max_redirects: int = 5,
+    max_bytes: int = DEFAULT_MAX_BYTES,
     **get_kwargs,
 ) -> httpx.Response:
     """Perform an SSRF-safe GET request.
 
     Validates the URL (and every redirect Location) with validate_url_ssrf,
     disables httpx auto-redirects, and follows 3xx redirects manually after
-    re-validating each hop.
+    re-validating each hop. The body is streamed and read up to ``max_bytes``
+    of decoded content.
 
     Raises:
         ValueError: if the URL or any redirect target is blocked.
+        ResponseTooLargeError: if the decoded body exceeds ``max_bytes``.
     """
     is_valid, error = validate_url_ssrf(url)
     if not is_valid:
@@ -154,22 +188,38 @@ async def safe_get(
     async with httpx.AsyncClient(**client_kwargs) as client:
         current_url = url
         for _ in range(max_redirects + 1):
-            resp = await client.get(current_url, follow_redirects=False, **get_kwargs)
-            if resp.is_redirect:
-                location = resp.headers.get("location")
+            async with client.stream(
+                "GET", current_url, follow_redirects=False, **get_kwargs
+            ) as resp:
+                location = resp.headers.get("location") if resp.is_redirect else None
                 if not location:
-                    return resp
-                # Join against the hostname URL we sent, not resp.url (whose host
-                # has been rewritten to the pinned IP by the transport).
-                next_url = urljoin(current_url, location)
-                is_valid, error = validate_url_ssrf(next_url)
-                if not is_valid:
-                    raise ValueError(f"Blocked redirect URL: {error}")
-                current_url = next_url
-                continue
-            return resp
+                    body = b"".join([c async for c in iter_capped(resp, max_bytes)])
+                    return _buffered(resp, body)
+            # Join against the hostname URL we sent, not resp.url (whose host
+            # has been rewritten to the pinned IP by the transport).
+            next_url = urljoin(current_url, location)
+            is_valid, error = validate_url_ssrf(next_url)
+            if not is_valid:
+                raise ValueError(f"Blocked redirect URL: {error}")
+            current_url = next_url
 
         raise ValueError(f"Too many redirects (>{max_redirects}) for URL: {url}")
+
+
+def _buffered(resp: httpx.Response, body: bytes) -> httpx.Response:
+    """A plain Response holding ``body``, which is already decoded.
+
+    The encoding headers are dropped so httpx does not try to decode the
+    body a second time.
+    """
+    headers = [
+        (k, v)
+        for k, v in resp.headers.multi_items()
+        if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")
+    ]
+    return httpx.Response(
+        resp.status_code, headers=headers, content=body, request=resp.request
+    )
 
 
 def safe_stream(

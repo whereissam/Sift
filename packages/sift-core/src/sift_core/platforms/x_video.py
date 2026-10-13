@@ -10,6 +10,7 @@ from typing import Optional
 from ..settings import IngestSettings, get_ingest_settings
 from ..fetch.auth import twitter_ytdlp_cookies
 from ..base import (
+    url_host_matches,
     Platform,
     PlatformDownloader,
     AudioMetadata,
@@ -51,7 +52,9 @@ async def _run_ytdlp(
         cmd = list(base_cmd)
         if cookies_file:
             cmd.extend(["--cookies", cookies_file])
-        cmd.append(url)
+        # "--" ends option parsing, so the URL can never be read as a
+        # yt-dlp option.
+        cmd.extend(["--", url])
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -69,6 +72,7 @@ async def _run_ytdlp(
     logger.warning("X cookies were rejected; retrying without authentication")
     retry = await asyncio.create_subprocess_exec(
         *base_cmd,
+        "--",
         url,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -81,6 +85,9 @@ class XVideoDownloader(PlatformDownloader):
     """Downloads videos from X/Twitter posts using yt-dlp."""
 
     PLATFORM = Platform.X_VIDEO
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("x.com", "twitter.com")
 
     # URL patterns for X/Twitter posts with video
     URL_PATTERNS = [
@@ -110,7 +117,9 @@ class XVideoDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid X/Twitter post URL."""
-        return any(re.search(pattern, url) for pattern in cls.URL_PATTERNS)
+        return url_host_matches(url, cls.HOSTS) and any(
+            re.search(pattern, url) for pattern in cls.URL_PATTERNS
+        )
 
     @classmethod
     def extract_content_id(cls, url: str) -> str:

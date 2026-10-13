@@ -9,13 +9,38 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlsplit
 
 import feedparser
 import httpx
 
+from sift_core.base import url_host_matches
 from sift_core.fetch.url_validator import safe_get
 
 logger = logging.getLogger(__name__)
+
+_YOUTUBE_HOSTS = ("youtube.com",)
+
+
+def _feed_media_url(url: Optional[str]) -> Optional[str]:
+    """Return a feed-supplied media URL only if it is a plain http(s) URL.
+
+    Enclosure hrefs are written by whoever publishes the feed. The worker
+    hands them to the downloaders, so a value like ``--config-location=…``
+    or ``file:///…`` must never get through.
+    """
+    if not isinstance(url, str):
+        return None
+    url = url.strip()
+    if not url or url.startswith("-") or any(c.isspace() for c in url):
+        return None
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return None
+    return url
 
 
 @dataclass
@@ -69,7 +94,8 @@ class RSSFetcher(BaseFetcher):
         try:
             resp = await safe_get(source_url, timeout=60.0)
             resp.raise_for_status()
-            feed = feedparser.parse(resp.text)
+            # Parsing a large feed is CPU-bound; keep it off the event loop.
+            feed = await asyncio.to_thread(feedparser.parse, resp.content)
 
             items = []
             for entry in feed.entries[:limit]:
@@ -119,7 +145,7 @@ class RSSFetcher(BaseFetcher):
         try:
             resp = await safe_get(source_url, timeout=30.0)
             resp.raise_for_status()
-            feed = feedparser.parse(resp.text)
+            feed = await asyncio.to_thread(feedparser.parse, resp.content)
 
             if feed.bozo and not feed.entries:
                 logger.warning(f"Invalid RSS feed: {source_url}")
@@ -172,12 +198,12 @@ class RSSFetcher(BaseFetcher):
         # Check enclosures first
         for enclosure in entry.get("enclosures", []):
             if enclosure.get("type", "").startswith("audio/"):
-                return enclosure.get("href") or enclosure.get("url")
+                return _feed_media_url(enclosure.get("href") or enclosure.get("url"))
 
         # Check links
         for link in entry.get("links", []):
             if link.get("type", "").startswith("audio/"):
-                return link.get("href")
+                return _feed_media_url(link.get("href"))
 
         return None
 
@@ -201,6 +227,9 @@ class YouTubeChannelFetcher(BaseFetcher):
 
         # Construct channel videos URL
         channel_url = source_url
+        if not source_id and not url_host_matches(channel_url, _YOUTUBE_HOSTS):
+            logger.error(f"Not a YouTube channel URL: {channel_url}")
+            return []
         if source_id:
             channel_url = f"https://www.youtube.com/channel/{source_id}/videos"
         elif "/videos" not in channel_url:
@@ -218,6 +247,7 @@ class YouTubeChannelFetcher(BaseFetcher):
                 "--flat-playlist",
                 "--print-json",
                 "--playlist-end", str(limit),
+                "--",
                 channel_url,
             ]
 
@@ -282,6 +312,8 @@ class YouTubeChannelFetcher(BaseFetcher):
             r"youtube\.com/user/([a-zA-Z0-9_-]+)",
         ]
 
+        if not url_host_matches(source_url, _YOUTUBE_HOSTS):
+            return False, None, None
         for pattern in patterns:
             if re.search(pattern, source_url):
                 break
@@ -294,6 +326,7 @@ class YouTubeChannelFetcher(BaseFetcher):
                 "--flat-playlist",
                 "--playlist-end", "1",
                 "--print", "%(channel)s",
+                "--",
                 source_url,
             ]
 
@@ -334,6 +367,9 @@ class YouTubePlaylistFetcher(BaseFetcher):
             return []
 
         playlist_url = source_url
+        if not source_id and not url_host_matches(playlist_url, _YOUTUBE_HOSTS):
+            logger.error(f"Not a YouTube playlist URL: {playlist_url}")
+            return []
         if source_id:
             playlist_url = f"https://www.youtube.com/playlist?list={source_id}"
 
@@ -345,6 +381,7 @@ class YouTubePlaylistFetcher(BaseFetcher):
                 "--flat-playlist",
                 "--print-json",
                 "--playlist-end", str(limit),
+                "--",
                 playlist_url,
             ]
 
@@ -392,6 +429,8 @@ class YouTubePlaylistFetcher(BaseFetcher):
             return False, None, None
 
         # Check URL pattern
+        if not url_host_matches(source_url, _YOUTUBE_HOSTS):
+            return False, None, None
         if "youtube.com/playlist" not in source_url and "list=" not in source_url:
             return False, None, None
 
@@ -408,6 +447,7 @@ class YouTubePlaylistFetcher(BaseFetcher):
                 "--flat-playlist",
                 "--playlist-end", "1",
                 "--print", "%(playlist_title)s",
+                "--",
                 source_url,
             ]
 

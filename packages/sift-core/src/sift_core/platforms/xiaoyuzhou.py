@@ -8,7 +8,7 @@ from typing import Optional
 import httpx
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, url_host_matches
 from ..exceptions import SiftError, ContentNotFoundError
 from ..fetch.url_validator import safe_stream
 
@@ -19,6 +19,9 @@ class XiaoyuzhouDownloader(PlatformDownloader):
     """Downloads podcast episodes from 小宇宙 (Xiaoyuzhou FM)."""
 
     PLATFORM = Platform.XIAOYUZHOU
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("xiaoyuzhoufm.com",)
 
     # URL patterns for Xiaoyuzhou
     URL_PATTERNS = [
@@ -44,7 +47,7 @@ class XiaoyuzhouDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Xiaoyuzhou URL."""
-        return "xiaoyuzhoufm.com" in url
+        return url_host_matches(url, cls.HOSTS)
 
     @classmethod
     def extract_content_id(cls, url: str) -> tuple[str, str]:

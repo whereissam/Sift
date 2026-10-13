@@ -296,8 +296,10 @@ async def process_single_item(subscription_id: str, item_id: str):
         content_url = item["content_url"]
         file_path = None
 
-        # Check if this is a direct audio URL (RSS feeds) or a platform URL
-        if _is_direct_audio_url(content_url):
+        # An RSS enclosure is a file URL written by the feed's publisher, so
+        # it is always fetched directly (SSRF-checked, streamed) and never
+        # handed to a platform downloader / yt-dlp, whatever its extension.
+        if sub.get("subscription_type") == "rss" or _is_direct_audio_url(content_url):
             # Download directly via HTTP
             file_path = await _download_direct_audio(
                 url=content_url,
