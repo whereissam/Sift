@@ -6,7 +6,6 @@ the yt-dlp argv with no "--", so an option-shaped "URL" was parsed as a
 yt-dlp option and a foreign host with a platform-looking path was fetched.
 """
 
-import asyncio
 import gzip
 
 import httpx
