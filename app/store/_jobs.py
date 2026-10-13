@@ -188,6 +188,30 @@ class _JobsMixin:
 
         return jobs
 
+    def file_used_by_other_job(self, path, job_id: Optional[str]) -> bool:
+        """True when a job other than ``job_id`` records ``path`` as its file.
+
+        Jobs for the same video share one output name, so a file one job
+        would clean up can be another job's finished download.
+        """
+        candidates = {str(path)}
+        try:
+            candidates.add(str(Path(path).resolve()))
+        except OSError:
+            pass
+        marks = ",".join("?" * len(candidates))
+        with self._get_conn() as conn:
+            row = conn.execute(
+                f"""
+                SELECT 1 FROM jobs
+                WHERE job_id != ?
+                  AND (raw_file_path IN ({marks}) OR converted_file_path IN ({marks}))
+                LIMIT 1
+                """,
+                (job_id or "", *candidates, *candidates),
+            ).fetchone()
+        return row is not None
+
     def delete_job(self, job_id: str) -> bool:
         """Delete a job."""
         with self._get_conn() as conn:
