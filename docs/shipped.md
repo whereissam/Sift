@@ -80,6 +80,20 @@ Audit follow-ups (2026-10-13):
       host; all non-global addresses refused
 - [x] `/translate` capped at 100k chars, 5/minute; idempotency keys per
       principal; server-issued single-use OAuth `state`
+- [x] Default rate limit (`RATE_LIMIT`) enforced for writes; reads exempt so
+      the UI's polling is never throttled
+- [x] Translate/sentiment/extract/summarize spend recorded in the daily LLM
+      budget (local models free)
+- [x] Deleting a job (or `cleanup_old_jobs`) removes its search chunks,
+      segment embeddings, claims and their edges, mentions, annotations,
+      chat history and idempotency keys
+- [x] S3 requests to a caller-supplied endpoint go through a pinned client
+      (botocore `before-send`), closing the DNS-rebinding window
+- [x] Live transcription decodes incrementally (one ffmpeg per session)
+      instead of re-decoding the whole stream
+- [x] Live checks: a public name resolving to 127.0.0.1 (`127.0.0.1.nip.io`)
+      gets 400 from the loopback API; Compose publishes Whisper/Ollama on
+      127.0.0.1 only
 
 ## P1: Speaker Diarization (Who Spoke When) ✅ COMPLETED
 
