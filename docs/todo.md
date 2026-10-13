@@ -7,13 +7,21 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 > **Shipped work** — completed phases and their implementation notes moved to
 > [shipped.md](shipped.md). This file is open work only.
 
-## Priority Matrix — 2 open
+## Priority Matrix — 3 open
 
 ### Media output (2026-07-15)
 
 - [x] `to-video`: turn an audio file into a YouTube-ready MP4 (still image …
   - [ ] Follow-up: `--image` custom-image CLI flag (Python API already accepts `image`)
   - [ ] Follow-up: direct URL input for `to-video` (currently local files only)
+
+### Bugs
+
+- [ ] Desktop app (Tauri build): components call `fetch('/api/...')`
+      relative to the webview origin (`tauri://localhost`), and the
+      `apiBaseUrl` from `useTauriBackend` (http://localhost:8000) is unused,
+      so packaged builds likely never reach the embedded backend. Dev mode
+      hides it through the Vite proxy. Check in a real build.
 
 ### v2.0 — AI-Native Intelligence (Next)
 
@@ -43,7 +51,7 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 
 ---
 
-## Security audit follow-ups (2026-10-13) — 3 open
+## Security audit follow-ups (2026-10-13) — 1 open
 
 Hardening notes from the 2026-10 audit, not fixed with its findings (those
 are in [shipped.md](shipped.md#security-hardening)).
@@ -51,10 +59,7 @@ are in [shipped.md](shipped.md#security-hardening)).
 - [ ] Supply chain: pin Actions by SHA and add a `permissions:` block;
       replace `curl | sh` for deno; install from `uv.lock`; checksum in
       `scripts/download_ffmpeg.py`; pin `wxt` instead of `latest`
-- [ ] Extensions: match platforms on the parsed hostname; warn before sending
-      `X-API-Key` to a non-loopback `http://` server
-- [ ] Tauri webview: add a CSP (React's `javascript:` URL sanitising is the
-      only backstop today)
+
 
 ---
 

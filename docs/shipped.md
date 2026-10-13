@@ -94,6 +94,11 @@ Audit follow-ups (2026-10-13):
 - [x] Live checks: a public name resolving to 127.0.0.1 (`127.0.0.1.nip.io`)
       gets 400 from the loopback API; Compose publishes Whisper/Ollama on
       127.0.0.1 only
+- [x] Extensions (WXT and legacy): platforms matched on the parsed hostname;
+      the WXT popup asks before sending `X-API-Key` to a remote `http://`
+      server
+- [x] Tauri webview CSP: IPC and API origins listed; `object-src`,
+      `frame-src`, `base-uri`, `form-action`, `frame-ancestors` locked down
 
 ## P1: Speaker Diarization (Who Spoke When) ✅ COMPLETED
 
