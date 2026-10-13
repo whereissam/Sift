@@ -59,6 +59,8 @@ network, configure these first:
   your names here when serving it under another one.
 - **`TELEGRAM_ALLOWED_USER_IDS`** — the bot refuses every Telegram user not
   listed here.
+- **`API_DOCS`** — `/docs`, `/redoc` and `/openapi.json` are served only
+  while `API_KEY` is unset unless this is set to `true`.
 - **`S3_ALLOWED_ENDPOINTS`** — S3 `endpoint_url`s on private addresses (e.g. a
   self-hosted MinIO) must be listed here; others must resolve publicly.
 - **`TELEGRAM_WEBHOOK_SECRET`** — required if you run the Telegram bot in webhook
