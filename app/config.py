@@ -59,6 +59,12 @@ class Settings(IngestSettings):
     # any host when bound elsewhere.
     allowed_hosts: str | None = None
 
+    # S3-compatible endpoints allowed on private addresses (comma-separated
+    # host or host:port, e.g. "minio:9000"). Any other endpoint_url must
+    # resolve to a public address, so API callers cannot aim the server's
+    # signed requests at loopback or internal services.
+    s3_allowed_endpoints: str = ""
+
     # Rate limiting (requests per minute)
     rate_limit: str = "60/minute"  # Default: 60 requests per minute
     rate_limit_enabled: bool = True

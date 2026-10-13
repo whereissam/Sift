@@ -121,6 +121,18 @@ class _PinnedTransport(httpx.AsyncHTTPTransport):
         return await super().handle_async_request(request)
 
 
+def pinned_client(**client_kwargs) -> httpx.AsyncClient:
+    """An AsyncClient that connects only to IPs that pass the SSRF check.
+
+    For requests safe_get/safe_stream do not cover (POSTs). Each connection
+    resolves and validates the host itself, so a name re-resolved after an
+    earlier validate_url_ssrf (DNS rebinding) cannot reach a private address.
+    Redirects are not followed.
+    """
+    client_kwargs["follow_redirects"] = False
+    return httpx.AsyncClient(**_client_kwargs_with_pinning(client_kwargs))
+
+
 def _client_kwargs_with_pinning(client_kwargs: Optional[dict]) -> dict:
     """Inject the DNS-pinning transport into client kwargs if not overridden."""
     kwargs = dict(client_kwargs or {})
