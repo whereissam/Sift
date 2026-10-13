@@ -37,7 +37,6 @@ fn build_audio_cmd(
     output_dir: &Path,
     format: OutputFormat,
     quality: QualityPreset,
-    platform_type: Platform,
 ) -> Vec<String> {
     let output_template = output_dir
         .join("%(title)s [%(id)s].%(ext)s")
@@ -78,14 +77,6 @@ fn build_audio_cmd(
         cmd.extend(["--audio-quality".to_string(), bitrate.to_string()]);
     }
 
-    // YouTube-specific workaround
-    if matches!(platform_type, Platform::Youtube | Platform::YoutubeVideo) {
-        cmd.extend([
-            "--extractor-args".to_string(),
-            "youtube:player_client=web".to_string(),
-        ]);
-    }
-
     cmd.push(url.to_string());
     cmd
 }
@@ -105,8 +96,10 @@ fn build_video_cmd(
     let format_spec = match quality {
         QualityPreset::Low => "best[height<=360][ext=mp4]/best[height<=360]",
         QualityPreset::Medium => "best[height<=480][ext=mp4]/best[height<=480]",
-        QualityPreset::High => "bestvideo[height<=720]+bestaudio/best[height<=720]",
-        QualityPreset::Highest => "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+        // H.264 + AAC first: the best streams are often AV1/VP9 + Opus, which
+        // many players cannot open from an .mp4.
+        QualityPreset::High => "bestvideo[height<=720][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]",
+        QualityPreset::Highest => "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
     };
 
     let mut cmd = vec![
@@ -127,11 +120,7 @@ fn build_video_cmd(
 
     // YouTube-specific
     if matches!(platform_type, Platform::YoutubeVideo) {
-        cmd.extend([
-            "--extractor-args".to_string(),
-            "youtube:player_client=web".to_string(),
-            "--force-overwrites".to_string(),
-        ]);
+        cmd.push("--force-overwrites".to_string());
     }
 
     // Instagram-specific
@@ -207,7 +196,7 @@ pub async fn execute_download(
     let args = if is_video {
         build_video_cmd(url, output_dir, quality, detected_platform)
     } else {
-        build_audio_cmd(url, output_dir, format, quality, detected_platform)
+        build_audio_cmd(url, output_dir, format, quality)
     };
 
     log::info!("yt-dlp resolved to: {}", args[0]);

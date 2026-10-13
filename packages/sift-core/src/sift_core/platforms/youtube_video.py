@@ -87,13 +87,16 @@ class YouTubeVideoDownloader(PlatformDownloader):
             else:
                 output_template = str(self.download_dir / "%(title)s [%(id)s].%(ext)s")
 
-            # Quality mapping for video (bestvideo+bestaudio ensures we get both streams)
-            format_spec = {
-                "low": "bestvideo[height<=360]+bestaudio/best[height<=360]",
-                "medium": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-                "high": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-                "highest": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-            }.get(quality, "bestvideo[height<=720]+bestaudio/best[height<=720]")
+            # Quality mapping for video (bestvideo+bestaudio ensures we get both
+            # streams). H.264 + AAC first: YouTube's best streams are often
+            # AV1/VP9 + Opus, which many players cannot open from an .mp4.
+            height = {"low": 360, "medium": 480, "high": 720, "highest": 1080}.get(quality, 720)
+            format_spec = (
+                f"bestvideo[height<={height}][vcodec^=avc1]+bestaudio[ext=m4a]"
+                f"/bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+            )
+            if quality == "highest":
+                format_spec += "/best"
 
             cmd = [
                 self._yt_dlp_path,
@@ -107,8 +110,6 @@ class YouTubeVideoDownloader(PlatformDownloader):
                 "--print-json",
                 "--merge-output-format", "mp4",
                 "--force-overwrites",  # Overwrite existing files
-                # Workaround for YouTube SABR streaming issues
-                "--extractor-args", "youtube:player_client=web",
                 # Parallel fragment downloads
                 "--concurrent-fragments", "16",
                 "--fragment-retries", "5",
