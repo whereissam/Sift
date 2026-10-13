@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +18,17 @@ from sift_core.fetch.downloader import DownloaderFactory
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/schedule", tags=["schedule"], dependencies=[Depends(verify_api_key)])
+
+
+def _to_naive_utc(value: datetime) -> datetime:
+    """Naive UTC, the form scheduled_at is stored and compared in.
+
+    A naive input is taken as UTC. An aware one is converted; dropping its
+    offset instead made 10:00+08:00 run at 10:00 UTC, eight hours late.
+    """
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 @router.post("/download", response_model=ScheduledJob)
@@ -37,13 +48,7 @@ async def schedule_download(request: ScheduleDownloadRequest):
 
     # Validate scheduled time is in the future
     now = datetime.utcnow()
-    scheduled_at = request.scheduled_at
-    if scheduled_at.tzinfo is None:
-        # Assume UTC if no timezone
-        pass
-    else:
-        # Convert to UTC
-        scheduled_at = scheduled_at.replace(tzinfo=None)
+    scheduled_at = _to_naive_utc(request.scheduled_at)
 
     if scheduled_at <= now:
         raise HTTPException(
@@ -171,8 +176,7 @@ async def update_scheduled_job(
 
     if scheduled_at is not None:
         now = datetime.utcnow()
-        if scheduled_at.tzinfo:
-            scheduled_at = scheduled_at.replace(tzinfo=None)
+        scheduled_at = _to_naive_utc(scheduled_at)
 
         if scheduled_at <= now:
             raise HTTPException(

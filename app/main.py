@@ -206,11 +206,16 @@ async def lifespan(app: FastAPI):
         logger.error(f"Cleanup error: {e}")
 
 
+_docs = get_settings().docs_enabled
 app = FastAPI(
     title="Sift API",
     description="API for downloading audio from X Spaces, Apple Podcasts, and Spotify",
     version="0.2.0",
     lifespan=lifespan,
+    # With API_KEY set the docs would expose the full API schema to anyone.
+    docs_url="/docs" if _docs else None,
+    redoc_url="/redoc" if _docs else None,
+    openapi_url="/openapi.json" if _docs else None,
 )
 
 # Rate limiting

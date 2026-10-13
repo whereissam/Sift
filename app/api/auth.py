@@ -20,6 +20,17 @@ from starlette.requests import HTTPConnection
 from ..config import get_settings
 
 
+def _key_matches(presented: str | None, expected: str) -> bool:
+    """Constant-time key comparison that also accepts non-ASCII input.
+
+    hmac.compare_digest raises TypeError for non-ASCII str, which surfaced
+    as a 500; comparing the UTF-8 bytes refuses such a key with a 401.
+    """
+    if presented is None:
+        return False
+    return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
+
+
 def _resolve_principal(x_api_key: str):
     """Active principal for a presented key, or None. Never raises — a
     storage hiccup must not lock out the legacy-key path."""
@@ -81,7 +92,7 @@ async def verify_api_key(
             headers={"WWW-Authenticate": "ApiKey"},
         )
 
-    if not hmac.compare_digest(x_api_key, settings.api_key):
+    if not _key_matches(x_api_key, settings.api_key):
         raise HTTPException(
             status_code=401,
             detail="Invalid API key",
@@ -98,7 +109,7 @@ async def verify_master_key(x_api_key: str | None = Header(None)) -> None:
     settings = get_settings()
     if settings.api_key is None:
         return
-    if x_api_key is None or not hmac.compare_digest(x_api_key, settings.api_key):
+    if not _key_matches(x_api_key, settings.api_key):
         raise HTTPException(
             status_code=403,
             detail="Principal management requires the master API key",

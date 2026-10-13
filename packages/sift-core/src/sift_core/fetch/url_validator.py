@@ -24,8 +24,30 @@ BLOCKED_NETWORKS = [
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("fc00::/7"),
     ipaddress.ip_network("fe80::/10"),
+    ipaddress.ip_network("fec0::/10"),  # deprecated site-local
     ipaddress.ip_network("::ffff:0:0/96"),  # IPv4-mapped IPv6
 ]
+
+
+# IPv6 prefixes that carry an IPv4 address in their low 32 bits.
+_NAT64_PREFIXES = (
+    ipaddress.ip_network("64:ff9b::/96"),  # well-known NAT64 (RFC 6052)
+    ipaddress.ip_network("64:ff9b:1::/48"),  # local-use NAT64 (RFC 8215)
+)
+_IPV4_COMPATIBLE = ipaddress.ip_network("::/96")  # deprecated ::a.b.c.d
+
+
+def _embedded_ipv4(ip: ipaddress.IPv6Address) -> ipaddress.IPv4Address | None:
+    """The IPv4 address an IPv6 address tunnels to, if it encodes one."""
+    if ip.ipv4_mapped:
+        return ip.ipv4_mapped
+    if ip.sixtofour:
+        return ip.sixtofour
+    if ip.teredo:
+        return ip.teredo[1]
+    if any(ip in net for net in _NAT64_PREFIXES) or ip in _IPV4_COMPATIBLE:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    return None
 
 
 def _ip_block_reason(ip_str: str) -> str | None:
@@ -39,6 +61,15 @@ def _ip_block_reason(ip_str: str) -> str | None:
     for network in BLOCKED_NETWORKS:
         if ip in network:
             return "a private/reserved IP address"
+    # NAT64, 6to4, Teredo and ::a.b.c.d reach an IPv4 host: judge that host.
+    if ip.version == 6:
+        embedded = _embedded_ipv4(ip)
+        if embedded is not None:
+            return _ip_block_reason(str(embedded))
+    # Anything else not globally routable: benchmarking (198.18.0.0/15),
+    # IETF protocol assignments (192.0.0.0/24), site-local fec0::/10, ...
+    if not ip.is_global:
+        return "a non-public IP address"
     return None
 
 

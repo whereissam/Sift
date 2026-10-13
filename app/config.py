@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import SettingsConfigDict
 
 from sift_core.settings import IngestSettings, set_settings_provider
@@ -45,6 +46,23 @@ class Settings(IngestSettings):
 
     # API Authentication (optional - if set, requires X-API-Key header)
     api_key: str | None = None
+
+    # Serve /docs, /redoc and /openapi.json. Unset: only while API_KEY is
+    # unset, since a browser cannot send the key header to the docs pages.
+    api_docs: bool | None = None
+
+    @field_validator("api_key")
+    @classmethod
+    def _blank_api_key_is_unset(cls, value: str | None) -> str | None:
+        # `API_KEY=` in .env used to enable auth with an empty key, which an
+        # empty X-API-Key header then matched.
+        if value is None or not value.strip():
+            return None
+        return value
+
+    @property
+    def docs_enabled(self) -> bool:
+        return self.api_docs if self.api_docs is not None else self.api_key is None
 
     # Encryption key for secrets at rest. If unset, a random key is
     # generated into encryption_key_file (default ~/.config/sift/secret.key),

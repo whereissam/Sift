@@ -7,13 +7,21 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 > **Shipped work** — completed phases and their implementation notes moved to
 > [shipped.md](shipped.md). This file is open work only.
 
-## Priority Matrix — 2 open
+## Priority Matrix — 3 open
 
 ### Media output (2026-07-15)
 
 - [x] `to-video`: turn an audio file into a YouTube-ready MP4 (still image …
   - [ ] Follow-up: `--image` custom-image CLI flag (Python API already accepts `image`)
   - [ ] Follow-up: direct URL input for `to-video` (currently local files only)
+
+### Bugs
+
+- [ ] Two jobs for the same video share one output name
+      (`%(title)s [%(id)s].ext`), so converting one deletes the other's file:
+      a batch m4a disappeared when a scheduled mp3 of the same video
+      converted with `keep_original=False` (seen 2026-10-13). Give each job
+      its own name or directory.
 
 ### v2.0 — AI-Native Intelligence (Next)
 
@@ -43,21 +51,19 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 
 ---
 
-## Security audit follow-ups (2026-10-13) — 13 open
+## Security audit follow-ups (2026-10-13) — 9 open
 
 Hardening notes from the 2026-10 audit, not fixed with its findings (those
 are in [shipped.md](shipped.md#security-hardening)).
 
-- [ ] Install `SlowAPIMiddleware` so `default_limits` apply; cap `/translate`
-      input and record translate/sentiment/extract spend in the budget ledger
-- [ ] Turn on `PRAGMA foreign_keys` so deleting a job removes its chunks,
-      embeddings, claims and annotations
-- [ ] Auth edge cases: empty `API_KEY=` matches an empty header; a non-ASCII
-      key header returns 500; `/docs` and `/openapi.json` are unauthenticated
-- [ ] Scope idempotency keys to the calling principal, not `"default"`
-- [ ] Require and session-bind the cloud OAuth `state`
-- [ ] `validate_url_ssrf`: also block `::a.b.c.d`, NAT64, 6to4,
-      198.18.0.0/15, 192.0.0.0/24, fec0::/10
+- [ ] Default rate limit: `default_limits` never apply (no `SlowAPIMiddleware`),
+      but the 60/minute default would throttle the web UI's job polling —
+      exempt GETs or raise the default before installing it
+- [ ] Record translate/sentiment/extract LLM spend in the budget ledger
+- [ ] Deleting a job leaves its chunks, embeddings, claims and annotations.
+      `PRAGMA foreign_keys` alone is not the fix (only `annotations` cascades
+      from `jobs`, and it would start enforcing the non-cascading keys):
+      delete the derived rows explicitly, keeping shared entities
 - [ ] S3: pin the validated IP for botocore (the per-request re-check narrows
       but does not close the DNS-rebinding window)
 - [ ] Live transcription: decode incrementally instead of re-decoding the
@@ -69,8 +75,6 @@ are in [shipped.md](shipped.md#security-hardening)).
       `X-API-Key` to a non-loopback `http://` server
 - [ ] Tauri webview: add a CSP (React's `javascript:` URL sanitising is the
       only backstop today)
-- [ ] Scheduled jobs: the queue never gets a processor; retry is accepted for
-      in-progress jobs; `scheduled_at` drops its timezone
 - [ ] Re-run the Ollama/Whisper exposure and DNS-rebinding checks against a
       live deployment (unverified in the audit sandbox)
 

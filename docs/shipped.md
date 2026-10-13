@@ -65,6 +65,19 @@ Second audit (security-audit skill, run 2026-10-12 on 406ba52). Fixed 2026-10-13
 - [x] No env LLM key sent to a caller-chosen `base_url`; Whisper/Ollama
       published on loopback only in Compose
 
+Audit follow-ups (2026-10-13):
+
+- [x] Queued jobs ran nowhere: the queue had no processor, so batch and
+      scheduled downloads were dropped. Now run via `WorkflowProcessor`;
+      startup recovery skips future-scheduled jobs; `scheduled_at` offsets
+      are converted to UTC; retry only for failed jobs
+- [x] Blank `API_KEY=` is unset; non-ASCII keys are a 401; docs off while
+      `API_KEY` is set (`API_DOCS` to override)
+- [x] `validate_url_ssrf`: NAT64/6to4/Teredo/`::a.b.c.d` judged by their IPv4
+      host; all non-global addresses refused
+- [x] `/translate` capped at 100k chars, 5/minute; idempotency keys per
+      principal; server-issued single-use OAuth `state`
+
 ## P1: Speaker Diarization (Who Spoke When) ✅ COMPLETED
 
 **Goal:** Identify different speakers in transcriptions, especially for X Spaces and Podcasts.

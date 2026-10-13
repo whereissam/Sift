@@ -29,8 +29,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["ingestion"], dependencies=[Depends(verify_api_key)])
 
-# Single-key auth today; per-key principals arrive with Slice 4.
-_PRINCIPAL = "default"
+# Idempotency namespace for the master key and open (no API_KEY) access.
+_DEFAULT_PRINCIPAL = "default"
+
+
+def _idempotency_principal(request: Request) -> str:
+    """Whose Idempotency-Key namespace this request uses.
+
+    Each principal key gets its own, so one principal cannot replay (and
+    read back) another's job by reusing its key.
+    """
+    principal = getattr(request.state, "principal", None)
+    return principal["principal_id"] if principal else _DEFAULT_PRINCIPAL
 _ENDPOINT = "POST /v1/ingestions"
 
 _STAGE_BY_STATUS = {
@@ -102,9 +112,10 @@ async def create_ingestion(
 
     store = get_job_store()
     request_hash = _request_hash(body)
+    principal_id = _idempotency_principal(request)
 
     if idempotency_key:
-        existing = store.get_idempotency_record(_PRINCIPAL, _ENDPOINT, idempotency_key)
+        existing = store.get_idempotency_record(principal_id, _ENDPOINT, idempotency_key)
         if existing:
             if existing["request_hash"] != request_hash:
                 raise HTTPException(
@@ -134,7 +145,7 @@ async def create_ingestion(
 
     if idempotency_key:
         store.record_idempotency_key(
-            _PRINCIPAL, _ENDPOINT, idempotency_key, request_hash, job_id
+            principal_id, _ENDPOINT, idempotency_key, request_hash, job_id
         )
 
     # Cache hit: the canonical source already has a satisfying transcript.
