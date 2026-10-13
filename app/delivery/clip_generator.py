@@ -99,6 +99,9 @@ class ClipGenerationResult:
     error: Optional[str] = None
 
 
+# Sent instead of letting LiteLLM pick an env key for a caller-chosen base_url.
+NO_API_KEY = "sk-no-key"
+
 class LiteLLMProvider:
     """Unified LLM provider using LiteLLM for multiple backends."""
 
@@ -133,6 +136,12 @@ class LiteLLMProvider:
 
         if self.api_key:
             kwargs["api_key"] = self.api_key
+        elif self.base_url and not self.model.startswith("ollama/"):
+            # With no key, LiteLLM falls back to the provider's env key
+            # (OPENAI_API_KEY, ...) and would send it to this base_url,
+            # which can come from an API caller. Keyless local servers
+            # ignore the placeholder.
+            kwargs["api_key"] = NO_API_KEY
         if self.base_url:
             kwargs["base_url"] = self.base_url
 
