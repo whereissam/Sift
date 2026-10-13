@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches
 from ..exceptions import SiftError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,9 @@ class XiaohongshuVideoDownloader(PlatformDownloader):
     """Downloads videos from Xiaohongshu (小红书/RED) using yt-dlp."""
 
     PLATFORM = Platform.XIAOHONGSHU
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("xiaohongshu.com", "xhslink.com", "xhs.cn")
 
     # URL patterns for Xiaohongshu posts
     URL_PATTERNS = [
@@ -53,11 +56,9 @@ class XiaohongshuVideoDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Xiaohongshu URL."""
-        # Check standard patterns
-        if any(re.search(pattern, url) for pattern in cls.URL_PATTERNS):
-            return True
-        # Also check for xiaohongshu.com or xhslink.com in URL
-        return "xiaohongshu.com" in url or "xhslink.com" in url or "xhs.cn" in url
+        # Any page on a Xiaohongshu host; extract_content_id falls back to a
+        # hash for share links that match no pattern.
+        return url_host_matches(url, cls.HOSTS)
 
     @classmethod
     def extract_content_id(cls, url: str) -> str:
@@ -128,7 +129,11 @@ class XiaohongshuVideoDownloader(PlatformDownloader):
                 "--fragment-retries", "5",
             ]
 
-            cmd.append(url)
+            # "--" ends option parsing, so the URL can never be read as a
+
+            # yt-dlp option.
+
+            cmd.extend(["--", url])
 
             logger.info("Running yt-dlp for Xiaohongshu video...")
 
@@ -244,6 +249,7 @@ class XiaohongshuVideoDownloader(PlatformDownloader):
                 "--print-json",
                 "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "--add-header", "Referer:https://www.xiaohongshu.com/",
+                "--",
                 url,
             ]
 

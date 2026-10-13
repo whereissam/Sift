@@ -15,6 +15,7 @@ against an in-process FastAPI app (ASGI transport) with no network.
 from __future__ import annotations
 
 from typing import Any, Optional
+from urllib.parse import quote
 
 import httpx
 
@@ -31,6 +32,21 @@ class SiftAPIError(Exception):
     def __init__(self, message: str, *, status: Optional[int] = None):
         super().__init__(message)
         self.status = status
+
+
+def _seg(value: Any) -> str:
+    """An id as exactly one URL path segment.
+
+    Ids come from the agent driving the MCP tools, and steered or mistaken
+    input like ``../cleanup?delete_all=true#`` used to reach other API
+    endpoints with the operator's key. Everything is percent-encoded, and the
+    dot segments httpx would resolve are refused.
+    """
+    if isinstance(value, int) and not isinstance(value, bool):
+        value = str(value)
+    if not isinstance(value, str) or value.strip() in ("", ".", ".."):
+        raise SiftAPIError(f"Invalid id: {value!r}", status=400)
+    return quote(value, safe="")
 
 
 class SiftClient:
@@ -113,7 +129,7 @@ class SiftClient:
 
     async def get_transcription(self, job_id: str) -> dict:
         """GET /api/transcribe/{job_id} — full job incl. segments + text."""
-        _, data = await self._request("GET", f"/api/transcribe/{job_id}")
+        _, data = await self._request("GET", f"/api/transcribe/{_seg(job_id)}")
         return data
 
     # ===== summary / clips =====
@@ -122,14 +138,14 @@ class SiftClient:
         """POST /api/summarize/job/{job_id}?summary_type=… (generate-on-demand)."""
         _, data = await self._request(
             "POST",
-            f"/api/summarize/job/{job_id}",
+            f"/api/summarize/job/{_seg(job_id)}",
             params={"summary_type": summary_type},
         )
         return data
 
     async def get_clips(self, job_id: str) -> dict:
         """GET /api/jobs/{job_id}/clips — previously generated clips."""
-        _, data = await self._request("GET", f"/api/jobs/{job_id}/clips")
+        _, data = await self._request("GET", f"/api/jobs/{_seg(job_id)}/clips")
         return data
 
     # ===== knowledge (P18) =====
@@ -141,20 +157,20 @@ class SiftClient:
         caller can tell a cached result (200) from a still-extracting one (202)."""
         return await self._request(
             "GET",
-            f"/api/jobs/{job_id}/knowledge",
+            f"/api/jobs/{_seg(job_id)}/knowledge",
             params={"min_confidence": min_confidence},
         )
 
     async def get_entity(self, id_or_slug: str) -> dict:
-        _, data = await self._request("GET", f"/api/entities/{id_or_slug}")
+        _, data = await self._request("GET", f"/api/entities/{_seg(id_or_slug)}")
         return data
 
     async def get_topic(self, topic_id: str) -> dict:
-        _, data = await self._request("GET", f"/api/topics/{topic_id}")
+        _, data = await self._request("GET", f"/api/topics/{_seg(topic_id)}")
         return data
 
     async def get_prediction(self, claim_id: str) -> dict:
-        _, data = await self._request("GET", f"/api/predictions/{claim_id}")
+        _, data = await self._request("GET", f"/api/predictions/{_seg(claim_id)}")
         return data
 
     # ===== search (P10) =====
@@ -168,7 +184,7 @@ class SiftClient:
 
     async def ask_job(self, job_id: str, body: dict) -> dict:
         """POST /api/jobs/{job_id}/ask — grounded Q&A over one episode."""
-        _, data = await self._request("POST", f"/api/jobs/{job_id}/ask", json=body)
+        _, data = await self._request("POST", f"/api/jobs/{_seg(job_id)}/ask", json=body)
         return data
 
     # ===== contradictions (P13) =====
@@ -176,7 +192,7 @@ class SiftClient:
     async def analyze_contradictions(self, job_id: str) -> dict:
         """POST /api/jobs/{job_id}/analyze-contradictions."""
         _, data = await self._request(
-            "POST", f"/api/jobs/{job_id}/analyze-contradictions"
+            "POST", f"/api/jobs/{_seg(job_id)}/analyze-contradictions"
         )
         return data
 
@@ -191,7 +207,7 @@ class SiftClient:
         """GET /api/jobs/{job_id}/contradictions."""
         _, data = await self._request(
             "GET",
-            f"/api/jobs/{job_id}/contradictions",
+            f"/api/jobs/{_seg(job_id)}/contradictions",
             params={"min_confidence": min_confidence},
         )
         return data
@@ -200,7 +216,7 @@ class SiftClient:
 
     async def export_job(self, job_id: str, body: dict) -> dict:
         """POST /api/jobs/{job_id}/export — render + (optionally) write a note."""
-        _, data = await self._request("POST", f"/api/jobs/{job_id}/export", json=body)
+        _, data = await self._request("POST", f"/api/jobs/{_seg(job_id)}/export", json=body)
         return data
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches
 from ..exceptions import SiftError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,9 @@ class XimalayaDownloader(PlatformDownloader):
     """
 
     PLATFORM = Platform.XIMALAYA
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("ximalaya.com",)
 
     # URL patterns for Ximalaya single episodes ("sounds").
     URL_PATTERNS = [
@@ -54,7 +57,7 @@ class XimalayaDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Handle any ximalaya.com URL so we can return a clear message."""
-        return "ximalaya.com" in url
+        return url_host_matches(url, cls.HOSTS)
 
     @classmethod
     def extract_content_id(cls, url: str) -> str:
@@ -114,7 +117,11 @@ class XimalayaDownloader(PlatformDownloader):
                 quality_map = {"low": "64K", "medium": "128K", "high": "192K", "highest": "320K"}
                 cmd.extend(["--audio-quality", quality_map.get(quality, "192K")])
 
-            cmd.append(url)
+            # "--" ends option parsing, so the URL can never be read as a
+
+            # yt-dlp option.
+
+            cmd.extend(["--", url])
 
             logger.info("Running yt-dlp for Ximalaya...")
 
@@ -220,6 +227,7 @@ class XimalayaDownloader(PlatformDownloader):
                 "--no-playlist",
                 "--no-download",
                 "--print-json",
+                "--",
                 url,
             ]
 

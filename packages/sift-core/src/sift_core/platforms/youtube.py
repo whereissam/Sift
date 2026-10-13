@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches
 from ..exceptions import SiftError, ContentNotAvailableError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,9 @@ class YouTubeDownloader(PlatformDownloader):
     """Downloads audio from YouTube videos using yt-dlp."""
 
     PLATFORM = Platform.YOUTUBE
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("youtube.com", "youtu.be")
 
     # URL patterns for YouTube
     URL_PATTERNS = [
@@ -64,7 +67,9 @@ class YouTubeDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid YouTube URL."""
-        return any(re.search(pattern, url) for pattern in cls.URL_PATTERNS)
+        return url_host_matches(url, cls.HOSTS) and any(
+            re.search(pattern, url) for pattern in cls.URL_PATTERNS
+        )
 
     @classmethod
     def extract_content_id(cls, url: str) -> str:
@@ -135,7 +140,11 @@ class YouTubeDownloader(PlatformDownloader):
 
             cmd.extend(youtube_cookie_args(self.settings))
 
-            cmd.append(url)
+            # "--" ends option parsing, so the URL can never be read as a
+
+            # yt-dlp option.
+
+            cmd.extend(["--", url])
 
             logger.info("Running yt-dlp for YouTube...")
 
@@ -265,6 +274,7 @@ class YouTubeDownloader(PlatformDownloader):
                 # auth (age-restricted, or a bot-checked IP) while the download
                 # path succeeds.
                 *youtube_cookie_args(self.settings),
+                "--",
                 url,
             ]
 

@@ -5,7 +5,11 @@ import logging
 import time
 from pathlib import Path
 from typing import Callable, Optional
+from urllib.parse import urlsplit
 
+from sift_core.fetch.url_validator import validate_url_ssrf
+
+from ...config import get_settings
 from .base import (
     CloudProvider,
     CloudUploadResult,
@@ -15,6 +19,50 @@ from .base import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _operator_allowed(netloc: str, host: str) -> bool:
+    allowed = {
+        e.strip().lower() for e in get_settings().s3_allowed_endpoints.split(",") if e.strip()
+    }
+    return netloc.lower() in allowed or host in allowed
+
+
+def validate_endpoint_url(endpoint_url: Optional[str]) -> None:
+    """Refuse an S3 endpoint_url that points at a private or internal address.
+
+    endpoint_url comes from API input, and every S3 call (validate, list,
+    upload, delete) sends a signed request to it. Self-hosted endpoints on
+    private addresses are allowed only through S3_ALLOWED_ENDPOINTS.
+
+    Raises:
+        ValueError: if the endpoint is malformed or not allowed.
+    """
+    if endpoint_url is None:
+        return
+    if not isinstance(endpoint_url, str):
+        raise ValueError("endpoint_url must be a string")
+    parts = urlsplit(endpoint_url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("endpoint_url must be an http(s) URL")
+    if _operator_allowed(parts.netloc, parts.hostname.lower()):
+        return
+    ok, error = validate_url_ssrf(endpoint_url)
+    if not ok:
+        raise ValueError(
+            f"endpoint_url not allowed: {error}. "
+            "Add it to S3_ALLOWED_ENDPOINTS to use a private endpoint."
+        )
+
+
+def _recheck_endpoint(request, **kwargs) -> None:
+    """botocore before-send hook: re-validate the host of every request.
+
+    The endpoint is checked when the client is built, but DNS can change
+    afterwards; checking again right before each send narrows that window.
+    """
+    parts = urlsplit(request.url)
+    validate_endpoint_url(f"{parts.scheme}://{parts.netloc}")
 
 
 class S3Provider(CloudProvider):
@@ -53,6 +101,8 @@ class S3Provider(CloudProvider):
 
             credentials = self.config.credentials
             settings = self.config.settings
+            # Providers also load from the DB and env, not only the API.
+            validate_endpoint_url(settings.get("endpoint_url"))
 
             boto_config = BotoConfig(
                 signature_version="s3v4",
@@ -67,6 +117,8 @@ class S3Provider(CloudProvider):
                 endpoint_url=settings.get("endpoint_url"),
                 config=boto_config,
             )
+            if settings.get("endpoint_url"):
+                self._client.meta.events.register("before-send.s3", _recheck_endpoint)
 
         return self._client
 

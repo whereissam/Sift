@@ -49,13 +49,27 @@ network, configure these first:
 - **`API_KEY`** — set it to require an `X-API-Key` header on every request. With
   no key set, the API is open to anyone who can reach it. The Docker Compose
   setup now *requires* `API_KEY` because the container binds `0.0.0.0`.
-- **`ENCRYPTION_KEY`** — set it so stored third-party API keys are encrypted at
-  rest with a strong key. Without it, Sift falls back to a predictable key and
-  logs a warning on startup.
+- **`ENCRYPTION_KEY`** — the key for stored third-party API keys and cloud
+  credentials. Without it, Sift generates a random key into
+  `ENCRYPTION_KEY_FILE` (default `~/.config/sift/secret.key`; Docker Compose
+  uses `./data/secret.key`), kept apart from the database. Secrets written by
+  older versions under the old path-derived key are re-encrypted on startup.
+- **`ALLOWED_HOSTS`** — host names the API answers to. Bound to loopback, it
+  answers only `localhost`/`127.0.0.1`/`::1` (blocking DNS rebinding); list
+  your names here when serving it under another one.
+- **`TELEGRAM_ALLOWED_USER_IDS`** — the bot refuses every Telegram user not
+  listed here.
+- **`S3_ALLOWED_ENDPOINTS`** — S3 `endpoint_url`s on private addresses (e.g. a
+  self-hosted MinIO) must be listed here; others must resolve publicly.
 - **`TELEGRAM_WEBHOOK_SECRET`** — required if you run the Telegram bot in webhook
   mode; incoming updates are rejected without a matching secret.
 - **TLS** — terminate HTTPS at a reverse proxy. The app emits HSTS and a
   restrictive Content-Security-Policy, but does not terminate TLS itself.
+
+Independent of `API_KEY`, the API refuses state-changing requests and
+WebSocket connections from browser origins other than `CORS_ORIGINS`, the
+browser extensions and the desktop app, so other websites cannot drive a local
+instance.
 
 ## Threat Model & Scope
 

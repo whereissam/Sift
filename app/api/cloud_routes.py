@@ -101,6 +101,14 @@ async def create_provider(request: ProviderCreateRequest):
                    f"Supported: s3, google_drive, dropbox",
         )
 
+    if provider_type == ProviderType.S3:
+        from ..delivery.cloud.s3 import validate_endpoint_url
+
+        try:
+            validate_endpoint_url((request.settings or {}).get("endpoint_url"))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     manager = get_export_manager()
 
     config = ProviderConfig(

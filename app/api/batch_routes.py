@@ -1,5 +1,6 @@
 """API routes for batch download operations."""
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
@@ -18,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/batch", tags=["batch"], dependencies=[Depends(verify_api_key)])
 
+# One batch writes a job row per URL; unbounded lists froze the API.
+MAX_BATCH_URLS = 500
+
 
 @router.post("/download", response_model=BatchResponse)
 async def create_batch_download(
@@ -32,7 +36,9 @@ async def create_batch_download(
     """
     batch_manager = get_batch_manager()
 
-    batch_id, job_ids = batch_manager.create_batch(
+    # Per-URL SQLite writes are blocking; keep them off the event loop.
+    batch_id, job_ids = await asyncio.to_thread(
+        batch_manager.create_batch,
         urls=request.urls,
         name=request.name,
         priority=request.priority,
@@ -97,10 +103,16 @@ async def create_batch_from_file(
             status_code=400,
             detail="No valid URLs found in the uploaded file",
         )
+    if len(urls) > MAX_BATCH_URLS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Too many URLs: {len(urls)} (maximum {MAX_BATCH_URLS} per batch)",
+        )
 
     batch_manager = get_batch_manager()
 
-    batch_id, job_ids = batch_manager.create_batch(
+    batch_id, job_ids = await asyncio.to_thread(
+        batch_manager.create_batch,
         urls=urls,
         name=name or f"Uploaded batch ({len(urls)} URLs)",
         priority=priority,

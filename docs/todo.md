@@ -43,6 +43,39 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 
 ---
 
+## Security audit follow-ups (2026-10-13) — 13 open
+
+Hardening notes from the 2026-10 audit, not fixed with its findings (those
+are in [shipped.md](shipped.md#security-hardening)).
+
+- [ ] Install `SlowAPIMiddleware` so `default_limits` apply; cap `/translate`
+      input and record translate/sentiment/extract spend in the budget ledger
+- [ ] Turn on `PRAGMA foreign_keys` so deleting a job removes its chunks,
+      embeddings, claims and annotations
+- [ ] Auth edge cases: empty `API_KEY=` matches an empty header; a non-ASCII
+      key header returns 500; `/docs` and `/openapi.json` are unauthenticated
+- [ ] Scope idempotency keys to the calling principal, not `"default"`
+- [ ] Require and session-bind the cloud OAuth `state`
+- [ ] `validate_url_ssrf`: also block `::a.b.c.d`, NAT64, 6to4,
+      198.18.0.0/15, 192.0.0.0/24, fec0::/10
+- [ ] S3: pin the validated IP for botocore (the per-request re-check narrows
+      but does not close the DNS-rebinding window)
+- [ ] Live transcription: decode incrementally instead of re-decoding the
+      whole stream
+- [ ] Supply chain: pin Actions by SHA and add a `permissions:` block;
+      replace `curl | sh` for deno; install from `uv.lock`; checksum in
+      `scripts/download_ffmpeg.py`; pin `wxt` instead of `latest`
+- [ ] Extensions: match platforms on the parsed hostname; warn before sending
+      `X-API-Key` to a non-loopback `http://` server
+- [ ] Tauri webview: add a CSP (React's `javascript:` URL sanitising is the
+      only backstop today)
+- [ ] Scheduled jobs: the queue never gets a processor; retry is accepted for
+      in-progress jobs; `scheduled_at` drops its timezone
+- [ ] Re-run the Ollama/Whisper exposure and DNS-rebinding checks against a
+      live deployment (unverified in the audit sandbox)
+
+---
+
 ## P0: Smart Metadata & Tagging ✅ COMPLETED — 1 open
 
 _Shipped — see [shipped.md](shipped.md). Remaining:_

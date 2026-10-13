@@ -8,13 +8,35 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from .auth import verify_api_key
-from sift_core.transcribe.realtime_transcriber import RealtimeTranscriptionSession
+from sift_core.transcribe.realtime_transcriber import (
+    RealtimeTranscriptionSession,
+    SessionLimitError,
+)
 from ..knowledge.transcript_polisher import TranscriptPolisher
 from sift_core.transcribe.transcriber import WhisperModel
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["realtime"], dependencies=[Depends(verify_api_key)])
+
+# Each live session runs ffmpeg and Whisper in the shared API process.
+MAX_LIVE_SESSIONS = 4
+# MediaRecorder sends a chunk every second or so; nothing honest is near this.
+MAX_AUDIO_MESSAGE_BYTES = 4 * 1024 * 1024
+MIN_CHUNK_SECONDS, MAX_CHUNK_SECONDS = 1.0, 30.0
+
+_live_sessions = 0
+
+
+def _clamp_chunk_duration(value) -> float:
+    """Client-supplied min_chunk_duration, limited to a sane range."""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return 3.0
+    if seconds != seconds:  # NaN
+        return 3.0
+    return min(max(seconds, MIN_CHUNK_SECONDS), MAX_CHUNK_SECONDS)
 
 
 class TranscriptionConfig(BaseModel):
@@ -57,7 +79,17 @@ async def live_transcription(websocket: WebSocket):
         {"type": "complete", "full_text": "...", "segments": [...], "language": "en", "llm_polished": false}
         {"type": "error", "error": "...", "recoverable": true}
     """
+    global _live_sessions
     await websocket.accept()
+    if _live_sessions >= MAX_LIVE_SESSIONS:
+        await websocket.send_json({
+            "type": "error",
+            "error": "Too many live transcription sessions",
+            "recoverable": False,
+        })
+        await websocket.close(code=1013)
+        return
+    _live_sessions += 1
     session: Optional[RealtimeTranscriptionSession] = None
 
     try:
@@ -82,7 +114,7 @@ async def live_transcription(websocket: WebSocket):
                     continue
 
                 language = config.get("language")
-                min_chunk = config.get("min_chunk_duration", 3.0)
+                min_chunk = _clamp_chunk_duration(config.get("min_chunk_duration", 3.0))
                 use_context = config.get("use_context", True)
                 llm_polish = config.get("llm_polish", False)
 
@@ -116,6 +148,14 @@ async def live_transcription(websocket: WebSocket):
                 audio_data = data.get("data")
                 if not audio_data:
                     continue
+                if not isinstance(audio_data, str) or len(audio_data) > MAX_AUDIO_MESSAGE_BYTES * 4 // 3 + 4:
+                    await websocket.send_json({
+                        "type": "error",
+                        "error": "Audio message too large",
+                        "recoverable": False,
+                    })
+                    await websocket.close(code=1009)
+                    break
 
                 try:
                     # Decode base64 audio
@@ -125,6 +165,14 @@ async def live_transcription(websocket: WebSocket):
                     async for result in session.process_audio_chunk(audio_bytes):
                         await websocket.send_json(result)
 
+                except SessionLimitError as e:
+                    await websocket.send_json({
+                        "type": "error",
+                        "error": str(e),
+                        "recoverable": False,
+                    })
+                    await websocket.close(code=1009)
+                    break
                 except Exception as e:
                     logger.error(f"Error processing audio chunk: {e}")
                     await websocket.send_json({
@@ -170,6 +218,7 @@ async def live_transcription(websocket: WebSocket):
         except Exception:
             pass
     finally:
+        _live_sessions -= 1
         if session:
             session.cleanup()
             logger.info("Cleaned up transcription session")

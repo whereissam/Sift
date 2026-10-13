@@ -9,7 +9,7 @@ import httpx
 import feedparser
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, url_host_matches
 from ..exceptions import SiftError, ContentNotFoundError
 from ..fetch.url_validator import safe_get, safe_stream
 
@@ -20,6 +20,9 @@ class ApplePodcastsDownloader(PlatformDownloader):
     """Downloads podcast episodes from Apple Podcasts via RSS feeds."""
 
     PLATFORM = Platform.APPLE_PODCASTS
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("podcasts.apple.com",)
 
     # URL patterns for Apple Podcasts
     URL_PATTERNS = [
@@ -47,7 +50,7 @@ class ApplePodcastsDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Apple Podcasts URL."""
-        return "podcasts.apple.com" in url and "/podcast/" in url
+        return url_host_matches(url, cls.HOSTS) and "/podcast/" in url
 
     @classmethod
     def extract_content_id(cls, url: str) -> tuple[str, Optional[str]]:
