@@ -39,7 +39,8 @@ async def telegram_webhook(request: Request) -> Response:
 
     import hmac
     header_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-    if not hmac.compare_digest(header_secret, _webhook_secret):
+    # Compare bytes: compare_digest raises on non-ASCII str (a 500).
+    if not hmac.compare_digest(header_secret.encode(), _webhook_secret.encode()):
         return Response(content="Unauthorized", status_code=403)
 
     from telegram import Update
