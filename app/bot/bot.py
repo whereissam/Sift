@@ -10,10 +10,12 @@ from typing import Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
+    ApplicationHandlerStop,
     CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
     ContextTypes,
+    TypeHandler,
     filters,
 )
 
@@ -31,6 +33,8 @@ from sift_core import (
 logger = logging.getLogger(__name__)
 
 TELEGRAM_FILE_SIZE_LIMIT_MB = 50
+
+DOWNLOAD_FORMATS = frozenset({"mp3", "m4a", "mp4"})
 
 VIDEO_PLATFORMS = {
     Platform.X_VIDEO,
@@ -75,6 +79,33 @@ class SiftBot:
     def __init__(self, token: str):
         self.token = token
         self.settings = get_settings()
+        self.allowed_user_ids = self.settings.telegram_allowed_ids()
+
+    # ── Access control ────────────────────────────────────────
+
+    async def _require_allowed_user(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Stop every update from a user not in TELEGRAM_ALLOWED_USER_IDS.
+
+        Runs in handler group -1, before any command, callback or URL
+        handler, so a stranger never reaches a download or transcription.
+        """
+        user = update.effective_user
+        if user is not None and user.id in self.allowed_user_ids:
+            return
+        logger.warning(
+            "Ignoring Telegram update from user %s (not in TELEGRAM_ALLOWED_USER_IDS)",
+            user.id if user else None,
+        )
+        if update.callback_query is not None:
+            await update.callback_query.answer()
+        elif update.effective_message is not None and user is not None:
+            # Tell the user their ID so the operator can add it.
+            await update.effective_message.reply_text(
+                f"This bot is private. Your Telegram user ID is {user.id}."
+            )
+        raise ApplicationHandlerStop
 
     # ── Commands ──────────────────────────────────────────────
 
@@ -254,6 +285,8 @@ class SiftBot:
             return
 
         _, url_hash, fmt = parts
+        if fmt not in DOWNLOAD_FORMATS:
+            return
         url = context.user_data.get(f"url:{url_hash}")
         if not url:
             await query.edit_message_text("Session expired. Please send the URL again.")
@@ -509,6 +542,11 @@ class SiftBot:
             .build()
         )
 
+        if not self.allowed_user_ids:
+            logger.warning(
+                "TELEGRAM_ALLOWED_USER_IDS is empty: the bot will refuse every user"
+            )
+        application.add_handler(TypeHandler(Update, self._require_allowed_user), group=-1)
         application.add_handler(CommandHandler("start", self.start_command))
         application.add_handler(CommandHandler("help", self.help_command))
         application.add_handler(CommandHandler("status", self.status_command))

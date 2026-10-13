@@ -176,6 +176,10 @@ More than a download bot — a **research assistant**. Send a link and ask quest
 uv run sift-bot  # Polling mode (local dev)
 ```
 
+The bot only answers the Telegram users listed in `TELEGRAM_ALLOWED_USER_IDS`
+(comma-separated). It refuses everyone while the list is empty, and replies
+to a refused user with their ID so you can add it.
+
 Or run in webhook mode alongside the FastAPI server — set in `.env`:
 
 ```env
@@ -206,6 +210,7 @@ DOWNLOAD_DIR=./output
 # Telegram Bot
 TELEGRAM_BOT_TOKEN=xxx
 TELEGRAM_BOT_MODE=polling         # "polling" or "webhook"
+TELEGRAM_ALLOWED_USER_IDS=123456789  # who may use the bot; empty = nobody
 # TELEGRAM_WEBHOOK_URL=https://yourdomain.com/api/telegram/webhook
 # TELEGRAM_WEBHOOK_SECRET=optional-secret
 
