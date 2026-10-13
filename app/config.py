@@ -37,8 +37,15 @@ class Settings(IngestSettings):
     # Encryption key for secrets at rest (auto-generated if not set)
     encryption_key: str | None = None
 
-    # CORS (comma-separated origins, or "*" for all)
+    # CORS (comma-separated origins, or "*" for all). These origins, the
+    # browser extensions and the Tauri shell are also the only browser origins
+    # allowed to make state-changing requests.
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    # Host names the API answers to (comma-separated, or "*" for any). Unset:
+    # loopback names only when bound to loopback, which blocks DNS rebinding;
+    # any host when bound elsewhere.
+    allowed_hosts: str | None = None
 
     # Rate limiting (requests per minute)
     rate_limit: str = "60/minute"  # Default: 60 requests per minute

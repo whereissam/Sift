@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from .auth import verify_api_key
 
@@ -118,7 +118,8 @@ async def delete_job(job_id: str):
 
 @router.post("/cleanup")
 async def cleanup_storage(
-    max_age_hours: int = 24,
+    # A negative age put the cutoff in the future and deleted every job.
+    max_age_hours: int = Query(24, ge=1),
     delete_all: bool = False,
 ):
     """

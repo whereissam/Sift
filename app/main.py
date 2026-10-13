@@ -15,6 +15,7 @@ from .api import router as api_router
 from .api.ingestion_routes import router as ingestion_router
 from .api.ratelimit import limiter
 from .api.middleware import TimeoutMiddleware, RequestIDMiddleware
+from .api.origin_guard import OriginGuardMiddleware, OriginPolicy, loopback_only_hosts
 from .logging_config import configure_logging, get_logger
 
 # Configure structured logging
@@ -264,6 +265,14 @@ app.add_middleware(TimeoutMiddleware)
 
 # Request ID middleware (for tracing)
 app.add_middleware(RequestIDMiddleware)
+
+# Outermost: refuse cross-site writes/WebSockets and DNS-rebound Host names
+# before anything else runs.
+app.add_middleware(
+    OriginGuardMiddleware,
+    policy=OriginPolicy(_cors_origins),
+    allowed_hosts=loopback_only_hosts(_settings.host, _settings.allowed_hosts),
+)
 
 # Include API routes
 app.include_router(api_router, prefix="/api", tags=["download"])
