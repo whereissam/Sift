@@ -17,12 +17,13 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from sift_core import IngestSettings
+from sift_core.fetch import url_validator
 from sift_core.media import converter as converter_module
 from sift_core.media.converter import AudioConverter
-from sift_core.platforms import discord_audio
 from sift_core.platforms.apple_podcasts import ApplePodcastsDownloader
 from sift_core.platforms.discord_audio import DiscordAudioDownloader
 from sift_core.platforms.xiaoyuzhou import XiaoyuzhouDownloader
@@ -241,10 +242,11 @@ async def test_discord_converts_to_the_requested_output_path(tmp_path, sources, 
     """Discord used to convert its temp file and ignore `output_path`."""
     payload = sources["mp3"].read_bytes()
 
-    async def fake_get(url, **kwargs):
-        return SimpleNamespace(status_code=200, content=payload)
-
-    monkeypatch.setattr(discord_audio, "safe_get", fake_get)
+    # Stub the network at the transport, below safe_get/safe_stream, so the
+    # test holds whichever fetch helper the adapter uses.
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=payload))
+    monkeypatch.setattr(url_validator, "validate_url_ssrf", lambda url: (True, None))
+    monkeypatch.setattr(url_validator, "_PinnedTransport", lambda: transport)
     d = DiscordAudioDownloader(settings=IngestSettings(download_dir=str(tmp_path)))
     out = tmp_path / "voice.m4a"
 
