@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urlsplit
 
-from sift_core.fetch.url_validator import validate_url_ssrf
+from sift_core.fetch.url_validator import pinned_sync_client, validate_url_ssrf
 
 from ...config import get_settings
 from .base import (
@@ -55,14 +55,62 @@ def validate_endpoint_url(endpoint_url: Optional[str]) -> None:
         )
 
 
-def _recheck_endpoint(request, **kwargs) -> None:
-    """botocore before-send hook: re-validate the host of every request.
+def endpoint_needs_pinning(endpoint_url: Optional[str]) -> bool:
+    """A caller-supplied endpoint the operator has not allowlisted."""
+    if not endpoint_url:
+        return False  # AWS itself
+    parts = urlsplit(endpoint_url)
+    return not _operator_allowed(parts.netloc, (parts.hostname or "").lower())
 
-    The endpoint is checked when the client is built, but DNS can change
-    afterwards; checking again right before each send narrows that window.
+
+class _BufferedRaw:
+    """The minimal raw-stream interface botocore reads a response through."""
+
+    def __init__(self, content: bytes):
+        self._content = content
+        self._pos = 0
+
+    def read(self, amt: Optional[int] = None) -> bytes:
+        end = len(self._content) if amt is None else self._pos + amt
+        chunk = self._content[self._pos:end]
+        self._pos += len(chunk)
+        return chunk
+
+    def stream(self, **kwargs):
+        while chunk := self.read(65536):
+            yield chunk
+
+    def close(self) -> None:
+        pass
+
+
+def _send_pinned(request, **kwargs):
+    """botocore before-send hook: perform the request through a pinned client.
+
+    Validating endpoint_url once is not enough: botocore resolves the name
+    again for every connection, so a DNS-rebinding name could pass the check
+    and then reach an internal address. The pinned client validates the IP
+    it actually connects to. Returning a response here makes botocore skip
+    its own HTTP send. The request is already signed; the Host header and
+    TLS SNI keep the hostname.
     """
-    parts = urlsplit(request.url)
-    validate_endpoint_url(f"{parts.scheme}://{parts.netloc}")
+    from botocore.awsrequest import AWSResponse
+
+    body = request.body
+    if hasattr(body, "read"):
+        body = body.read()
+    headers = {
+        k: v.decode() if isinstance(v, bytes) else v
+        for k, v in request.headers.items()
+        if k.lower() != "expect"  # httpx does not do 100-continue
+    }
+    with pinned_sync_client(timeout=120.0) as client:
+        resp = client.request(request.method, request.url, headers=headers, content=body)
+        content = resp.content  # decoded, so drop the encoding header below
+    resp_headers = {
+        k: v for k, v in resp.headers.items() if k.lower() != "content-encoding"
+    }
+    return AWSResponse(request.url, resp.status_code, resp_headers, _BufferedRaw(content))
 
 
 class S3Provider(CloudProvider):
@@ -117,8 +165,8 @@ class S3Provider(CloudProvider):
                 endpoint_url=settings.get("endpoint_url"),
                 config=boto_config,
             )
-            if settings.get("endpoint_url"):
-                self._client.meta.events.register("before-send.s3", _recheck_endpoint)
+            if endpoint_needs_pinning(settings.get("endpoint_url")):
+                self._client.meta.events.register("before-send.s3", _send_pinned)
 
         return self._client
 

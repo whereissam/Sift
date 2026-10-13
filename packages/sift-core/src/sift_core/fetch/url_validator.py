@@ -152,6 +152,26 @@ class _PinnedTransport(httpx.AsyncHTTPTransport):
         return await super().handle_async_request(request)
 
 
+class _PinnedSyncTransport(httpx.HTTPTransport):
+    """Synchronous twin of _PinnedTransport, for callers outside asyncio."""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        ip = _resolve_and_pin(host)
+        if ip != host:
+            request.extensions = dict(request.extensions)
+            request.extensions["sni_hostname"] = host
+            request.url = request.url.copy_with(host=ip)
+        return super().handle_request(request)
+
+
+def pinned_sync_client(**client_kwargs) -> httpx.Client:
+    """Synchronous pinned_client(): connects only to IPs that pass the SSRF check."""
+    client_kwargs["follow_redirects"] = False
+    client_kwargs.setdefault("transport", _PinnedSyncTransport())
+    return httpx.Client(**client_kwargs)
+
+
 def pinned_client(**client_kwargs) -> httpx.AsyncClient:
     """An AsyncClient that connects only to IPs that pass the SSRF check.
 
