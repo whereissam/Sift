@@ -111,11 +111,12 @@ async def delete_job(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Delete associated files
+    # Delete associated files, except ones another job also points to
+    # (jobs for the same video share one output name).
     for path_field in ["raw_file_path", "converted_file_path"]:
         if job.get(path_field):
             path = Path(job[path_field])
-            if path.exists():
+            if path.exists() and not job_store.file_used_by_other_job(path, job_id):
                 path.unlink()
 
     # Delete from database
