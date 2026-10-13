@@ -47,6 +47,8 @@ _MODEL_PRICE_PER_1K: dict[str, float] = {
     "claude-3-opus": 0.045,
     "deepseek": 0.0006,
     "llama": 0.0,  # local (ollama/groq-free tier) — treat as free
+    "ollama/": 0.0,  # any local Ollama model
+    "translategemma": 0.0,  # local TranslateGemma via Ollama
     "gemini-1.5-flash": 0.0004,
     "gemini-1.5-pro": 0.0035,
 }
@@ -180,3 +182,19 @@ def get_budget_tracker() -> KnowledgeBudgetTracker:
     if _tracker is None:
         _tracker = KnowledgeBudgetTracker()
     return _tracker
+
+
+def record_llm_spend(result) -> None:
+    """Add an interactive LLM call's estimated cost to today's ledger.
+
+    For routes (translate, sentiment, extract, summarize) whose results carry
+    ``model`` and ``tokens_used``. Their spend used to go unrecorded, so the
+    daily budget only saw the background worker. Never raises.
+    """
+    try:
+        tokens = getattr(result, "tokens_used", None) or 0
+        model = getattr(result, "model", None)
+        if tokens and model:
+            get_budget_tracker().record(estimate_cost_usd(model, tokens))
+    except Exception:
+        logger.debug("Could not record LLM spend", exc_info=True)

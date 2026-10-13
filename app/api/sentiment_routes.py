@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .auth import verify_api_key
+from ..knowledge.knowledge_budget import record_llm_spend
 from .ratelimit import limiter
 from .schemas import (
     AnalyzeSentimentRequest,
@@ -187,6 +188,7 @@ async def analyze_sentiment(request: Request, job_id: str, body: AnalyzeSentimen
         job_id=job_id,
         window_size=body.window_size,
     )
+    record_llm_spend(result)
 
     if not result.success:
         return SentimentResponse(
