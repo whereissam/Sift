@@ -1,15 +1,4 @@
-// Supported URL patterns
-const SUPPORTED_PATTERNS = [
-  { pattern: /x\.com\/i\/spaces\//, type: 'x_spaces', name: 'X Space' },
-  { pattern: /twitter\.com\/i\/spaces\//, type: 'x_spaces', name: 'X Space' },
-  { pattern: /x\.com\/\w+\/status\//, type: 'x_video', name: 'X Video' },
-  { pattern: /twitter\.com\/\w+\/status\//, type: 'x_video', name: 'X Video' },
-  { pattern: /youtube\.com\/watch/, type: 'youtube', name: 'YouTube Video' },
-  { pattern: /youtu\.be\//, type: 'youtube', name: 'YouTube Video' },
-  { pattern: /podcasts\.apple\.com\/.*\/podcast\//, type: 'apple_podcasts', name: 'Apple Podcast' },
-  { pattern: /open\.spotify\.com\/episode\//, type: 'spotify', name: 'Spotify Episode' },
-  { pattern: /xiaoyuzhoufm\.com\/episode\//, type: 'xiaoyuzhou', name: '小宇宙 Episode' },
-];
+// Platform detection lives in platforms.js (loaded first by popup.html).
 
 // Default server URL
 const DEFAULT_SERVER = 'http://localhost:8000';
@@ -61,12 +50,7 @@ async function init() {
 }
 
 function checkSupported(url) {
-  for (const p of SUPPORTED_PATTERNS) {
-    if (p.pattern.test(url)) {
-      return p;
-    }
-  }
-  return null;
+  return SiftPlatforms.detect(url);
 }
 
 function showMessage(text, isError = false) {

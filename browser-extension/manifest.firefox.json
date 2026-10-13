@@ -33,7 +33,7 @@
         "*://open.spotify.com/*",
         "*://www.xiaoyuzhoufm.com/*"
       ],
-      "js": ["content.js"],
+      "js": ["platforms.js", "content.js"],
       "run_at": "document_idle"
     }
   ],
