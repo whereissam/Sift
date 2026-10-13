@@ -35,6 +35,17 @@
         <button id="save-btn" class="btn-secondary">Save</button>
       </div>
       <input type="password" id="api-key" class="full" placeholder="API key (only if your server sets one)" />
+      <div id="insecure-key-warning" class="insecure-warning" role="alert" hidden>
+        <p>
+          <strong>Insecure connection.</strong> This server uses plain <code>http://</code> on a
+          non-local host, so your API key would be sent unencrypted and could be read by anyone
+          on the network. Use <code>https://</code> if you can.
+        </p>
+        <label>
+          <input type="checkbox" id="insecure-key-confirm" />
+          <span>Send my API key to <span id="insecure-origin"></span> over HTTP anyway</span>
+        </label>
+      </div>
     </div>
 
     <div class="footer">
