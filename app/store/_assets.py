@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from ..ingest.asset_identity import CanonicalSource, canonical_source_for_job
+from sift_core.asset_identity import CanonicalSource, canonical_source_for_job
 
 logger = logging.getLogger(__name__)
 

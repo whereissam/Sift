@@ -25,7 +25,7 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 def _subtitle_style(request_preset: str | None = None):
     """Configured (or per-request) subtitle style; None disables reflow."""
     from ..config import get_settings
-    from ..ingest.transcribe.subtitles import SubtitleStyle, style_from_settings
+    from sift_core.transcribe.subtitles import SubtitleStyle, style_from_settings
 
     if request_preset:
         return SubtitleStyle.preset(request_preset)
@@ -39,7 +39,7 @@ def _format_srt(segments: list[dict], preset: str | None = None) -> str:
     arrive as 2-3 word cues that flicker, and merging them is what makes the
     output readable.
     """
-    from ..ingest.transcribe.subtitles import format_srt, reflow_to_srt
+    from sift_core.transcribe.subtitles import format_srt, reflow_to_srt
 
     style = _subtitle_style(preset)
     if style is None:
@@ -49,7 +49,7 @@ def _format_srt(segments: list[dict], preset: str | None = None) -> str:
 
 def _format_vtt(segments: list[dict], preset: str | None = None) -> str:
     """WebVTT via the shared reflow writer."""
-    from ..ingest.transcribe.subtitles import format_vtt, reflow_to_vtt
+    from sift_core.transcribe.subtitles import format_vtt, reflow_to_vtt
 
     style = _subtitle_style(preset)
     if style is None:
@@ -59,7 +59,7 @@ def _format_vtt(segments: list[dict], preset: str | None = None) -> str:
 
 def _raw_cues(seg: dict):
     """One cue per source segment, verbatim (`subtitle_reflow=False`)."""
-    from ..ingest.transcribe.subtitles import SubtitleCue
+    from sift_core.transcribe.subtitles import SubtitleCue
 
     start = float(seg.get("start", 0.0) or 0.0)
     end = float(seg.get("end", 0.0) or 0.0)
@@ -82,7 +82,7 @@ async def check_transcript_availability(url: str):
     Returns availability status, platform, and available languages (YouTube).
     """
     import re
-    from ..ingest.fetch.transcript_fetcher import TranscriptFetcher
+    from sift_core.fetch.transcript_fetcher import TranscriptFetcher
 
     fetcher = TranscriptFetcher()
 
@@ -121,7 +121,7 @@ async def fetch_transcript(request: FetchTranscriptRequest):
 
     Returns a completed TranscriptionJob immediately (no background task needed).
     """
-    from ..ingest.fetch.transcript_fetcher import TranscriptFetcher
+    from sift_core.fetch.transcript_fetcher import TranscriptFetcher
 
     fetcher = TranscriptFetcher()
 

@@ -9,7 +9,7 @@ import pytest
 
 import app.store as job_store_pkg
 from app.store import JobType
-from app.ingest.transcribe.transcriber import TranscriptionSegment as CoreSegment
+from sift_core.transcribe.transcriber import TranscriptionSegment as CoreSegment
 
 
 @pytest.fixture
@@ -169,7 +169,7 @@ def test_process_transcription_dual_writes(store, tmp_path, monkeypatch):
     from app.api import transcription_routes
     from app.api.schemas import JobStatus, TranscriptionJob, TranscriptionOutputFormat
     from app.api.transcription_store import transcription_jobs
-    from app.ingest.transcribe import transcription_engine as engine_mod
+    from sift_core.transcribe import transcription_engine as engine_mod
 
     job_id = "api-1"
     job = TranscriptionJob(

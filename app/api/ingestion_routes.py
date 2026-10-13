@@ -15,8 +15,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from ..ingest.asset_identity import canonical_source_for_job
-from ..ingest.fetch.downloader import DownloaderFactory
+from sift_core.asset_identity import canonical_source_for_job
+from sift_core.fetch.downloader import DownloaderFactory
 from ..pipeline.ingestion_service import (
     find_cached_transcript,
     run_ingestion_job,

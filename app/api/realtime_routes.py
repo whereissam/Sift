@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from .auth import verify_api_key
-from ..ingest.transcribe.realtime_transcriber import RealtimeTranscriptionSession
+from sift_core.transcribe.realtime_transcriber import RealtimeTranscriptionSession
 from ..knowledge.transcript_polisher import TranscriptPolisher
-from ..ingest.transcribe.transcriber import WhisperModel
+from sift_core.transcribe.transcriber import WhisperModel
 
 logger = logging.getLogger(__name__)
 

@@ -9,6 +9,8 @@ authors = [
     {name = "Your Name", email = "your@email.com"}
 ]
 dependencies = [
+    # The ingestion core, a workspace member (packages/sift-core).
+    "sift-core",
     "httpx>=0.27.0",
     "aiofiles>=24.1.0",
     "pydantic>=2.0.0",
@@ -79,12 +81,11 @@ mcp = [
 ]
 
 [project.scripts]
-sift = "app.cli:cli"
+# `sift` / `xdownloader` (the CLI) come from sift-core.
 sift-api = "app.main:main"
 sift-bot = "app.bot:run_bot"
 sift-mcp = "app.mcp_server.__main__:main"
 # Backward compatibility aliases
-xdownloader = "app.cli:cli"
 xdownloader-api = "app.main:main"
 xdownloader-bot = "app.bot:run_bot"
 
@@ -102,6 +103,12 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.uv.workspace]
+members = ["packages/sift-core"]
+
+[tool.uv.sources]
+sift-core = { workspace = true }
 
 [tool.uv]
 dev-dependencies = [

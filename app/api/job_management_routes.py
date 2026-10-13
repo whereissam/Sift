@@ -128,7 +128,7 @@ async def cleanup_storage(
     - delete_all: If true, delete ALL checkpoints (use with caution)
     """
     from ..store import get_job_store
-    from ..ingest.transcribe.checkpoint import CheckpointManager
+    from sift_core.transcribe.checkpoint import CheckpointManager
 
     job_store = get_job_store()
     checkpoint_manager = CheckpointManager()
@@ -183,7 +183,7 @@ async def list_backups():
 async def get_storage_info():
     """Get storage usage information."""
     from ..store import get_job_store
-    from ..ingest.transcribe.checkpoint import CheckpointManager
+    from sift_core.transcribe.checkpoint import CheckpointManager
     from ..config import get_settings
 
     settings = get_settings()

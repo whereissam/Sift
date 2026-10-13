@@ -232,7 +232,7 @@ def test_download_endpoint_job_survives_restart(store, db_path, monkeypatch, tmp
     from app.api import auth as auth_module
     from app.api import download_routes
     from app.api.ratelimit import limiter
-    from app.ingest.base import Platform as CorePlatform
+    from sift_core.base import Platform as CorePlatform
 
     class _NoAuth:
         api_key = None

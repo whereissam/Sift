@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 import app.store as job_store_pkg
 from app.store import JobStatus as StoreStatus, JobType
-from app.ingest.transcribe.transcriber import TranscriptionSegment as CoreSegment
+from sift_core.transcribe.transcriber import TranscriptionSegment as CoreSegment
 
 
 @pytest.fixture
@@ -24,8 +24,8 @@ def client(store, monkeypatch):
     from app.api import auth as auth_module
     from app.api import ingestion_routes
     from app.api.ratelimit import limiter
-    from app.ingest.base import Platform as CorePlatform
-    from app.ingest.fetch.downloader import DownloaderFactory
+    from sift_core.base import Platform as CorePlatform
+    from sift_core.fetch.downloader import DownloaderFactory
 
     class _NoAuth:
         api_key = None
@@ -99,7 +99,7 @@ def test_submit_rejects_bad_urls(client, monkeypatch):
     )
     assert resp.status_code == 400
 
-    from app.ingest.fetch.downloader import DownloaderFactory
+    from sift_core.fetch.downloader import DownloaderFactory
 
     monkeypatch.setattr(
         DownloaderFactory, "detect_platform", staticmethod(lambda url: None)
@@ -234,7 +234,7 @@ def test_asset_endpoints(client, store):
 
 def test_runner_transcript_path(store, tmp_path, monkeypatch):
     from app.pipeline import ingestion_service
-    from app.ingest.fetch.downloader import DownloaderFactory
+    from sift_core.fetch.downloader import DownloaderFactory
 
     job = store.create_job(
         "run-1",
@@ -322,7 +322,7 @@ def test_runner_media_only_path(store, monkeypatch):
 
 def test_runner_download_failure_marks_failed(store, monkeypatch):
     from app.pipeline import ingestion_service
-    from app.ingest.fetch.downloader import DownloaderFactory
+    from sift_core.fetch.downloader import DownloaderFactory
 
     store.create_job(
         "run-3",

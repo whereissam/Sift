@@ -92,10 +92,28 @@ make dev-web
 ## CLI Usage
 
 ```bash
-uv run sift "https://x.com/i/spaces/1vOxwdyYrlqKB"
-uv run sift "https://youtube.com/watch?v=xxx" -f mp3
-uv run sift "https://podcasts.apple.com/..." -q highest
+uv run sift download "https://x.com/i/spaces/1vOxwdyYrlqKB"
+uv run sift download "https://youtube.com/watch?v=xxx" -f mp3
+uv run sift download "https://podcasts.apple.com/..." -f mp3 -q highest
 ```
+
+### As a Python library
+
+The ingestion core is its own package, [`sift-core`](packages/sift-core/README.md), and runs without the server, database, or bot.
+Pass settings explicitly, or leave them out to read the same env vars / `.env`:
+
+```python
+import asyncio
+from sift_core import IngestSettings, download_audio, get_metadata
+
+settings = IngestSettings(download_dir="./downloads", youtube_cookies_from_browser="chrome")
+result = asyncio.run(download_audio("https://podcasts.apple.com/...", settings=settings))
+print(result.file_path, result.metadata.title if result.metadata else None)
+```
+
+For agents, `sift-core-mcp` exposes download, metadata, caption fetch and
+transcription as local MCP tools, with no server needed. See
+[sift-core's README](packages/sift-core/README.md#local-mcp-server).
 
 ### Audio → YouTube-ready video
 
@@ -564,7 +582,7 @@ The **[Agentic Pipeline](#agentic-ingest)** makes this entire chain automatic: p
 Five layers, in dependency order. Each may import the ones above it, never the ones below:
 
 ```
-app/ingest/      THE CORE — platforms/ fetch/ media/ transcribe/
+sift_core        THE CORE — packages/sift-core (own package)
 app/store/       SQLite persistence
 app/knowledge/   claims, entities, topics, search, synthesis
 app/delivery/    notes, clips, webhooks, cloud
@@ -572,7 +590,7 @@ app/pipeline/    workflows, queue, scheduler, subscriptions
 app/api/         FastAPI routers · app/mcp_server/ · app/bot/
 ```
 
-`app/ingest/` is the layer everything else is built on — getting media off a platform and turning it into a transcript — and it must stay runnable with nothing above it loaded, so it may not import from any higher layer. `tests/test_layering.py` asserts this per file on every test run, rather than leaving it to discipline. See [Architecture](docs/architecture.md#layers).
+`sift_core` is the layer everything else is built on — getting media off a platform and turning it into a transcript. It ships as its own package so it runs with nothing above it installed, and it may not import the `app` package at all. `tests/test_layering.py` asserts this per file on every test run, rather than leaving it to discipline. See [Architecture](docs/architecture.md#layers).
 
 ## Documentation
 

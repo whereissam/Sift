@@ -190,7 +190,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Sift API")
     try:
         from .store import get_job_store
-        from .ingest.transcribe.checkpoint import CheckpointManager
+        from sift_core.transcribe.checkpoint import CheckpointManager
 
         job_store = get_job_store()
         checkpoint_manager = CheckpointManager()

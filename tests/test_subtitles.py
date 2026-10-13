@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.ingest.transcribe.subtitles import (
+from sift_core.transcribe.subtitles import (
     DEFAULT_STYLE,
     PRESETS,
     ScriptProfile,
@@ -412,7 +412,7 @@ def test_over_long_cue_is_divided_not_left_as_dead_air():
 
 def test_transcriber_srt_is_reflowed(monkeypatch):
     from app.config import get_settings
-    from app.ingest.transcribe.transcriber import AudioTranscriber, TranscriptionSegment
+    from sift_core.transcribe.transcriber import AudioTranscriber, TranscriptionSegment
 
     monkeypatch.setattr(get_settings(), "subtitle_reflow", True)
     segments = [TranscriptionSegment(0, 12, "I went to the store because I needed "
@@ -426,7 +426,7 @@ def test_transcriber_srt_is_reflowed(monkeypatch):
 
 def test_subtitle_reflow_false_restores_the_raw_path(monkeypatch):
     from app.config import get_settings
-    from app.ingest.transcribe.transcriber import AudioTranscriber, TranscriptionSegment
+    from sift_core.transcribe.transcriber import AudioTranscriber, TranscriptionSegment
 
     monkeypatch.setattr(get_settings(), "subtitle_reflow", False)
     long_text = "I went to the store because I needed some milk and eggs today."
@@ -439,7 +439,7 @@ def test_subtitle_reflow_false_restores_the_raw_path(monkeypatch):
 
 def test_transcriber_speaker_srt_is_reflowed(monkeypatch):
     from app.config import get_settings
-    from app.ingest.transcribe.transcriber import AudioTranscriber, TranscriptionSegment
+    from sift_core.transcribe.transcriber import AudioTranscriber, TranscriptionSegment
 
     monkeypatch.setattr(get_settings(), "subtitle_reflow", True)
     out = AudioTranscriber.format_as_srt_with_speakers(
@@ -494,7 +494,7 @@ def test_route_formatter_honours_a_per_request_preset(monkeypatch):
 
 
 def test_style_from_settings_reads_the_flag():
-    from app.ingest.transcribe.subtitles import style_from_settings
+    from sift_core.transcribe.subtitles import style_from_settings
 
     class Off:
         subtitle_reflow = False

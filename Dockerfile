@@ -20,12 +20,15 @@ RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh -s -- -
 # Install uv for faster package management
 RUN pip install uv
 
-# Copy dependency files first for better caching
+# Copy dependency files first for better caching. The ingestion core is a
+# workspace package (packages/sift-core) the app depends on, so it has to be
+# present before the app is installed.
 COPY pyproject.toml ./
 COPY uv.lock* ./
+COPY packages/ ./packages/
 
 # Install dependencies using uv
-RUN uv pip install --system -e .
+RUN uv pip install --system -e ./packages/sift-core -e .
 
 # Copy application code
 COPY app/ ./app/

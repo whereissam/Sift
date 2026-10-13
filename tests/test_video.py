@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.ingest.exceptions import FFmpegError
-from app.ingest.media.video import (
+from sift_core.exceptions import FFmpegError
+from sift_core.media.video import (
     AudioToVideo,
     _default_output_path,
     _resolution_dims,
@@ -21,7 +21,7 @@ from app.ingest.media.video import (
 @pytest.fixture
 def maker(monkeypatch):
     """AudioToVideo with ffmpeg/ffprobe presence faked."""
-    monkeypatch.setattr("app.ingest.media.video.shutil.which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr("sift_core.media.video.shutil.which", lambda name: f"/usr/bin/{name}")
     return AudioToVideo()
 
 
@@ -45,7 +45,7 @@ def test_resolution_dims_unknown_raises():
 
 
 def test_missing_ffmpeg_raises(monkeypatch):
-    monkeypatch.setattr("app.ingest.media.video.shutil.which", lambda name: None)
+    monkeypatch.setattr("sift_core.media.video.shutil.which", lambda name: None)
     with pytest.raises(FFmpegError, match="not found in PATH"):
         AudioToVideo()
 
@@ -211,7 +211,7 @@ def test_preflight_missing_image_raises(maker, tmp_path):
 def test_preflight_unwritable_destination(maker, tmp_path, monkeypatch):
     src = tmp_path / "in.m4a"
     src.write_bytes(b"x")
-    monkeypatch.setattr("app.ingest.media.video.os.access", lambda p, m: False)
+    monkeypatch.setattr("sift_core.media.video.os.access", lambda p, m: False)
     with pytest.raises(FFmpegError, match="not writable"):
         maker._preflight(src, tmp_path / "out.mp4", None)
 
@@ -367,7 +367,7 @@ async def test_create_leaves_no_temp_on_failure(maker, tmp_path):
 
 
 async def test_to_video_command_invokes_create(tmp_path, monkeypatch, capsys):
-    from app import cli
+    from sift_core import cli
 
     src = tmp_path / "in.m4a"
     src.write_bytes(b"audio")
@@ -395,7 +395,7 @@ async def test_to_video_command_invokes_create(tmp_path, monkeypatch, capsys):
 
 
 async def test_to_video_command_missing_input_exits(tmp_path):
-    from app import cli
+    from sift_core import cli
 
     args = SimpleNamespace(input=str(tmp_path / "nope.m4a"), output=None,
                            resolution="720p", fps=2)
@@ -404,7 +404,7 @@ async def test_to_video_command_missing_input_exits(tmp_path):
 
 
 async def test_to_video_command_missing_ffmpeg_exits_cleanly(tmp_path, monkeypatch, capsys):
-    from app import cli
+    from sift_core import cli
 
     src = tmp_path / "in.m4a"
     src.write_bytes(b"audio")

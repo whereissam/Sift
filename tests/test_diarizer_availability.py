@@ -8,7 +8,7 @@ plain bool.
 
 import importlib.util
 
-from app.ingest.transcribe.diarizer import SpeakerDiarizer
+from sift_core.transcribe.diarizer import SpeakerDiarizer
 
 
 def test_is_available_returns_bool_without_raising():

@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.ingest.exceptions import ContentNotFoundError
-from app.ingest.platforms import spotify as spotify_mod
-from app.ingest.platforms.spotify import (
+from sift_core.exceptions import ContentNotFoundError
+from sift_core.platforms import spotify as spotify_mod
+from sift_core.platforms.spotify import (
     ResolvedEpisode,
     SpotifyDownloader,
     _pick_itunes_episode,

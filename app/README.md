@@ -20,7 +20,7 @@ API docs at http://localhost:8000/docs (Swagger UI).
 |---------|--------|-------------|
 | `uv run sift-api` | `app/main.py:main` | FastAPI server |
 | `uv run sift-bot` | `app/bot/bot.py:run_bot` | Telegram bot (polling) |
-| `uv run sift` | `app/cli.py:cli` | CLI tool |
+| `uv run sift` | `sift_core/cli.py:cli` (packages/sift-core) | CLI tool |
 | `uv run sift-mcp` | `app/mcp_server/__main__:main` | MCP server (P19) — exposes Sift to Claude Desktop / Cursor / agents |
 
 ## Module Structure

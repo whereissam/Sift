@@ -60,7 +60,7 @@ class _JobsMixin:
 
         try:
             if asset_id is None:
-                from ..ingest.asset_identity import canonical_source_for_job
+                from sift_core.asset_identity import canonical_source_for_job
 
                 source = canonical_source_for_job(source_url, content_sha256)
                 if source:

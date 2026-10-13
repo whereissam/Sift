@@ -15,8 +15,8 @@ from .schemas import (
     TranscriptionJob,
     TranscriptionOutputFormat,
 )
-from ..ingest.fetch.downloader import DownloaderFactory
-from ..ingest.media.converter import AudioConverter
+from sift_core.fetch.downloader import DownloaderFactory
+from sift_core.media.converter import AudioConverter
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint (liveness probe)."""
-    from ..ingest.platforms import (
+    from sift_core.platforms import (
         XSpacesDownloader,
         ApplePodcastsDownloader,
         SpotifyDownloader,
@@ -39,10 +39,10 @@ async def health_check():
         InstagramVideoDownloader,
         XiaohongshuVideoDownloader,
     )
-    from ..ingest.transcribe.transcriber import AudioTranscriber
-    from ..ingest.transcribe.diarizer import SpeakerDiarizer
+    from sift_core.transcribe.transcriber import AudioTranscriber
+    from sift_core.transcribe.diarizer import SpeakerDiarizer
     from ..knowledge.summarizer import TranscriptSummarizer
-    from ..ingest.media.enhancer import AudioEnhancer
+    from sift_core.media.enhancer import AudioEnhancer
 
     return HealthResponse(
         status="healthy",

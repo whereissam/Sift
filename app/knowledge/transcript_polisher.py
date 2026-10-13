@@ -1,7 +1,7 @@
 """LLM-powered cleanup of a realtime transcript.
 
 Lives in the knowledge layer because it needs an LLM provider. The realtime
-session in `app/ingest/transcribe/` takes one of these by injection instead of
+session in `sift_core.transcribe` takes one of these by injection instead of
 constructing it, which is what keeps the ingestion core free of any dependency
 on the layers above it (see `tests/test_layering.py`).
 """

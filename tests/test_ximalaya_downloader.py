@@ -2,10 +2,10 @@
 
 import pytest
 
-from app.ingest.base import Platform
-from app.ingest.fetch.downloader import DownloaderFactory
-from app.ingest.exceptions import ContentNotFoundError
-from app.ingest.platforms.ximalaya import XimalayaDownloader
+from sift_core.base import Platform
+from sift_core.fetch.downloader import DownloaderFactory
+from sift_core.exceptions import ContentNotFoundError
+from sift_core.platforms.ximalaya import XimalayaDownloader
 
 
 def test_can_handle_any_ximalaya_url():
