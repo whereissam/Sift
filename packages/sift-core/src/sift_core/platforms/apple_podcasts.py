@@ -9,7 +9,7 @@ import httpx
 import feedparser
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, url_host_matches
 from ..exceptions import SiftError, ContentNotFoundError
 from ..fetch.url_validator import safe_get, safe_stream
 
@@ -20,6 +20,9 @@ class ApplePodcastsDownloader(PlatformDownloader):
     """Downloads podcast episodes from Apple Podcasts via RSS feeds."""
 
     PLATFORM = Platform.APPLE_PODCASTS
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("podcasts.apple.com",)
 
     # URL patterns for Apple Podcasts
     URL_PATTERNS = [
@@ -47,7 +50,7 @@ class ApplePodcastsDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Apple Podcasts URL."""
-        return "podcasts.apple.com" in url and "/podcast/" in url
+        return url_host_matches(url, cls.HOSTS) and "/podcast/" in url
 
     @classmethod
     def extract_content_id(cls, url: str) -> tuple[str, Optional[str]]:
@@ -263,9 +266,10 @@ class ApplePodcastsDownloader(PlatformDownloader):
             # Download the audio file
             await self._download_file(audio_url, file_path)
 
-            # Convert format if needed
-            original_ext = file_path.suffix.lower()
-            if output_format and f".{output_format}" != original_ext:
+            # Convert format if needed. The converter checks the actual bytes,
+            # so this is a no-op when they already match; comparing extensions
+            # here missed MP3 data saved under `-o episode.m4a`.
+            if output_format:
                 from ..media.converter import AudioConverter
                 logger.info(f"Converting to {output_format}...")
                 converter = AudioConverter()

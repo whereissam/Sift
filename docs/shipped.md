@@ -38,6 +38,77 @@ Follow-up (completed 2026-06-22):
 - [x] Per-endpoint rate limits on expensive download/transcribe/upload routes
       (10/min each)
 
+Second audit (security-audit skill, run 2026-10-12 on 406ba52). Fixed 2026-10-13:
+
+- [x] yt-dlp option injection + SSRF: platform detection checks the parsed
+      http(s) host (`url_host_matches`, Rust `url_matches_platform`); `--`
+      before the URL in every yt-dlp argv (Python and Tauri)
+- [x] RSS enclosures: http(s) only, always fetched through the SSRF-checked
+      direct path, never a platform downloader
+- [x] Origin guard (independent of `API_KEY`): cross-site writes and WebSocket
+      upgrades refused; loopback-only Host when bound to loopback
+      (`ALLOWED_HOSTS`); cross-site `GET /api/add` gets a confirmation page;
+      same in the Tauri backend
+- [x] `/api/cleanup` rejects `max_age_hours < 1`
+- [x] Telegram bot limited to `TELEGRAM_ALLOWED_USER_IDS` (fail-closed)
+- [x] MCP client percent-encodes ids as one path segment
+- [x] Webhooks sent through a DNS-pinned client; `/webhooks/test` no longer
+      echoes response bodies
+- [x] S3 `endpoint_url` SSRF-validated (`S3_ALLOWED_ENDPOINTS` for private)
+- [x] Decoded-byte cap in `safe_get` (64 MiB) and Discord streaming (512 MiB)
+- [x] Live transcription: session/message byte caps, attempt-based decode
+      throttle, ffmpeg timeout, session limit; batch capped at 500 URLs with
+      off-loop inserts and O(1) enqueue dedupe
+- [x] Random secrets-at-rest key in `ENCRYPTION_KEY_FILE` instead of
+      sha256(DOWNLOAD_DIR); legacy values re-encrypted on startup; DB/backups/
+      checkpoints not exportable
+- [x] No env LLM key sent to a caller-chosen `base_url`; Whisper/Ollama
+      published on loopback only in Compose
+- [x] Jobs for the same video share one file name; cleanup, job delete and
+      the `output_dir` move no longer remove a file another job still uses
+      (`JobStore.file_used_by_other_job`)
+
+Audit follow-ups (2026-10-13):
+
+- [x] Queued jobs ran nowhere: the queue had no processor, so batch and
+      scheduled downloads were dropped. Now run via `WorkflowProcessor`;
+      startup recovery skips future-scheduled jobs; `scheduled_at` offsets
+      are converted to UTC; retry only for failed jobs
+- [x] Blank `API_KEY=` is unset; non-ASCII keys are a 401; docs off while
+      `API_KEY` is set (`API_DOCS` to override)
+- [x] `validate_url_ssrf`: NAT64/6to4/Teredo/`::a.b.c.d` judged by their IPv4
+      host; all non-global addresses refused
+- [x] `/translate` capped at 100k chars, 5/minute; idempotency keys per
+      principal; server-issued single-use OAuth `state`
+- [x] Default rate limit (`RATE_LIMIT`) enforced for writes; reads exempt so
+      the UI's polling is never throttled
+- [x] Translate/sentiment/extract/summarize spend recorded in the daily LLM
+      budget (local models free)
+- [x] Deleting a job (or `cleanup_old_jobs`) removes its search chunks,
+      segment embeddings, claims and their edges, mentions, annotations,
+      chat history and idempotency keys
+- [x] S3 requests to a caller-supplied endpoint go through a pinned client
+      (botocore `before-send`), closing the DNS-rebinding window
+- [x] Live transcription decodes incrementally (one ffmpeg per session)
+      instead of re-decoding the whole stream
+- [x] Live checks: a public name resolving to 127.0.0.1 (`127.0.0.1.nip.io`)
+      gets 400 from the loopback API; Compose publishes Whisper/Ollama on
+      127.0.0.1 only
+- [x] Extensions (WXT and legacy): platforms matched on the parsed hostname;
+      the WXT popup asks before sending `X-API-Key` to a remote `http://`
+      server
+- [x] Tauri webview CSP: IPC and API origins listed; `object-src`,
+      `frame-src`, `base-uri`, `form-action`, `frame-ancestors` locked down
+- [x] Supply chain: Actions pinned by SHA with `permissions: contents: read`;
+      deno and uv from digest-pinned images; Docker installs from `uv.lock`
+      (`uv sync --frozen`); pinned SHA-256 for `scripts/download_ffmpeg.py`
+      downloads; `wxt` pinned
+- [x] Desktop app reaches its embedded backend: Tauri detected with
+      `isTauri()`, relative `/api` fetches and WebSockets sent to
+      localhost:8000 (`src/lib/desktop.ts`)
+- [x] `frontend/src/lib` is tracked (the root `lib/` ignore hid it, so fresh
+      clones could not build)
+
 ## P1: Speaker Diarization (Who Spoke When) ✅ COMPLETED
 
 **Goal:** Identify different speakers in transcriptions, especially for X Spaces and Podcasts.

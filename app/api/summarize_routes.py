@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .auth import verify_api_key
+from ..knowledge.knowledge_budget import record_llm_spend
 from .ratelimit import limiter
 from .schemas import JobStatus, SummarizeRequest
 from .transcription_store import transcription_jobs
@@ -59,6 +60,7 @@ async def summarize_text(request: Request, body: SummarizeRequest):
 
     try:
         result = await summarizer.summarize(text, summary_type)
+        record_llm_spend(result)
         return {
             "summary_type": result.summary_type.value,
             "content": result.content,
@@ -119,6 +121,7 @@ async def summarize_job(request: Request, job_id: str, summary_type: str = "bull
 
     try:
         result = await summarizer.summarize(job.text, summary_type_enum)
+        record_llm_spend(result)
         return {
             "job_id": job_id,
             "summary_type": result.summary_type.value,

@@ -4,7 +4,11 @@ import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { ThemeProvider } from "@/components/theme-provider";
 import { DesktopSplash } from "@/components/DesktopSplash";
+import { installDesktopFetch } from "@/lib/desktop";
 import "./index.css";
+
+// Desktop app: relative /api calls must reach the embedded backend.
+installDesktopFetch();
 
 const router = createRouter({ routeTree });
 

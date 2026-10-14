@@ -3,6 +3,7 @@
 import ipaddress
 
 from slowapi import Limiter
+from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 from ..config import get_settings
@@ -38,3 +39,17 @@ limiter = Limiter(
     default_limits=[settings.rate_limit] if settings.rate_limit_enabled else [],
     enabled=settings.rate_limit_enabled,
 )
+
+
+class WriteRateLimitMiddleware(SlowAPIMiddleware):
+    """Apply ``default_limits`` to state-changing requests only.
+
+    Routes with their own ``@limiter.limit`` keep that limit. Reads are left
+    alone: the web UI polls job status every few seconds, and a per-IP
+    default would throttle it.
+    """
+
+    async def dispatch(self, request, call_next):
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return await call_next(request)
+        return await super().dispatch(request, call_next)

@@ -21,6 +21,7 @@ import {
   formatDuration,
   getViralScoreLabel,
 } from '../downloader/types'
+import { apiUrl } from '@/lib/desktop'
 
 interface TranscriptionJobSummary {
   job_id: string
@@ -344,7 +345,7 @@ function ClipCard({ clip, index, jobId }: ClipCardProps) {
   }
 
   const handleDownload = (platform: SocialPlatform) => {
-    window.open(`/api/jobs/${jobId}/clips/${clip.clip_id}/download/${platform}`, '_blank')
+    window.open(apiUrl(`/api/jobs/${jobId}/clips/${clip.clip_id}/download/${platform}`), '_blank')
   }
 
   return (

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { wsUrl } from '@/lib/desktop'
 
 export interface TranscriptionSegment {
   start: number
@@ -106,10 +107,9 @@ export function useRealtimeTranscription() {
     }))
 
     // Build WebSocket URL
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/api/transcribe/live`
+    const liveUrl = wsUrl('/api/transcribe/live')
 
-    const ws = new WebSocket(wsUrl)
+    const ws = new WebSocket(liveUrl)
     wsRef.current = ws
 
     ws.onopen = () => {

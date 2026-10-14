@@ -3,25 +3,9 @@
 
 // Check if current page is a supported audio/video source
 function checkPageSupport() {
-  const url = window.location.href;
-
-  const patterns = [
-    { pattern: /x\.com\/i\/spaces\//, type: 'x_spaces' },
-    { pattern: /twitter\.com\/i\/spaces\//, type: 'x_spaces' },
-    { pattern: /x\.com\/\w+\/status\//, type: 'x_video' },
-    { pattern: /twitter\.com\/\w+\/status\//, type: 'x_video' },
-    { pattern: /youtube\.com\/watch/, type: 'youtube' },
-    { pattern: /podcasts\.apple\.com\/.*\/podcast\//, type: 'apple_podcasts' },
-    { pattern: /open\.spotify\.com\/episode\//, type: 'spotify' },
-    { pattern: /xiaoyuzhoufm\.com\/episode\//, type: 'xiaoyuzhou' },
-  ];
-
-  for (const p of patterns) {
-    if (p.pattern.test(url)) {
-      return p.type;
-    }
-  }
-  return null;
+  // SiftPlatforms comes from platforms.js, injected before this script.
+  const match = SiftPlatforms.detect(window.location.href);
+  return match ? match.type : null;
 }
 
 // Send message to background script with page info

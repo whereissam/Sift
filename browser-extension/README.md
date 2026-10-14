@@ -59,7 +59,11 @@ javascript:(function(){var s='http://localhost:8000';window.open(s+'/api/add?url
 ```
 
 3. Replace `http://localhost:8000` with your server URL if different
-4. Click the bookmark on any supported page to start transcription
+4. Click the bookmark on any supported page, then confirm in the tab it opens
+
+Sift asks before starting a job that another website's page requested, so a
+site cannot start downloads on your machine just by being visited. The
+extensions are trusted and skip this step.
 
 ### Download-only bookmarklet:
 

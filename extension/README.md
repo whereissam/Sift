@@ -34,7 +34,10 @@ select `.output/chrome-mv3/`.
 Open the popup and set your **Server** URL (default `http://localhost:8000`).
 Pointing at a remote/LAN server triggers a one-time host-permission prompt so
 the extension may reach it. If your server sets an `API_KEY`, enter it in the
-**API key** field.
+**API key** field. The key is only sent automatically over `https://` or to a
+loopback `http://` server (`localhost`, `127.0.0.1`, `[::1]`). For a remote
+plain-`http://` server the popup warns that the key would travel unencrypted
+and refuses to send it until you tick the per-server confirmation checkbox.
 
 ## Supported platforms
 

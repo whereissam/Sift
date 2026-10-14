@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches
 from ..exceptions import SiftError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,9 @@ class InstagramVideoDownloader(PlatformDownloader):
     """Downloads videos and reels from Instagram using yt-dlp."""
 
     PLATFORM = Platform.INSTAGRAM
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("instagram.com", "instagr.am")
 
     # URL patterns for Instagram posts, reels, and IGTV
     URL_PATTERNS = [
@@ -66,7 +69,9 @@ class InstagramVideoDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Instagram post/reel URL."""
-        return any(re.search(pattern, url) for pattern in cls.URL_PATTERNS)
+        return url_host_matches(url, cls.HOSTS) and any(
+            re.search(pattern, url) for pattern in cls.URL_PATTERNS
+        )
 
     @classmethod
     def extract_content_id(cls, url: str) -> str:
@@ -128,7 +133,9 @@ class InstagramVideoDownloader(PlatformDownloader):
             ]
 
             cmd.extend(instagram_cookie_args(self.settings))
-            cmd.append(url)
+            # "--" ends option parsing, so the URL can never be read as a
+            # yt-dlp option.
+            cmd.extend(["--", url])
 
             logger.info("Running yt-dlp for Instagram video...")
 
@@ -246,6 +253,7 @@ class InstagramVideoDownloader(PlatformDownloader):
                 "--print-json",
                 "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 *instagram_cookie_args(self.settings),
+                "--",
                 url,
             ]
 

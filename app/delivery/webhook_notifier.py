@@ -7,7 +7,7 @@ from typing import Optional
 import httpx
 
 from ..config import get_settings
-from sift_core.fetch.url_validator import validate_url_ssrf
+from sift_core.fetch.url_validator import pinned_client, validate_url_ssrf
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +217,9 @@ class WebhookNotifier:
 
         for attempt in range(retries + 1):
             try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
+                # Pinned: validate_url_ssrf above resolved the name once, and a
+                # plain client would resolve it again (DNS rebinding).
+                async with pinned_client(timeout=30.0) as client:
                     response = await client.post(
                         url,
                         content=body.encode("utf-8"),
@@ -227,14 +229,16 @@ class WebhookNotifier:
                     if response.status_code >= 200 and response.status_code < 300:
                         return True, None
 
-                    last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                    # Status only: the body could be an internal service's
+                    # response, and send_test returns this to the API caller.
+                    last_error = f"HTTP {response.status_code}"
 
             except httpx.TimeoutException:
                 last_error = "Request timeout"
             except httpx.ConnectError as e:
                 last_error = f"Connection error: {e}"
             except Exception as e:
-                last_error = str(e)
+                last_error = str(e) or type(e).__name__
 
             # Log retry attempt
             if attempt < retries:

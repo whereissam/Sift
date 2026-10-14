@@ -484,7 +484,8 @@ class BatchDownloadRequest(BaseModel):
     urls: list[str] = Field(
         ...,
         min_length=1,
-        description="List of URLs to download",
+        max_length=500,
+        description="List of URLs to download (at most 500)",
     )
     name: Optional[str] = Field(
         default=None,
@@ -788,7 +789,9 @@ class TranslateRequest(BaseModel):
     text: str = Field(
         ...,
         min_length=1,
-        max_length=500_000,
+        # 35-50 LLM calls at the translators' chunk sizes; long transcripts
+        # go through /translate/job instead.
+        max_length=100_000,
         description="Text to translate",
     )
     source_lang: str = Field(

@@ -1,6 +1,8 @@
 """Cloud storage API routes."""
 
 import logging
+import secrets
+import time
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -101,6 +103,14 @@ async def create_provider(request: ProviderCreateRequest):
                    f"Supported: s3, google_drive, dropbox",
         )
 
+    if provider_type == ProviderType.S3:
+        from ..delivery.cloud.s3 import validate_endpoint_url
+
+        try:
+            validate_endpoint_url((request.settings or {}).get("endpoint_url"))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     manager = get_export_manager()
 
     config = ProviderConfig(
@@ -176,12 +186,41 @@ async def validate_provider(provider_id: str):
 
 # ============ OAuth Routes ============
 
+# Issued OAuth states: state -> (provider_id, redirect_uri, expires_at).
+# Server-issued and single-use, so a code obtained in someone else's OAuth
+# flow cannot be exchanged here to link their account (login CSRF).
+_OAUTH_STATE_TTL_SECONDS = 600
+_oauth_states: dict[str, tuple[str, str, float]] = {}
+
+
+def _issue_oauth_state(provider_id: str, redirect_uri: str) -> str:
+    now = time.monotonic()
+    for key in [k for k, (_, _, exp) in _oauth_states.items() if exp < now]:
+        del _oauth_states[key]
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = (provider_id, redirect_uri, now + _OAUTH_STATE_TTL_SECONDS)
+    return state
+
+
+def _consume_oauth_state(state: Optional[str], provider_id: str, redirect_uri: str) -> bool:
+    entry = _oauth_states.pop(state, None) if state else None
+    if entry is None:
+        return False
+    issued_provider, issued_redirect, expires_at = entry
+    return (
+        issued_provider == provider_id
+        and secrets.compare_digest(issued_redirect, redirect_uri)
+        and time.monotonic() <= expires_at
+    )
+
 
 @router.get("/oauth/{provider_id}/authorize", response_model=OAuthUrlResponse)
 async def get_oauth_url(
     provider_id: str,
     redirect_uri: str = Query(..., description="OAuth callback URL"),
-    state: Optional[str] = Query(None, description="Optional CSRF state"),
+    state: Optional[str] = Query(
+        None, description="Ignored: the server issues the state and returns it"
+    ),
 ):
     """
     Get OAuth authorization URL for a provider.
@@ -202,8 +241,9 @@ async def get_oauth_url(
             detail="Provider does not support OAuth authorization",
         )
 
-    auth_url = provider.get_auth_url(redirect_uri, state)
-    return OAuthUrlResponse(authorization_url=auth_url, state=state)
+    issued = _issue_oauth_state(provider_id, redirect_uri)
+    auth_url = provider.get_auth_url(redirect_uri, issued)
+    return OAuthUrlResponse(authorization_url=auth_url, state=issued)
 
 
 @router.post("/oauth/{provider_id}/callback")
@@ -225,6 +265,12 @@ async def oauth_callback(provider_id: str, request: OAuthCallbackRequest):
         raise HTTPException(
             status_code=400,
             detail="Provider does not support OAuth",
+        )
+
+    if not _consume_oauth_state(request.state, provider_id, request.redirect_uri):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired OAuth state; restart authorization",
         )
 
     try:

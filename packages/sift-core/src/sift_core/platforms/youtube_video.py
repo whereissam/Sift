@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches
 from ..exceptions import SiftError, ContentNotAvailableError, ContentNotFoundError
 from .youtube import youtube_cookie_args
 
@@ -19,6 +19,9 @@ class YouTubeVideoDownloader(PlatformDownloader):
     """Downloads videos from YouTube using yt-dlp."""
 
     PLATFORM = Platform.YOUTUBE_VIDEO
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("youtube.com", "youtu.be")
 
     # URL patterns for YouTube
     URL_PATTERNS = [
@@ -50,7 +53,9 @@ class YouTubeVideoDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid YouTube URL."""
-        return any(re.search(pattern, url) for pattern in cls.URL_PATTERNS)
+        return url_host_matches(url, cls.HOSTS) and any(
+            re.search(pattern, url) for pattern in cls.URL_PATTERNS
+        )
 
     @classmethod
     def extract_content_id(cls, url: str) -> str:
@@ -87,13 +92,16 @@ class YouTubeVideoDownloader(PlatformDownloader):
             else:
                 output_template = str(self.download_dir / "%(title)s [%(id)s].%(ext)s")
 
-            # Quality mapping for video (bestvideo+bestaudio ensures we get both streams)
-            format_spec = {
-                "low": "bestvideo[height<=360]+bestaudio/best[height<=360]",
-                "medium": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-                "high": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-                "highest": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-            }.get(quality, "bestvideo[height<=720]+bestaudio/best[height<=720]")
+            # Quality mapping for video (bestvideo+bestaudio ensures we get both
+            # streams). H.264 + AAC first: YouTube's best streams are often
+            # AV1/VP9 + Opus, which many players cannot open from an .mp4.
+            height = {"low": 360, "medium": 480, "high": 720, "highest": 1080}.get(quality, 720)
+            format_spec = (
+                f"bestvideo[height<={height}][vcodec^=avc1]+bestaudio[ext=m4a]"
+                f"/bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+            )
+            if quality == "highest":
+                format_spec += "/best"
 
             cmd = [
                 self._yt_dlp_path,
@@ -107,8 +115,6 @@ class YouTubeVideoDownloader(PlatformDownloader):
                 "--print-json",
                 "--merge-output-format", "mp4",
                 "--force-overwrites",  # Overwrite existing files
-                # Workaround for YouTube SABR streaming issues
-                "--extractor-args", "youtube:player_client=web",
                 # Parallel fragment downloads
                 "--concurrent-fragments", "16",
                 "--fragment-retries", "5",
@@ -116,7 +122,11 @@ class YouTubeVideoDownloader(PlatformDownloader):
 
             cmd.extend(youtube_cookie_args(self.settings))
 
-            cmd.append(url)
+            # "--" ends option parsing, so the URL can never be read as a
+
+            # yt-dlp option.
+
+            cmd.extend(["--", url])
 
             logger.info(f"Running yt-dlp for YouTube video with command: {' '.join(cmd)}")
 
@@ -229,6 +239,7 @@ class YouTubeVideoDownloader(PlatformDownloader):
                 "--remote-components", "ejs:github",
                 "--no-download",
                 "--print-json",
+                "--",
                 url,
             ]
 

@@ -29,6 +29,9 @@ class DownloadQueueManager:
         # Priority queue: list of (-priority, timestamp, job_id)
         # Using negative priority for max-heap behavior with heapq (min-heap)
         self._queue: list[tuple[int, float, str]] = []
+        # Ids in _queue, so the duplicate check is O(1). A linear scan per
+        # enqueue made a large batch O(N^2) on the event loop.
+        self._queued_ids: set[str] = set()
         self._queue_lock = asyncio.Lock()
 
         # Track processing jobs
@@ -93,13 +96,13 @@ class DownloadQueueManager:
 
         async with self._queue_lock:
             # Check if already in queue
-            for _, _, existing_id in self._queue:
-                if existing_id == job_id:
-                    logger.debug(f"Job {job_id} already in queue")
-                    return
+            if job_id in self._queued_ids:
+                logger.debug(f"Job {job_id} already in queue")
+                return
 
             # Add to priority queue (negative priority for max-heap)
             heapq.heappush(self._queue, (-priority, timestamp, job_id))
+            self._queued_ids.add(job_id)
             logger.info(f"Enqueued job {job_id} with priority {priority}")
 
     async def update_priority(self, job_id: str, new_priority: int) -> bool:
@@ -149,6 +152,7 @@ class DownloadQueueManager:
                 if jid == job_id:
                     self._queue.pop(idx)
                     heapq.heapify(self._queue)
+                    self._queued_ids.discard(job_id)
                     logger.info(f"Removed job {job_id} from queue")
                     return True
         return False
@@ -189,6 +193,7 @@ class DownloadQueueManager:
                 return None
 
             _, _, job_id = heapq.heappop(self._queue)
+            self._queued_ids.discard(job_id)
             return job_id
 
     async def _process_job(self, job_id: str):
@@ -247,9 +252,20 @@ def get_queue_manager() -> DownloadQueueManager:
     return _queue_manager
 
 
+async def run_queued_job(job_id: str) -> None:
+    """Run a queued (batch or scheduled) job from its stored row."""
+    from .workflow import WorkflowProcessor
+
+    await WorkflowProcessor(get_job_store()).retry_job(job_id)
+
+
 async def start_queue_manager():
     """Start the global queue manager."""
     manager = get_queue_manager()
+    # Without a processor every dequeued job was dropped with a warning, so
+    # batch and scheduled downloads never ran.
+    if manager._processor is None:
+        manager.set_processor(run_queued_job)
     await manager.start()
 
 

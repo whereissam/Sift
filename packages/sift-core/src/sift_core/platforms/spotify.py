@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, url_host_matches
 from ..exceptions import SiftError, ContentNotFoundError, ToolNotFoundError
 from ..fetch.url_validator import safe_get, safe_stream
 
@@ -102,6 +102,9 @@ class SpotifyDownloader(PlatformDownloader):
 
     PLATFORM = Platform.SPOTIFY
 
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("open.spotify.com",)
+
     # URL patterns for Spotify
     URL_PATTERNS = [
         r"open\.spotify\.com/episode/([a-zA-Z0-9]+)",
@@ -130,7 +133,7 @@ class SpotifyDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Spotify URL."""
-        return "open.spotify.com" in url
+        return url_host_matches(url, cls.HOSTS)
 
     @classmethod
     def extract_content_id(cls, url: str) -> str:

@@ -142,10 +142,14 @@ class WorkflowProcessor:
             # Mark as completed
             self.job_store.set_status(job_id, JobStatus.COMPLETED)
 
-            # Clean up raw file if different from converted
+            # Clean up raw file if different from converted, unless it is
+            # another job's file: jobs for the same video share one name.
             if raw_path != converted_path and raw_path.exists():
-                raw_path.unlink()
-                logger.info(f"[{job_id}] Cleaned up raw file")
+                if self.job_store.file_used_by_other_job(raw_path, job_id):
+                    logger.info(f"[{job_id}] Raw file is another job's output; keeping it")
+                else:
+                    raw_path.unlink()
+                    logger.info(f"[{job_id}] Cleaned up raw file")
 
             logger.info(f"[{job_id}] Conversion complete: {converted_path}")
 
@@ -452,7 +456,14 @@ async def recover_unfinished_jobs():
     job_store = get_job_store()
     processor = WorkflowProcessor(job_store)
 
-    unfinished = job_store.get_unfinished_jobs()
+    # Jobs scheduled for later belong to the scheduler; running them here
+    # started every scheduled download as soon as the server restarted.
+    now = datetime.utcnow().isoformat()
+    unfinished = [
+        job
+        for job in job_store.get_unfinished_jobs()
+        if not (job.get("scheduled_at") and job["scheduled_at"] > now)
+    ]
     if not unfinished:
         logger.info("No unfinished jobs to recover")
         return

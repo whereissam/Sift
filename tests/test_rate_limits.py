@@ -12,7 +12,8 @@ def client():
     # Reset the shared limiter before and after so this test neither inherits
     # nor leaks rate-limit state across the suite.
     limiter.reset()
-    yield TestClient(app)
+    # The app only answers loopback Host names when bound to loopback.
+    yield TestClient(app, base_url="http://localhost")
     limiter.reset()
 
 

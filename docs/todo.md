@@ -771,8 +771,14 @@ remaining coupling was configuration.
   - Entry-point plugin discovery: **dropped for now.** `Platform` is a closed
     enum persisted in the DB and API schemas, so a plugin could only replace a
     built-in adapter, not add a platform. Revisit only if `Platform` opens up.
-- [ ] CLI: `-o episode.m4a` on an Apple Podcasts MP3 saves MP3 data under the
-  `.m4a` name instead of converting (seen during the Phase 2 live run)
+- [x] CLI: `-o episode.m4a` on an Apple Podcasts MP3 saves MP3 data under the
+  `.m4a` name instead of converting. Root cause: conversion was decided by file
+  extension, never by content. `AudioConverter.convert` now probes the real
+  container/codec (ffprobe); Apple, Xiaoyuzhou and Discord no longer compare
+  extensions themselves. CI installs ffmpeg so these tests actually run.
+- [ ] CLI: `-o` into a directory that doesn't exist yet fails with
+  `No such file or directory` — adapters create `download_dir` but not the
+  `-o` path's parent
 - [x] README "CLI Usage" examples omit the required `download` subcommand
 - [x] **Phase 3: package split** — `packages/sift-core` (import name
   `sift_core`) is a uv workspace member the app depends on. Its base deps are

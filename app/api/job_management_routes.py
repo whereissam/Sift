@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from .auth import verify_api_key
 
@@ -77,6 +77,14 @@ async def retry_job(
 
     if job["status"] == "completed":
         raise HTTPException(status_code=400, detail="Job already completed")
+    # Pending and in-progress jobs are already queued or running (and
+    # interrupted ones resume on startup); retrying them ran the same job
+    # twice at once.
+    if job["status"] != "failed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only failed jobs can be retried (status: {job['status']})",
+        )
 
     # Run retry in background
     async def _retry():
@@ -103,11 +111,12 @@ async def delete_job(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Delete associated files
+    # Delete associated files, except ones another job also points to
+    # (jobs for the same video share one output name).
     for path_field in ["raw_file_path", "converted_file_path"]:
         if job.get(path_field):
             path = Path(job[path_field])
-            if path.exists():
+            if path.exists() and not job_store.file_used_by_other_job(path, job_id):
                 path.unlink()
 
     # Delete from database
@@ -118,7 +127,8 @@ async def delete_job(job_id: str):
 
 @router.post("/cleanup")
 async def cleanup_storage(
-    max_age_hours: int = 24,
+    # A negative age put the cutoff in the future and deleted every job.
+    max_age_hours: int = Query(24, ge=1),
     delete_all: bool = False,
 ):
     """

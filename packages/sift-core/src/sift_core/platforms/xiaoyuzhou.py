@@ -8,7 +8,7 @@ from typing import Optional
 import httpx
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, url_host_matches
 from ..exceptions import SiftError, ContentNotFoundError
 from ..fetch.url_validator import safe_stream
 
@@ -19,6 +19,9 @@ class XiaoyuzhouDownloader(PlatformDownloader):
     """Downloads podcast episodes from 小宇宙 (Xiaoyuzhou FM)."""
 
     PLATFORM = Platform.XIAOYUZHOU
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("xiaoyuzhoufm.com",)
 
     # URL patterns for Xiaoyuzhou
     URL_PATTERNS = [
@@ -44,7 +47,7 @@ class XiaoyuzhouDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Xiaoyuzhou URL."""
-        return "xiaoyuzhoufm.com" in url
+        return url_host_matches(url, cls.HOSTS)
 
     @classmethod
     def extract_content_id(cls, url: str) -> tuple[str, str]:
@@ -227,9 +230,10 @@ class XiaoyuzhouDownloader(PlatformDownloader):
             # Download the audio file
             await self._download_file(audio_url, file_path)
 
-            # Convert format if needed
-            original_ext = file_path.suffix.lower()
-            if output_format and f".{output_format}" != original_ext:
+            # Convert format if needed. The converter checks the actual bytes,
+            # so this is a no-op when they already match; comparing extensions
+            # here missed MP3 data saved under `-o episode.m4a`.
+            if output_format:
                 from ..media.converter import AudioConverter
                 logger.info(f"Converting to {output_format}...")
                 converter = AudioConverter()

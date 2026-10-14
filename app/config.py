@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import SettingsConfigDict
 
 from sift_core.settings import IngestSettings, set_settings_provider
@@ -25,6 +26,18 @@ class Settings(IngestSettings):
     telegram_bot_mode: str = "polling"  # "polling" or "webhook"
     telegram_webhook_url: str | None = None  # e.g. "https://yourdomain.com/api/telegram/webhook"
     telegram_webhook_secret: str | None = None
+    # Comma-separated Telegram user IDs allowed to use the bot. Empty means
+    # nobody: the bot spends the operator's cookies, disk and compute, and
+    # anyone can message a bot once they know its username.
+    telegram_allowed_user_ids: str = ""
+
+    def telegram_allowed_ids(self) -> frozenset[int]:
+        """Parsed TELEGRAM_ALLOWED_USER_IDS; malformed entries are ignored."""
+        return frozenset(
+            int(part)
+            for part in self.telegram_allowed_user_ids.replace(" ", "").split(",")
+            if part.lstrip("-").isdigit()
+        )
 
     # Server
     host: str = "127.0.0.1"  # Bind to localhost by default for security
@@ -34,11 +47,44 @@ class Settings(IngestSettings):
     # API Authentication (optional - if set, requires X-API-Key header)
     api_key: str | None = None
 
-    # Encryption key for secrets at rest (auto-generated if not set)
-    encryption_key: str | None = None
+    # Serve /docs, /redoc and /openapi.json. Unset: only while API_KEY is
+    # unset, since a browser cannot send the key header to the docs pages.
+    api_docs: bool | None = None
 
-    # CORS (comma-separated origins, or "*" for all)
+    @field_validator("api_key")
+    @classmethod
+    def _blank_api_key_is_unset(cls, value: str | None) -> str | None:
+        # `API_KEY=` in .env used to enable auth with an empty key, which an
+        # empty X-API-Key header then matched.
+        if value is None or not value.strip():
+            return None
+        return value
+
+    @property
+    def docs_enabled(self) -> bool:
+        return self.api_docs if self.api_docs is not None else self.api_key is None
+
+    # Encryption key for secrets at rest. If unset, a random key is
+    # generated into encryption_key_file (default ~/.config/sift/secret.key),
+    # which must live outside download_dir so a copy of the DB cannot be read.
+    encryption_key: str | None = None
+    encryption_key_file: str | None = None
+
+    # CORS (comma-separated origins, or "*" for all). These origins, the
+    # browser extensions and the Tauri shell are also the only browser origins
+    # allowed to make state-changing requests.
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    # Host names the API answers to (comma-separated, or "*" for any). Unset:
+    # loopback names only when bound to loopback, which blocks DNS rebinding;
+    # any host when bound elsewhere.
+    allowed_hosts: str | None = None
+
+    # S3-compatible endpoints allowed on private addresses (comma-separated
+    # host or host:port, e.g. "minio:9000"). Any other endpoint_url must
+    # resolve to a public address, so API callers cannot aim the server's
+    # signed requests at loopback or internal services.
+    s3_allowed_endpoints: str = ""
 
     # Rate limiting (requests per minute)
     rate_limit: str = "60/minute"  # Default: 60 requests per minute

@@ -3,11 +3,10 @@
 import asyncio
 import logging
 import subprocess
-import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from pathlib import Path
 from typing import AsyncIterator, Optional
 
 import numpy as np
@@ -15,6 +14,20 @@ import numpy as np
 from .transcriber import AudioTranscriber, TranscriptionSegment
 
 logger = logging.getLogger(__name__)
+
+# Most audio a live session accepts. Decoding is incremental, so this only
+# bounds session length: Opus from MediaRecorder runs ~32 kbit/s, so this is
+# several hours of audio.
+MAX_SESSION_BYTES = 64 * 1024 * 1024
+# Consecutive decode attempts that yield no audio before the session is
+# given up on (input that never decodes).
+MAX_FAILED_DECODES = 10
+# How long finish() waits for ffmpeg to flush the end of the stream.
+FFMPEG_FLUSH_TIMEOUT_SECONDS = 30
+
+
+class SessionLimitError(ValueError):
+    """A live session went over one of its resource limits."""
 
 
 class AudioBuffer:
@@ -130,81 +143,115 @@ class AudioBuffer:
         self.total_samples_written = 0
 
 
-def convert_webm_to_pcm(webm_bytes: bytes, sample_rate: int = 16000) -> np.ndarray:
-    """
-    Convert WebM/Opus audio to PCM float32 using FFmpeg.
+class StreamingWebmDecoder:
+    """Decode a MediaRecorder WebM/Opus stream incrementally.
 
-    Args:
-        webm_bytes: Raw WebM/Opus audio data
-        sample_rate: Target sample rate
-
-    Returns:
-        Audio as float32 numpy array
-    """
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
-        f.write(webm_bytes)
-        temp_path = f.name
-
-    try:
-        # Use FFmpeg to convert to raw PCM
-        result = subprocess.run(
-            [
-                "ffmpeg",
-                "-i", temp_path,
-                "-f", "f32le",  # 32-bit float little-endian
-                "-acodec", "pcm_f32le",
-                "-ac", "1",  # mono
-                "-ar", str(sample_rate),
-                "-loglevel", "error",
-                "pipe:1"
-            ],
-            capture_output=True,
-            check=True
-        )
-        audio = np.frombuffer(result.stdout, dtype=np.float32)
-        return audio
-    except subprocess.CalledProcessError as e:
-        logger.error(f"FFmpeg conversion error: {e.stderr.decode()}")
-        return np.array([], dtype=np.float32)
-    finally:
-        Path(temp_path).unlink(missing_ok=True)
-
-
-class WebmAccumulator:
-    """Accumulates WebM/Opus chunks from MediaRecorder for full-stream decoding.
-
-    MediaRecorder.start(interval) produces chunks where only the first contains
-    the WebM/EBML header and codec initialization data. Subsequent chunks contain
-    only Cluster data and are not valid standalone WebM files. This class
-    accumulates all chunks and decodes the full concatenated stream.
+    MediaRecorder.start(interval) emits chunks where only the first carries
+    the WebM header, so chunks cannot be decoded on their own. One ffmpeg
+    process per session reads the chunks on stdin as they arrive and writes
+    PCM to stdout, which a reader thread collects. Each chunk is decoded
+    once; the old approach re-decoded the whole stream on every decode, so
+    work grew quadratically with session length.
     """
 
     def __init__(self, sample_rate: int = 16000):
         self.sample_rate = sample_rate
-        self._data = bytearray()
-        self._decoded_samples = 0
+        self._proc: Optional[subprocess.Popen] = None
+        self._reader: Optional[threading.Thread] = None
+        self._pcm = bytearray()
+        self._lock = threading.Lock()
+        self._bytes_in = 0
+
+    def _start(self) -> subprocess.Popen:
+        if self._proc is None:
+            self._proc = subprocess.Popen(
+                [
+                    "ffmpeg",
+                    "-loglevel", "error",
+                    # Small probe so output starts with the first cluster
+                    # instead of after several MB of input.
+                    "-probesize", "32768",
+                    "-analyzeduration", "0",
+                    "-f", "webm",
+                    "-i", "pipe:0",
+                    "-f", "f32le",
+                    "-acodec", "pcm_f32le",
+                    "-ac", "1",
+                    "-ar", str(self.sample_rate),
+                    "pipe:1",
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            self._reader = threading.Thread(
+                target=self._read_pcm, args=(self._proc.stdout,), daemon=True
+            )
+            self._reader.start()
+        return self._proc
+
+    def _read_pcm(self, stdout) -> None:
+        while True:
+            chunk = stdout.read1(65536)
+            if not chunk:
+                return
+            with self._lock:
+                self._pcm.extend(chunk)
 
     def add_chunk(self, chunk: bytes) -> None:
-        """Add a WebM chunk from MediaRecorder."""
-        self._data.extend(chunk)
+        """Feed a WebM chunk from MediaRecorder to the decoder.
+
+        Raises:
+            SessionLimitError: if the stream would exceed MAX_SESSION_BYTES.
+        """
+        if self._bytes_in + len(chunk) > MAX_SESSION_BYTES:
+            raise SessionLimitError("Live session audio limit reached")
+        self._bytes_in += len(chunk)
+        proc = self._start()
+        try:
+            proc.stdin.write(chunk)
+            proc.stdin.flush()
+        except (BrokenPipeError, ValueError):
+            # ffmpeg exited (input it cannot decode); decode_new reports it.
+            pass
 
     def decode_new(self) -> np.ndarray:
-        """Decode full accumulated stream, return only new (previously unreturned) samples."""
-        if not self._data:
-            return np.array([], dtype=np.float32)
+        """Samples decoded since the last call."""
+        with self._lock:
+            usable = len(self._pcm) - len(self._pcm) % 4
+            data = bytes(self._pcm[:usable])
+            del self._pcm[:usable]
+        return np.frombuffer(data, dtype=np.float32)
 
-        all_audio = convert_webm_to_pcm(bytes(self._data), self.sample_rate)
-        if len(all_audio) <= self._decoded_samples:
-            return np.array([], dtype=np.float32)
-
-        new = all_audio[self._decoded_samples:]
-        self._decoded_samples = len(all_audio)
-        return new
+    def finish(self) -> np.ndarray:
+        """End the stream, wait for ffmpeg to flush, return the rest."""
+        if self._proc is not None:
+            try:
+                self._proc.stdin.close()
+            except (BrokenPipeError, ValueError):
+                pass
+            try:
+                self._proc.wait(timeout=FFMPEG_FLUSH_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+            if self._reader is not None:
+                self._reader.join(timeout=5)
+        return self.decode_new()
 
     def clear(self) -> None:
-        """Clear accumulated data."""
-        self._data.clear()
-        self._decoded_samples = 0
+        """Stop ffmpeg and drop any buffered audio."""
+        if self._proc is not None:
+            try:
+                self._proc.stdin.close()
+            except (BrokenPipeError, ValueError):
+                pass
+            if self._proc.poll() is None:
+                self._proc.kill()
+            self._proc.wait()
+            self._proc = None
+        with self._lock:
+            self._pcm.clear()
+        self._bytes_in = 0
 
 
 @dataclass
@@ -400,8 +447,11 @@ class RealtimeTranscriptionSession:
         self.enable_llm_polish = enable_llm_polish
 
         # WebM chunk accumulation (individual chunks are not standalone files)
-        self._webm_accumulator = WebmAccumulator()
-        self._last_decode_time = 0.0
+        self._webm_accumulator = StreamingWebmDecoder()
+        # Throttle on the last attempt, not the last success: undecodable
+        # input never succeeds and used to re-decode on every message.
+        self._last_decode_attempt = 0.0
+        self._failed_decodes = 0
 
         # Segment handling
         self.segment_merger = SegmentMerger()
@@ -435,21 +485,24 @@ class RealtimeTranscriptionSession:
             return
 
         async with self._lock:
-            # Accumulate the WebM chunk (individual chunks are not standalone)
-            self._webm_accumulator.add_chunk(webm_bytes)
+            # Feed the chunk to the session's ffmpeg (a pipe write can block
+            # while ffmpeg catches up, so keep it off the event loop).
+            await asyncio.to_thread(self._webm_accumulator.add_chunk, webm_bytes)
 
-            # Only decode when enough time has passed (avoid excessive FFmpeg calls)
+            # Only transcribe when enough new audio has had time to arrive
             now = time.monotonic()
             min_decode_interval = self.min_chunk_samples / 16000
-            if self._last_decode_time > 0 and (now - self._last_decode_time) < min_decode_interval * 0.8:
+            if self._last_decode_attempt > 0 and (now - self._last_decode_attempt) < min_decode_interval * 0.8:
                 return
+            self._last_decode_attempt = now
 
-            # Decode new audio from accumulated stream (in thread — FFmpeg is blocking)
-            new_audio = await asyncio.to_thread(self._webm_accumulator.decode_new)
+            new_audio = self._webm_accumulator.decode_new()
             if len(new_audio) == 0:
+                self._failed_decodes += 1
+                if self._failed_decodes >= MAX_FAILED_DECODES:
+                    raise SessionLimitError("Live audio could not be decoded")
                 return
-
-            self._last_decode_time = now
+            self._failed_decodes = 0
 
             # Append to buffer
             self.buffer.append(new_audio)
@@ -543,8 +596,8 @@ class RealtimeTranscriptionSession:
         async with self._lock:
             self.is_active = False
 
-            # Decode any remaining accumulated WebM data
-            remaining_audio = await asyncio.to_thread(self._webm_accumulator.decode_new)
+            # Flush ffmpeg and take the end of the stream
+            remaining_audio = await asyncio.to_thread(self._webm_accumulator.finish)
             if len(remaining_audio) > 0:
                 self.buffer.append(remaining_audio)
 

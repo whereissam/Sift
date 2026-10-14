@@ -5,7 +5,11 @@ import logging
 import time
 from pathlib import Path
 from typing import Callable, Optional
+from urllib.parse import urlsplit
 
+from sift_core.fetch.url_validator import pinned_sync_client, validate_url_ssrf
+
+from ...config import get_settings
 from .base import (
     CloudProvider,
     CloudUploadResult,
@@ -15,6 +19,98 @@ from .base import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _operator_allowed(netloc: str, host: str) -> bool:
+    allowed = {
+        e.strip().lower() for e in get_settings().s3_allowed_endpoints.split(",") if e.strip()
+    }
+    return netloc.lower() in allowed or host in allowed
+
+
+def validate_endpoint_url(endpoint_url: Optional[str]) -> None:
+    """Refuse an S3 endpoint_url that points at a private or internal address.
+
+    endpoint_url comes from API input, and every S3 call (validate, list,
+    upload, delete) sends a signed request to it. Self-hosted endpoints on
+    private addresses are allowed only through S3_ALLOWED_ENDPOINTS.
+
+    Raises:
+        ValueError: if the endpoint is malformed or not allowed.
+    """
+    if endpoint_url is None:
+        return
+    if not isinstance(endpoint_url, str):
+        raise ValueError("endpoint_url must be a string")
+    parts = urlsplit(endpoint_url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("endpoint_url must be an http(s) URL")
+    if _operator_allowed(parts.netloc, parts.hostname.lower()):
+        return
+    ok, error = validate_url_ssrf(endpoint_url)
+    if not ok:
+        raise ValueError(
+            f"endpoint_url not allowed: {error}. "
+            "Add it to S3_ALLOWED_ENDPOINTS to use a private endpoint."
+        )
+
+
+def endpoint_needs_pinning(endpoint_url: Optional[str]) -> bool:
+    """A caller-supplied endpoint the operator has not allowlisted."""
+    if not endpoint_url:
+        return False  # AWS itself
+    parts = urlsplit(endpoint_url)
+    return not _operator_allowed(parts.netloc, (parts.hostname or "").lower())
+
+
+class _BufferedRaw:
+    """The minimal raw-stream interface botocore reads a response through."""
+
+    def __init__(self, content: bytes):
+        self._content = content
+        self._pos = 0
+
+    def read(self, amt: Optional[int] = None) -> bytes:
+        end = len(self._content) if amt is None else self._pos + amt
+        chunk = self._content[self._pos:end]
+        self._pos += len(chunk)
+        return chunk
+
+    def stream(self, **kwargs):
+        while chunk := self.read(65536):
+            yield chunk
+
+    def close(self) -> None:
+        pass
+
+
+def _send_pinned(request, **kwargs):
+    """botocore before-send hook: perform the request through a pinned client.
+
+    Validating endpoint_url once is not enough: botocore resolves the name
+    again for every connection, so a DNS-rebinding name could pass the check
+    and then reach an internal address. The pinned client validates the IP
+    it actually connects to. Returning a response here makes botocore skip
+    its own HTTP send. The request is already signed; the Host header and
+    TLS SNI keep the hostname.
+    """
+    from botocore.awsrequest import AWSResponse
+
+    body = request.body
+    if hasattr(body, "read"):
+        body = body.read()
+    headers = {
+        k: v.decode() if isinstance(v, bytes) else v
+        for k, v in request.headers.items()
+        if k.lower() != "expect"  # httpx does not do 100-continue
+    }
+    with pinned_sync_client(timeout=120.0) as client:
+        resp = client.request(request.method, request.url, headers=headers, content=body)
+        content = resp.content  # decoded, so drop the encoding header below
+    resp_headers = {
+        k: v for k, v in resp.headers.items() if k.lower() != "content-encoding"
+    }
+    return AWSResponse(request.url, resp.status_code, resp_headers, _BufferedRaw(content))
 
 
 class S3Provider(CloudProvider):
@@ -53,6 +149,8 @@ class S3Provider(CloudProvider):
 
             credentials = self.config.credentials
             settings = self.config.settings
+            # Providers also load from the DB and env, not only the API.
+            validate_endpoint_url(settings.get("endpoint_url"))
 
             boto_config = BotoConfig(
                 signature_version="s3v4",
@@ -67,6 +165,8 @@ class S3Provider(CloudProvider):
                 endpoint_url=settings.get("endpoint_url"),
                 config=boto_config,
             )
+            if endpoint_needs_pinning(settings.get("endpoint_url")):
+                self._client.meta.events.register("before-send.s3", _send_pinned)
 
         return self._client
 

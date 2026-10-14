@@ -11,11 +11,14 @@ from urllib.parse import urlparse, unquote
 import httpx
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, url_host_matches
 from ..exceptions import SiftError, ContentNotFoundError
-from ..fetch.url_validator import safe_get
+from ..fetch.url_validator import ResponseTooLargeError, iter_capped, safe_stream
 
 logger = logging.getLogger(__name__)
+
+# Discord caps attachments at 500 MB, so nothing legitimate is larger.
+MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
 
 
 class DiscordAudioDownloader(PlatformDownloader):
@@ -29,6 +32,9 @@ class DiscordAudioDownloader(PlatformDownloader):
     """
 
     PLATFORM = Platform.DISCORD
+
+    # Only these hosts (and their subdomains) are routed here.
+    HOSTS = ("cdn.discordapp.com", "media.discordapp.net")
 
     # URL patterns for Discord audio
     URL_PATTERNS = [
@@ -59,7 +65,9 @@ class DiscordAudioDownloader(PlatformDownloader):
     @classmethod
     def can_handle_url(cls, url: str) -> bool:
         """Check if URL is a valid Discord audio URL."""
-        if not any(re.search(pattern, url) for pattern in cls.URL_PATTERNS):
+        if not url_host_matches(url, cls.HOSTS) or not any(
+            re.search(pattern, url) for pattern in cls.URL_PATTERNS
+        ):
             return False
 
         # Extract filename and check if it's an audio file
@@ -147,47 +155,54 @@ class DiscordAudioDownloader(PlatformDownloader):
             }
 
             logger.info("Downloading from Discord CDN...")
+            temp_path = self.download_dir / f"discord_temp_{content_id}{original_ext}"
             try:
-                response = await safe_get(
+                # Streamed to disk under a byte cap: buffering the decoded body
+                # let a small gzip response expand to GBs in memory.
+                async with safe_stream(
                     url,
                     client_kwargs={"timeout": httpx.Timeout(300.0)},
                     headers=headers,
-                )
+                ) as response:
+                    if response.status_code == 404:
+                        raise ContentNotFoundError(
+                            f"Discord file not found or expired: {url}"
+                        )
+                    if response.status_code == 403:
+                        raise SiftError(
+                            "Access denied. The link may have expired or require authentication."
+                        )
+                    if response.status_code != 200:
+                        raise SiftError(
+                            f"Failed to download from Discord: HTTP {response.status_code}"
+                        )
+                    with open(temp_path, "wb") as f:
+                        async for chunk in iter_capped(response, MAX_DOWNLOAD_BYTES):
+                            f.write(chunk)
+            except ResponseTooLargeError as e:
+                temp_path.unlink(missing_ok=True)
+                raise SiftError(f"Discord file is too large: {e}") from e
             except ValueError as e:
+                temp_path.unlink(missing_ok=True)
                 raise SiftError(f"Blocked Discord URL: {e}") from e
 
-            if response.status_code == 404:
-                raise ContentNotFoundError(f"Discord file not found or expired: {url}")
-
-            if response.status_code == 403:
-                raise SiftError(
-                    "Access denied. The link may have expired or require authentication."
-                )
-
-            if response.status_code != 200:
-                raise SiftError(
-                    f"Failed to download from Discord: HTTP {response.status_code}"
-                )
-
-            # Save the downloaded content
-            temp_path = self.download_dir / f"discord_temp_{content_id}{original_ext}"
-            temp_path.write_bytes(response.content)
             logger.info(f"Downloaded to temp file: {temp_path}")
 
-            # Convert format if needed
-            needs_conversion = output_format and f".{output_format}" != original_ext
-            if needs_conversion:
+            # Convert format if needed, straight into the requested location.
+            # The converter checks the actual bytes (a no-op move when they
+            # already match); converting next to the temp file used to leave
+            # the result at discord_temp_* and ignore `output_path`.
+            if output_format:
                 from ..media.converter import AudioConverter
 
-                logger.info(f"Converting from {original_ext} to {output_format}...")
                 converter = AudioConverter()
-                converted_path = await converter.convert(
+                file_path = await converter.convert(
                     input_path=temp_path,
+                    output_path=Path(file_path).with_suffix(f".{output_format}"),
                     output_format=output_format,
                     quality=quality,
                     keep_original=False,
                 )
-                file_path = converted_path
             else:
                 # Just move the temp file to final location
                 if temp_path != file_path:

@@ -13,8 +13,9 @@ from .bot.webhook import router as telegram_router
 from .config import get_settings
 from .api import router as api_router
 from .api.ingestion_routes import router as ingestion_router
-from .api.ratelimit import limiter
+from .api.ratelimit import WriteRateLimitMiddleware, limiter
 from .api.middleware import TimeoutMiddleware, RequestIDMiddleware
+from .api.origin_guard import OriginGuardMiddleware, OriginPolicy, loopback_only_hosts
 from .logging_config import configure_logging, get_logger
 
 # Configure structured logging
@@ -205,16 +206,23 @@ async def lifespan(app: FastAPI):
         logger.error(f"Cleanup error: {e}")
 
 
+_docs = get_settings().docs_enabled
 app = FastAPI(
     title="Sift API",
     description="API for downloading audio from X Spaces, Apple Podcasts, and Spotify",
     version="0.2.0",
     lifespan=lifespan,
+    # With API_KEY set the docs would expose the full API schema to anyone.
+    docs_url="/docs" if _docs else None,
+    redoc_url="/redoc" if _docs else None,
+    openapi_url="/openapi.json" if _docs else None,
 )
 
 # Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# default_limits only take effect through a middleware.
+app.add_middleware(WriteRateLimitMiddleware)
 
 # CORS middleware
 _settings = get_settings()
@@ -264,6 +272,14 @@ app.add_middleware(TimeoutMiddleware)
 
 # Request ID middleware (for tracing)
 app.add_middleware(RequestIDMiddleware)
+
+# Outermost: refuse cross-site writes/WebSockets and DNS-rebound Host names
+# before anything else runs.
+app.add_middleware(
+    OriginGuardMiddleware,
+    policy=OriginPolicy(_cors_origins),
+    allowed_hosts=loopback_only_hosts(_settings.host, _settings.allowed_hosts),
+)
 
 # Include API routes
 app.include_router(api_router, prefix="/api", tags=["download"])

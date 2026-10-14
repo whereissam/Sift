@@ -32,6 +32,21 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 jobs = DurableDownloadJobs()
 
 
+def _file_used_by_other_job(path, job_id: str) -> bool:
+    """Whether another job records ``path`` as its file.
+
+    If the store cannot answer, assume it does: keeping a file is safer
+    than deleting one another job still serves.
+    """
+    try:
+        from ..store import get_job_store
+
+        return get_job_store().file_used_by_other_job(path, job_id)
+    except Exception:
+        logger.warning("Could not check whether %s is shared; keeping it", path)
+        return True
+
+
 def _core_platform_to_schema(platform: CorePlatform) -> Platform:
     """Convert core Platform enum to schema Platform enum."""
     mapping = {
@@ -80,7 +95,11 @@ async def _process_download(job_id: str, request: DownloadRequest):
                         raise ValueError(f"output_dir must be within the download directory: {_base_dir}")
                     output_path.mkdir(parents=True, exist_ok=True)
                     new_path = output_path / result.file_path.name
-                    shutil.move(str(result.file_path), str(new_path))
+                    if _file_used_by_other_job(result.file_path, job_id):
+                        # Another job's finished download: leave it in place.
+                        shutil.copy2(str(result.file_path), str(new_path))
+                    else:
+                        shutil.move(str(result.file_path), str(new_path))
                     final_path = new_path
                     logger.info(f"[{job_id}] Moved file to {new_path}")
                 except Exception as e:
@@ -314,9 +333,9 @@ async def cancel_download(job_id: str):
 
     job = jobs[job_id]
 
-    # Clean up file if exists
+    # Clean up file if exists, unless another job also points to it
     file_path = getattr(job, "_file_path", None)
-    if file_path:
+    if file_path and not _file_used_by_other_job(file_path, job_id):
         try:
             Path(file_path).unlink(missing_ok=True)
         except Exception:

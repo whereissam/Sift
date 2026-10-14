@@ -24,8 +24,30 @@ BLOCKED_NETWORKS = [
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("fc00::/7"),
     ipaddress.ip_network("fe80::/10"),
+    ipaddress.ip_network("fec0::/10"),  # deprecated site-local
     ipaddress.ip_network("::ffff:0:0/96"),  # IPv4-mapped IPv6
 ]
+
+
+# IPv6 prefixes that carry an IPv4 address in their low 32 bits.
+_NAT64_PREFIXES = (
+    ipaddress.ip_network("64:ff9b::/96"),  # well-known NAT64 (RFC 6052)
+    ipaddress.ip_network("64:ff9b:1::/48"),  # local-use NAT64 (RFC 8215)
+)
+_IPV4_COMPATIBLE = ipaddress.ip_network("::/96")  # deprecated ::a.b.c.d
+
+
+def _embedded_ipv4(ip: ipaddress.IPv6Address) -> ipaddress.IPv4Address | None:
+    """The IPv4 address an IPv6 address tunnels to, if it encodes one."""
+    if ip.ipv4_mapped:
+        return ip.ipv4_mapped
+    if ip.sixtofour:
+        return ip.sixtofour
+    if ip.teredo:
+        return ip.teredo[1]
+    if any(ip in net for net in _NAT64_PREFIXES) or ip in _IPV4_COMPATIBLE:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    return None
 
 
 def _ip_block_reason(ip_str: str) -> str | None:
@@ -39,6 +61,15 @@ def _ip_block_reason(ip_str: str) -> str | None:
     for network in BLOCKED_NETWORKS:
         if ip in network:
             return "a private/reserved IP address"
+    # NAT64, 6to4, Teredo and ::a.b.c.d reach an IPv4 host: judge that host.
+    if ip.version == 6:
+        embedded = _embedded_ipv4(ip)
+        if embedded is not None:
+            return _ip_block_reason(str(embedded))
+    # Anything else not globally routable: benchmarking (198.18.0.0/15),
+    # IETF protocol assignments (192.0.0.0/24), site-local fec0::/10, ...
+    if not ip.is_global:
+        return "a non-public IP address"
     return None
 
 
@@ -121,6 +152,38 @@ class _PinnedTransport(httpx.AsyncHTTPTransport):
         return await super().handle_async_request(request)
 
 
+class _PinnedSyncTransport(httpx.HTTPTransport):
+    """Synchronous twin of _PinnedTransport, for callers outside asyncio."""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        ip = _resolve_and_pin(host)
+        if ip != host:
+            request.extensions = dict(request.extensions)
+            request.extensions["sni_hostname"] = host
+            request.url = request.url.copy_with(host=ip)
+        return super().handle_request(request)
+
+
+def pinned_sync_client(**client_kwargs) -> httpx.Client:
+    """Synchronous pinned_client(): connects only to IPs that pass the SSRF check."""
+    client_kwargs["follow_redirects"] = False
+    client_kwargs.setdefault("transport", _PinnedSyncTransport())
+    return httpx.Client(**client_kwargs)
+
+
+def pinned_client(**client_kwargs) -> httpx.AsyncClient:
+    """An AsyncClient that connects only to IPs that pass the SSRF check.
+
+    For requests safe_get/safe_stream do not cover (POSTs). Each connection
+    resolves and validates the host itself, so a name re-resolved after an
+    earlier validate_url_ssrf (DNS rebinding) cannot reach a private address.
+    Redirects are not followed.
+    """
+    client_kwargs["follow_redirects"] = False
+    return httpx.AsyncClient(**_client_kwargs_with_pinning(client_kwargs))
+
+
 def _client_kwargs_with_pinning(client_kwargs: Optional[dict]) -> dict:
     """Inject the DNS-pinning transport into client kwargs if not overridden."""
     kwargs = dict(client_kwargs or {})
@@ -128,21 +191,55 @@ def _client_kwargs_with_pinning(client_kwargs: Optional[dict]) -> dict:
     return kwargs
 
 
+# Largest body safe_get will hold in memory, counted after Content-Encoding
+# is decoded. A gzip body expands ~1000x, so a cap on the wire alone would let
+# a few MB become GBs. Feeds, pages and API responses all fit well under it.
+DEFAULT_MAX_BYTES = 64 * 1024 * 1024
+
+
+class ResponseTooLargeError(ValueError):
+    """A response body exceeded the caller's byte limit."""
+
+
+async def iter_capped(resp: httpx.Response, max_bytes: int, chunk_size: int = 1 << 20):
+    """Yield a streamed response's decoded bytes, stopping past ``max_bytes``.
+
+    Content-Length is checked first so an honest oversized response fails
+    before any of it is read; the running count catches the rest, including
+    compressed bodies whose Content-Length is only the wire size.
+
+    Raises:
+        ResponseTooLargeError: once more than ``max_bytes`` would be returned.
+    """
+    declared = resp.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > max_bytes:
+        raise ResponseTooLargeError(f"Response exceeds {max_bytes} bytes")
+    total = 0
+    async for chunk in resp.aiter_bytes(chunk_size):
+        total += len(chunk)
+        if total > max_bytes:
+            raise ResponseTooLargeError(f"Response exceeds {max_bytes} bytes")
+        yield chunk
+
+
 async def safe_get(
     url: str,
     *,
     client_kwargs: Optional[dict] = None,
     max_redirects: int = 5,
+    max_bytes: int = DEFAULT_MAX_BYTES,
     **get_kwargs,
 ) -> httpx.Response:
     """Perform an SSRF-safe GET request.
 
     Validates the URL (and every redirect Location) with validate_url_ssrf,
     disables httpx auto-redirects, and follows 3xx redirects manually after
-    re-validating each hop.
+    re-validating each hop. The body is streamed and read up to ``max_bytes``
+    of decoded content.
 
     Raises:
         ValueError: if the URL or any redirect target is blocked.
+        ResponseTooLargeError: if the decoded body exceeds ``max_bytes``.
     """
     is_valid, error = validate_url_ssrf(url)
     if not is_valid:
@@ -154,22 +251,38 @@ async def safe_get(
     async with httpx.AsyncClient(**client_kwargs) as client:
         current_url = url
         for _ in range(max_redirects + 1):
-            resp = await client.get(current_url, follow_redirects=False, **get_kwargs)
-            if resp.is_redirect:
-                location = resp.headers.get("location")
+            async with client.stream(
+                "GET", current_url, follow_redirects=False, **get_kwargs
+            ) as resp:
+                location = resp.headers.get("location") if resp.is_redirect else None
                 if not location:
-                    return resp
-                # Join against the hostname URL we sent, not resp.url (whose host
-                # has been rewritten to the pinned IP by the transport).
-                next_url = urljoin(current_url, location)
-                is_valid, error = validate_url_ssrf(next_url)
-                if not is_valid:
-                    raise ValueError(f"Blocked redirect URL: {error}")
-                current_url = next_url
-                continue
-            return resp
+                    body = b"".join([c async for c in iter_capped(resp, max_bytes)])
+                    return _buffered(resp, body)
+            # Join against the hostname URL we sent, not resp.url (whose host
+            # has been rewritten to the pinned IP by the transport).
+            next_url = urljoin(current_url, location)
+            is_valid, error = validate_url_ssrf(next_url)
+            if not is_valid:
+                raise ValueError(f"Blocked redirect URL: {error}")
+            current_url = next_url
 
         raise ValueError(f"Too many redirects (>{max_redirects}) for URL: {url}")
+
+
+def _buffered(resp: httpx.Response, body: bytes) -> httpx.Response:
+    """A plain Response holding ``body``, which is already decoded.
+
+    The encoding headers are dropped so httpx does not try to decode the
+    body a second time.
+    """
+    headers = [
+        (k, v)
+        for k, v in resp.headers.multi_items()
+        if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")
+    ]
+    return httpx.Response(
+        resp.status_code, headers=headers, content=body, request=resp.request
+    )
 
 
 def safe_stream(
