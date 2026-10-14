@@ -9,7 +9,6 @@ import base64
 import hashlib
 import sqlite3
 import stat
-from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet, InvalidToken
