@@ -284,6 +284,11 @@ All under the `/api` prefix; all require the API key.
 | `GET` | `/predictions?resolution=pending` · `/predictions/{claim_id}` | Prediction browse |
 | `POST` | `/predictions/{claim_id}/resolve` | Set resolution (reverting to pending is forced through DELETE) |
 | `DELETE` | `/predictions/{claim_id}/resolve` | Revert to pending |
+| `GET` | `/predictions/review-queue` | Review queue (KOL scorecard) |
+| `POST` | `/predictions/{claim_id}/review` | Record human review of quote + speaker |
+| `PUT` `DELETE` | `/predictions/{claim_id}/target` | Price target (asset, ≥/≤, USD value) |
+| `PUT` | `/predictions/{claim_id}/due` | Due date |
+| `POST` | `/predictions/check` | Run the price checker now |
 
 Export formats (claims): JSON, JSONL (one claim per line for LLM consumption), CSV.
 

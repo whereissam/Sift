@@ -113,6 +113,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to start digest runner: {e}")
 
+    # Start prediction checker (KOL scorecard step 2)
+    try:
+        from .knowledge.prediction_checker import start_prediction_checker
+        await start_prediction_checker()
+    except Exception as e:
+        logger.error(f"Failed to start prediction checker: {e}")
+
     # Start Telegram bot in webhook mode
     telegram_app = None
     if settings.telegram_bot_token and settings.telegram_bot_mode == "webhook":
@@ -149,6 +156,13 @@ async def lifespan(app: FastAPI):
         await stop_digest_runner()
     except Exception as e:
         logger.error(f"Failed to stop digest runner: {e}")
+
+    # Stop prediction checker
+    try:
+        from .knowledge.prediction_checker import stop_prediction_checker
+        await stop_prediction_checker()
+    except Exception as e:
+        logger.error(f"Failed to stop prediction checker: {e}")
 
     # Stop storage manager
     try:
