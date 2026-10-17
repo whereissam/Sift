@@ -1,0 +1,144 @@
+name: Live link check
+
+# Downloads break without a commit here: sites change, and yt-dlp releases
+# change extractors. This runs one real link per platform every day, against
+# both the pinned yt-dlp and the newest release, so the two failure kinds are
+# told apart (see tests/live/test_platform_links.py for how to read them).
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - uv.lock
+      - packages/sift-core/src/sift_core/platforms/**
+      - tests/live/**
+      - .github/workflows/live-links.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-links-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live:
+    name: Live links (yt-dlp ${{ matrix.yt-dlp }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        yt-dlp: [pinned, latest]
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # yt-dlp needs a JS runtime to solve YouTube's n-challenge.
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      # `uv run` would re-sync back to the lockfile, so the tests below use
+      # --no-sync to keep this upgrade.
+      - name: Upgrade yt-dlp to the newest release
+        if: matrix.yt-dlp == 'latest'
+        run: uv pip install --upgrade yt-dlp
+
+      - name: Show yt-dlp version
+        run: uv run --no-sync yt-dlp --version
+
+      # Optional auth. Each secret holds a Netscape cookies.txt; unset ones
+      # just skip that canary.
+      - name: Write cookie files
+        env:
+          INSTAGRAM_COOKIES: ${{ secrets.INSTAGRAM_COOKIES }}
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+        run: |
+          if [ -n "$INSTAGRAM_COOKIES" ]; then
+            printf '%s' "$INSTAGRAM_COOKIES" > "$RUNNER_TEMP/instagram.txt"
+            echo "INSTAGRAM_COOKIES_FILE=$RUNNER_TEMP/instagram.txt" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$YOUTUBE_COOKIES" ]; then
+            printf '%s' "$YOUTUBE_COOKIES" > "$RUNNER_TEMP/youtube.txt"
+            echo "YOUTUBE_COOKIES_FILE=$RUNNER_TEMP/youtube.txt" >> "$GITHUB_ENV"
+          fi
+
+      - name: Check links
+        env:
+          SIFT_LIVE: "1"
+          TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+          TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+          SPOTIFY_SP_DC: ${{ secrets.SPOTIFY_SP_DC }}
+          # Fresh links for platforms whose URLs expire (repo variables).
+          SIFT_CANARY_SPOTIFY: ${{ vars.SIFT_CANARY_SPOTIFY }}
+          SIFT_CANARY_X_SPACES: ${{ vars.SIFT_CANARY_X_SPACES }}
+          SIFT_CANARY_DISCORD: ${{ vars.SIFT_CANARY_DISCORD }}
+          SIFT_CANARY_XIAOHONGSHU: ${{ vars.SIFT_CANARY_XIAOHONGSHU }}
+        run: uv run --no-sync pytest tests/live -v -rs --junitxml=live-links.xml
+
+      - name: Summary
+        if: always()
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+          print("### yt-dlp ${{ matrix.yt-dlp }}\n\n| check | result |\n|---|---|")
+          try:
+              root = ET.parse("live-links.xml").getroot()
+          except (OSError, ET.ParseError):
+              print("| (no results) | tests did not run |")
+              raise SystemExit
+          for case in root.iter("testcase"):
+              if case.find("failure") is not None or case.find("error") is not None:
+                  result = "❌ failed"
+              elif case.find("skipped") is not None:
+                  result = "⏭️ " + case.find("skipped").get("message", "skipped")
+              else:
+                  result = "✅ ok"
+              print(f"| `{case.get('name')}` | {result} |")
+          EOF
+
+  # A scheduled run failing opens (or updates) one tracking issue, so a broken
+  # platform is noticed even when nobody is watching the Actions tab.
+  report:
+    needs: live
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Live link check failing"
+          body="The daily live link check failed: $RUN_URL
+
+          - fails on **pinned**, passes on **latest** → \`uv lock --upgrade-package yt-dlp\`
+          - fails on **both** → the platform adapter needs a fix
+          - fails only on **latest** → yt-dlp regression; keep the pin"
+          number=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "Still failing: $RUN_URL"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

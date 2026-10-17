@@ -15,6 +15,13 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
   - [ ] Follow-up: `--image` custom-image CLI flag (Python API already accepts `image`)
   - [ ] Follow-up: direct URL input for `to-video` (currently local files only)
 
+### Platform reliability (2026-10-17)
+
+- [x] Live link canaries (`tests/live/`) + daily `live-links.yml` against pinned and latest yt-dlp, Dependabot bumps for yt-dlp / spotdl / youtube-transcript-api
+  - [ ] Follow-up: set repo secrets `INSTAGRAM_COOKIES` / `YOUTUBE_COOKIES` so Instagram is covered and YouTube survives runner bot-checks
+  - [ ] Follow-up: canaries for the Tauri desktop backend (`src-tauri/src/backend/downloader.rs` runs the system yt-dlp, not the pinned one)
+  - [ ] Follow-up: verify the download half once locally on a machine with ffmpeg (only metadata was verified on 2026-10-17)
+
 ### v2.0 — AI-Native Intelligence (Next)
 
 | Feature | Difficulty | Impact | Priority |

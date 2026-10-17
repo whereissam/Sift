@@ -1,4 +1,4 @@
-.PHONY: desktop dev dev-web dev-backend dev-frontend test lint clean
+.PHONY: desktop dev dev-web dev-backend dev-frontend test check-links lint clean
 
 # ============================================================
 # Desktop App Build (Pure Rust — no Python bundling needed)
@@ -44,6 +44,10 @@ clean:
 
 test:
 	uv run pytest
+
+# Hit one real link per platform (network, ~2 min). See docs/test-links.md
+check-links:
+	SIFT_LIVE=1 uv run pytest tests/live -v -rs
 
 lint:
 	uv run ruff check .

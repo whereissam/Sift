@@ -168,6 +168,14 @@ progress in the transcription view; ordinary transcriptions show nothing extra.
 | Instagram | `instagram.com/reel/...`, `instagram.com/p/...` (requires login cookies — see [docs/instagram-setup.md](docs/instagram-setup.md)) |
 | 小红书 | `xiaohongshu.com/explore/...`, `xhslink.com/...` |
 
+### Keeping downloads working
+
+Sites change and yt-dlp releases change extractors, so a platform can break with
+no commit here. `make check-links` downloads one real link per platform; the
+[Live link check](.github/workflows/live-links.yml) workflow runs it daily against
+both the pinned and the newest yt-dlp and opens an issue when it fails. See
+[docs/test-links.md](docs/test-links.md) for how to read a failure.
+
 ## Telegram Bot
 
 More than a download bot — a **research assistant**. Send a link and ask questions about the content. Supports all 10 platforms with inline format selection, transcription, and AI-powered Q&A.
@@ -361,6 +369,7 @@ Reject stale timestamps (e.g. older than 5 minutes) to block replays.
 | `make dev-frontend` | Vite frontend only (`:5173`) |
 | `make desktop` | Build desktop installer (`.dmg` / `.msi` / `.deb`) |
 | `make test` | Run Python test suite |
+| `make check-links` | Check one real link per platform (network) |
 | `make lint` | Lint Python + TypeScript + Rust |
 | `make clean` | Remove build artifacts |
 
