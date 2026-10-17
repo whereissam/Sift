@@ -1,7 +1,10 @@
 # Sift - Frontend
 
 <p align="center">
-  <img src="public/logo.svg" alt="Sift" width="200">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/logo-dark.png">
+    <img src="public/logo.png" alt="Sift" width="200">
+  </picture>
 </p>
 
 Modern React frontend for downloading, transcribing, and analyzing audio from X Spaces, YouTube, Apple Podcasts, Spotify, and more.
@@ -210,4 +213,4 @@ Both web and desktop backends serve the same API shape:
 
 ## License
 
-MIT
+[AGPL-3.0](../LICENSE)

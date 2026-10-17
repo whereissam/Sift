@@ -25,7 +25,8 @@ CORE = CORE_SRC / "sift_core"
 
 def _imported_modules(path: Path, src_root: Path = ROOT) -> set[str]:
     """Absolute dotted module names this file imports, relatives resolved."""
-    tree = ast.parse(path.read_text(), filename=str(path))
+    # Source is UTF-8 by spec; the locale default (e.g. cp950) is not.
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     package = path.relative_to(src_root).parent.parts
     found: set[str] = set()
 

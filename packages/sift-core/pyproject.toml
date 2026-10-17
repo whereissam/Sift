@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Sift's ingestion core: download audio/video from X Spaces, podcasts, YouTube, Spotify and more, then transcribe it"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = {text = "AGPL-3.0-or-later"}
 # Only what downloading and fetching need. The server, database, bot, and
 # LLM stack live in the `sift` app and are not pulled in here.
 dependencies = [

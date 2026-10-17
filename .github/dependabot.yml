@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # The libraries that talk to the platforms go stale fastest: a site change
+  # is usually fixed by a new yt-dlp release, not by our code. Each bump PR
+  # touches uv.lock, which triggers the live link check on that PR.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: yt-dlp
+      - dependency-name: spotdl
+      - dependency-name: youtube-transcript-api
+    commit-message:
+      prefix: "fix(deps)"

@@ -1,22 +1,24 @@
 #!/bin/bash
-# Generate PNG icons from SVG for the browser extension
-# Requires ImageMagick or librsvg
+# Generate the extension's PNG icons from the app logo
+# Requires ImageMagick (or sips on macOS)
 
 cd "$(dirname "$0")"
+SRC=../frontend/public/logo.png
 
-if command -v rsvg-convert &> /dev/null; then
-    rsvg-convert -w 16 -h 16 icons/icon.svg > icons/icon16.png
-    rsvg-convert -w 48 -h 48 icons/icon.svg > icons/icon48.png
-    rsvg-convert -w 128 -h 128 icons/icon.svg > icons/icon128.png
-    echo "Icons generated with rsvg-convert"
-elif command -v convert &> /dev/null; then
-    convert -background none -resize 16x16 icons/icon.svg icons/icon16.png
-    convert -background none -resize 48x48 icons/icon.svg icons/icon48.png
-    convert -background none -resize 128x128 icons/icon.svg icons/icon128.png
+if command -v magick &> /dev/null || command -v convert &> /dev/null; then
+    IM=$(command -v magick || command -v convert)
+    for size in 16 48 128; do
+        "$IM" "$SRC" -resize "${size}x${size}" "icons/icon${size}.png"
+    done
     echo "Icons generated with ImageMagick"
+elif command -v sips &> /dev/null; then
+    for size in 16 48 128; do
+        sips -z "$size" "$size" "$SRC" --out "icons/icon${size}.png" > /dev/null
+    done
+    echo "Icons generated with sips"
 else
-    echo "Please install ImageMagick or librsvg to generate PNG icons"
-    echo "  macOS: brew install librsvg"
-    echo "  Ubuntu: apt install librsvg2-bin"
+    echo "Please install ImageMagick to generate PNG icons"
+    echo "  macOS: brew install imagemagick"
+    echo "  Ubuntu: apt install imagemagick"
     exit 1
 fi

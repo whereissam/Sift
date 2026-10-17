@@ -29,7 +29,8 @@ export const Route = createRootRoute({
             <div className="flex items-center h-12 sm:h-14 gap-6">
               {/* Brand mark */}
               <Link to="/audio" className="flex items-center gap-2 shrink-0">
-                <img src="/logo.svg" alt="Sift" className="h-6 sm:h-7 w-auto" />
+                <img src="/logo.png" alt="Sift" className="h-6 sm:h-7 w-auto dark:hidden" />
+                <img src="/logo-dark.png" alt="Sift" className="h-6 sm:h-7 w-auto hidden dark:block" />
                 <span className="text-sm sm:text-base font-bold tracking-tight text-foreground hidden sm:block">
                   Sift
                 </span>

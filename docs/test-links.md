@@ -1,12 +1,49 @@
 # Test Links
 
-Sample URLs for checking each platform's download path by hand.
+Sample URLs for checking each platform's download path.
+
+## Automated check
+
+These links are also checked automatically — they live in
+[`tests/live/canaries.py`](../tests/live/canaries.py):
+
+```bash
+make check-links            # or: SIFT_LIVE=1 uv run pytest tests/live -v -rs
+SIFT_LIVE_DOWNLOAD=all make check-links   # also fully download the long podcast episodes
+```
+
+Every link is checked for metadata; short ones (YouTube, X video, Instagram)
+are also downloaded and probed with `ffprobe` for real audio/video streams.
+
+[`.github/workflows/live-links.yml`](../.github/workflows/live-links.yml) runs
+the same check **daily**, once with the pinned yt-dlp and once with the newest
+release, and opens a "Live link check failing" issue when it breaks:
+
+| pinned | latest | meaning | fix |
+|--------|--------|---------|-----|
+| ❌ | ✅ | the site changed, yt-dlp already caught up | `uv lock --upgrade-package yt-dlp` |
+| ❌ | ❌ | our adapter is broken | fix the adapter in `sift_core/platforms/` |
+| ✅ | ❌ | new yt-dlp regressed | keep the pin, recheck in a few days |
+
+Dependabot ([`.github/dependabot.yml`](../.github/dependabot.yml)) opens a
+weekly PR bumping yt-dlp / spotdl / youtube-transcript-api; the live check runs
+on that PR, so it is safe to merge when green.
+
+To cover an expiring platform, set `SIFT_CANARY_<PLATFORM>` (e.g.
+`SIFT_CANARY_SPOTIFY`) locally, or as a repository *variable* for CI. Optional
+CI secrets: `INSTAGRAM_COOKIES` / `YOUTUBE_COOKIES` (cookies.txt contents),
+`TWITTER_AUTH_TOKEN`, `TWITTER_CT0`, `SPOTIFY_SP_DC`. GitHub runner IPs are
+bot-checked by YouTube and Instagram; cookies fix that. Until the
+`YOUTUBE_COOKIES` secret is set, the YouTube canaries skip on CI (they still
+run locally, where YouTube does not ask).
+
+## By hand
 
 Probe metadata only (fast, no bytes downloaded) through the adapters themselves:
 
 ```bash
 uv run python -c "
-import asyncio; from app.core import get_metadata
+import asyncio; from sift_core import get_metadata
 print(asyncio.run(get_metadata('<URL>')))"
 ```
 

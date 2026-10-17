@@ -1,7 +1,10 @@
 # Sift
 
 <p align="center">
-  <img src="frontend/public/logo.svg" alt="Sift" width="200">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/logo-dark.png">
+    <img src="frontend/public/logo.png" alt="Sift" width="200">
+  </picture>
 </p>
 
 **AI-First Knowledge Extraction Platform.** Ingest audio and video from X Spaces, Apple Podcasts, Spotify, YouTube, Discord, Instagram, 小红书, 小宇宙, 喜马拉雅, and more — then extract, search, and reason over the knowledge inside.
@@ -167,6 +170,14 @@ progress in the transcription view; ordinary transcriptions show nothing extra.
 | YouTube | `youtube.com/watch?v=...` |
 | Instagram | `instagram.com/reel/...`, `instagram.com/p/...` (requires login cookies — see [docs/instagram-setup.md](docs/instagram-setup.md)) |
 | 小红书 | `xiaohongshu.com/explore/...`, `xhslink.com/...` |
+
+### Keeping downloads working
+
+Sites change and yt-dlp releases change extractors, so a platform can break with
+no commit here. `make check-links` downloads one real link per platform; the
+[Live link check](.github/workflows/live-links.yml) workflow runs it daily against
+both the pinned and the newest yt-dlp and opens an issue when it fails. See
+[docs/test-links.md](docs/test-links.md) for how to read a failure.
 
 ## Telegram Bot
 
@@ -361,6 +372,8 @@ Reject stale timestamps (e.g. older than 5 minutes) to block replays.
 | `make dev-frontend` | Vite frontend only (`:5173`) |
 | `make desktop` | Build desktop installer (`.dmg` / `.msi` / `.deb`) |
 | `make test` | Run Python test suite |
+| `make check-links` | Check one real link per platform (network) |
+| `make video` | Render the Remotion promo to `video/out/sift-promo.mp4` |
 | `make lint` | Lint Python + TypeScript + Rust |
 | `make clean` | Remove build artifacts |
 
@@ -608,6 +621,8 @@ app/api/         FastAPI routers · app/mcp_server/ · app/bot/
 - [Queue & Scheduling](docs/queue-scheduling.md) - Batch downloads, priority queue, scheduling
 - [Webhooks & Annotations](docs/webhooks-annotations.md) - Notifications and collaboration
 - [Feature Roadmap](docs/todo.md) - Open work only
+- [KOL Prediction Scorecard](docs/kol-scorecard.md) - Design sketch
+- [Free-Tool Landing Pages](docs/free-tools.md) - Design sketch
 - [Shipped](docs/shipped.md) - Completed phases and the notes written when they landed
 
 ## Security
@@ -624,4 +639,7 @@ Don't open a public issue.
 
 ## License
 
-MIT
+[AGPL-3.0](LICENSE). You can use, modify, and self-host Sift freely. If you
+run a modified version as a network service, you must make your modified
+source available to its users. Versions released before this change remain
+available under MIT.
