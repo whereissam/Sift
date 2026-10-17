@@ -1,7 +1,7 @@
 # KOL Prediction Scorecard
 
-Status: **step 1 built** (2026-10-17) — KOLs, speaker mapping, review queue.
-Steps 2–4 are still design.
+Status: **steps 1–2 built** (2026-10-17) — KOLs, speaker mapping, review queue;
+due dates, price targets, automatic price resolution. Steps 3–4 are still design.
 
 Track what crypto KOLs predict on X Spaces and podcasts, check the calls when
 they come due, and publish a weekly digest and leaderboard. It reuses the
@@ -124,6 +124,12 @@ Spotted a mistake? → [request a correction]
    `POST /api/predictions/{id}/review`, and Library → Review calls. Verifying
    requires an assigned speaker. Re-extraction keeps review *and* resolution
    (it previously reset resolution).
-2. `due_at` + structured-target extraction; daily checker with a price feed
+2. ✅ `due_at` + structured-target extraction; daily checker with a price feed.
+   Built as deterministic parsers (`app/knowledge/prediction_targets.py`) rather
+   than an LLM pass — ambiguous text stays unparsed for the reviewer — and
+   `app/knowledge/prediction_checker.py` (CoinGecko, every 6 h + `POST
+   /api/predictions/check`). Only *verified* calls are resolved; a call resolves
+   true the moment the target is hit, false once the due date passes. The
+   `conviction` column was deferred to step 3 (it only feeds calibration).
 3. Scoring queries; markdown digest from the template
 4. Run on ~20 sources, review, publish issue #1, measure sharing

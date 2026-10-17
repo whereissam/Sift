@@ -175,6 +175,12 @@ class Settings(IngestSettings):
     digest_interval: int = 3600  # Runner tick interval (seconds) — hourly
     digest_max_claims: int = 200  # Cap claims fed to one synthesis call
 
+    # KOL scorecard step 2: parse due dates / price targets and resolve
+    # verified price calls against CoinGecko (docs/kol-scorecard.md).
+    prediction_checker_enabled: bool = True
+    prediction_checker_interval: int = 21600  # seconds — every 6 hours
+    coingecko_api_key: str | None = None  # optional demo key; raises the rate limit
+
     # Queue
     queue_enabled: bool = True  # Enable priority queue processing
     default_priority: int = 5  # Default priority level (1-10)

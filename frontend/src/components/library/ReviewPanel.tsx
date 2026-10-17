@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Check, X, Undo2, Loader2, ExternalLink, UserPlus } from 'lucide-react'
+import { Check, X, Undo2, Loader2, ExternalLink, UserPlus, Pencil, LineChart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { apiGet, apiPost, apiPut, errorMessage, formatTimestamp, sourceLinkAt } from '@/lib/api'
+import { apiDelete, apiGet, apiPost, apiPut, errorMessage, formatTimestamp, sourceLinkAt } from '@/lib/api'
 
 /**
  * Human review of extracted predictions before they are published on the
@@ -11,6 +11,23 @@ import { apiGet, apiPost, apiPut, errorMessage, formatTimestamp, sourceLinkAt } 
  */
 
 type ReviewStatus = 'unreviewed' | 'verified' | 'rejected'
+
+interface Target {
+  asset: string
+  comparator: '>=' | '<='
+  value: number
+  baseline?: number | null
+  source: 'parsed' | 'manual'
+}
+
+interface CheckSummary {
+  due_dates_parsed: number
+  targets_parsed: number
+  checked: number
+  resolved_true: number
+  resolved_false: number
+  errors: string[]
+}
 
 interface QueueItem {
   claim_id: string
@@ -26,7 +43,14 @@ interface QueueItem {
   kol_name?: string | null
   review_status: ReviewStatus
   review_note?: string | null
+  due_at?: string | null
+  due_source?: 'parsed' | 'manual' | null
+  target?: Target | null
+  resolution: 'pending' | 'true' | 'false' | 'unresolvable'
+  resolution_note?: string | null
 }
+
+const usd = (v: number) => `$${v.toLocaleString(undefined, { maximumFractionDigits: v < 100 ? 2 : 0 })}`
 
 interface Kol {
   entity_id: string
@@ -125,6 +149,80 @@ function SpeakerPicker({
   )
 }
 
+/** Due date + price target as parsed (or set by hand), with an inline editor. */
+function TargetLine({ item, onChanged }: { item: QueueItem; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [asset, setAsset] = useState(item.target?.asset ?? '')
+  const [comparator, setComparator] = useState<'>=' | '<='>(item.target?.comparator ?? '>=')
+  const [value, setValue] = useState(item.target ? String(item.target.value) : '')
+  const [due, setDue] = useState(item.due_at?.slice(0, 10) ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const id = encodeURIComponent(item.claim_id)
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      if (asset.trim() && Number(value) > 0) {
+        await apiPut(`/api/predictions/${id}/target`, { asset: asset.trim(), comparator, value: Number(value) })
+      } else if (item.target) {
+        await apiDelete(`/api/predictions/${id}/target`)
+      }
+      if (due !== (item.due_at?.slice(0, 10) ?? '')) {
+        await apiPut(`/api/predictions/${id}/due`, { due_at: due || null })
+      }
+      setEditing(false)
+      onChanged()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <form onSubmit={save} className="flex flex-wrap items-center gap-2">
+        <Input value={asset} onChange={e => setAsset(e.target.value)} placeholder="ETH"
+          className="h-8 text-xs w-20" aria-label="Asset" />
+        <select value={comparator} onChange={e => setComparator(e.target.value as '>=' | '<=')}
+          className="h-8 rounded-md border border-border bg-background px-2 text-xs" aria-label="Direction">
+          <option value=">=">reaches ≥</option>
+          <option value="<=">falls to ≤</option>
+        </select>
+        <Input value={value} onChange={e => setValue(e.target.value)} placeholder="USD" inputMode="decimal"
+          className="h-8 text-xs w-24" aria-label="Target price" />
+        <Input type="date" value={due} onChange={e => setDue(e.target.value)}
+          className="h-8 text-xs w-36" aria-label="Due date" />
+        <Button type="submit" size="sm" disabled={busy}>Save</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+        {error && <p className="w-full text-xs text-destructive">{error}</p>}
+      </form>
+    )
+  }
+
+  const target = item.target
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <span>
+        Due: {item.due_at ? item.due_at.slice(0, 10) : '—'}
+        {item.due_source === 'parsed' && ' (parsed)'}
+      </span>
+      <span>
+        Target:{' '}
+        {target
+          ? `${target.asset} ${target.comparator === '>=' ? '≥' : '≤'} ${usd(target.value)}${target.source === 'parsed' ? ' (parsed)' : ''}`
+          : item.target_horizon ? 'none (not a price call?)' : '—'}
+      </span>
+      <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setEditing(true)}>
+        <Pencil /> Edit
+      </Button>
+    </div>
+  )
+}
+
 function ReviewCard({
   item,
   kols,
@@ -174,7 +272,14 @@ function ReviewCard({
         </p>
       )}
       {item.target_horizon && (
-        <p className="text-xs text-muted-foreground">Horizon: {item.target_horizon}</p>
+        <p className="text-xs text-muted-foreground">Horizon: “{item.target_horizon}”</p>
+      )}
+      <TargetLine item={item} onChanged={onChanged} />
+      {item.resolution !== 'pending' && (
+        <p className="text-xs">
+          {item.resolution === 'true' ? '✅ Came true' : item.resolution === 'false' ? '❌ Did not happen' : 'Unresolvable'}
+          {item.resolution_note ? ` — ${item.resolution_note}` : ''}
+        </p>
       )}
 
       {item.kol_name ? (
@@ -220,6 +325,8 @@ export function ReviewPanel() {
   const [kols, setKols] = useState<Kol[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [lastCheck, setLastCheck] = useState<CheckSummary | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -242,6 +349,19 @@ export function ReviewPanel() {
     load()
   }, [load])
 
+  async function checkPrices() {
+    setChecking(true)
+    setError(null)
+    try {
+      setLastCheck(await apiPost<CheckSummary>('/api/predictions/check'))
+      await load()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setChecking(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-1">
@@ -252,7 +372,19 @@ export function ReviewPanel() {
           </Button>
         ))}
         {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-2" />}
+        <Button size="sm" variant="outline" className="ml-auto" onClick={checkPrices} disabled={checking}
+          title="Parse due dates and targets, then resolve verified price calls against CoinGecko">
+          {checking ? <Loader2 className="animate-spin" /> : <LineChart />} Check prices now
+        </Button>
       </div>
+
+      {lastCheck && (
+        <p className="text-xs text-muted-foreground">
+          Parsed {lastCheck.due_dates_parsed} due dates and {lastCheck.targets_parsed} targets · checked{' '}
+          {lastCheck.checked} · ✅ {lastCheck.resolved_true} · ❌ {lastCheck.resolved_false}
+          {lastCheck.errors.length > 0 && ` · ${lastCheck.errors.length} price lookups failed`}
+        </p>
+      )}
 
       <p className="text-xs text-muted-foreground">
         Check each call against the transcript and the source before it can appear on a scorecard.

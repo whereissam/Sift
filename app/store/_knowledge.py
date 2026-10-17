@@ -13,10 +13,12 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Prediction columns set by an operator rather than by extraction.
+# Prediction columns that re-extraction must carry over rather than reset:
+# operator decisions, and the due date (parsed once, or set by hand).
 _PREDICTION_OPERATOR_COLUMNS = (
     "resolution", "resolution_note", "resolved_at", "resolved_by",
     "review_status", "review_note", "reviewed_at", "reviewed_by",
+    "due_at", "due_source",
 )
 
 
@@ -229,6 +231,12 @@ class _KnowledgeMixin:
             # Resolution and review are operator decisions, not extraction
             # output. Claim ids are content hashes, so a claim that survives
             # re-extraction keeps its id — carry those decisions over to it.
+            old_claim_ids = {
+                r["claim_id"]
+                for r in conn.execute(
+                    "SELECT claim_id FROM claims WHERE episode_id = ?", (job_id,)
+                ).fetchall()
+            }
             operator_state = {
                 row["claim_id"]: dict(row)
                 for row in conn.execute(
@@ -339,6 +347,17 @@ class _KnowledgeMixin:
                             """,
                             [kept[c] for c in _PREDICTION_OPERATOR_COLUMNS] + [p["claim_id"]],
                         )
+            # Targets are keyed by claim_id and outlive the delete above, so
+            # a surviving claim keeps its target; drop the ones whose claim
+            # (or prediction) did not come back.
+            kept_predictions = {p["claim_id"] for p in (predictions or [])} & claim_ids_in_run
+            gone = old_claim_ids - kept_predictions
+            if gone:
+                conn.execute(
+                    f"DELETE FROM prediction_targets WHERE claim_id IN "
+                    f"({','.join('?' * len(gone))})",
+                    list(gone),
+                )
         return len(claims)
 
     # ===== P18 Phase B: Entity + Mention accessors =====
@@ -882,6 +901,144 @@ class _KnowledgeMixin:
             d.pop("job_source_url", None)
             items.append(d)
         return items
+
+    # ===== Scorecard step 2: due dates + price targets =====
+
+    def set_prediction_due(
+        self, claim_id: str, due_at: Optional[str], *, source: Optional[str]
+    ) -> bool:
+        """Set (or clear, with None) the due date. `source` is parsed|manual.
+
+        A manual clear keeps `due_source = 'manual'` so the parser, which
+        only fills predictions with no source, doesn't put a date back.
+        """
+        with self._get_conn() as conn:
+            cursor = conn.execute(
+                "UPDATE predictions SET due_at = ?, due_source = ?, updated_at = ? "
+                "WHERE claim_id = ?",
+                (due_at, source, datetime.utcnow().isoformat(), claim_id),
+            )
+            return cursor.rowcount > 0
+
+    def get_prediction_target(self, claim_id: str) -> Optional[dict]:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM prediction_targets WHERE claim_id = ?", (claim_id,)
+            ).fetchone()
+        return self._target_row_to_dict(row) if row else None
+
+    def get_prediction_targets(self, claim_ids: list[str]) -> dict[str, dict]:
+        """Targets for many predictions in one query, keyed by claim_id."""
+        if not claim_ids:
+            return {}
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM prediction_targets WHERE claim_id IN "
+                f"({','.join('?' * len(claim_ids))})",
+                claim_ids,
+            ).fetchall()
+        return {r["claim_id"]: self._target_row_to_dict(r) for r in rows}
+
+    def set_prediction_target(
+        self,
+        claim_id: str,
+        *,
+        asset: str,
+        coin_id: str,
+        comparator: str,
+        value: float,
+        source: str,
+        metric: str = "price",
+    ) -> dict:
+        """Upsert the target. Changing it clears baseline + evidence, which
+        were measured for the old target."""
+        now = datetime.utcnow().isoformat()
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO prediction_targets (
+                    claim_id, asset, coin_id, metric, comparator, value,
+                    baseline, evidence, source, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+                ON CONFLICT(claim_id) DO UPDATE SET
+                    asset = excluded.asset, coin_id = excluded.coin_id,
+                    metric = excluded.metric, comparator = excluded.comparator,
+                    value = excluded.value, source = excluded.source,
+                    baseline = NULL, evidence = NULL, updated_at = excluded.updated_at
+                """,
+                (claim_id, asset, coin_id, metric, comparator, value, source, now, now),
+            )
+        return self.get_prediction_target(claim_id)
+
+    def record_target_check(
+        self,
+        claim_id: str,
+        *,
+        baseline: Optional[float] = None,
+        evidence: Optional[dict] = None,
+    ) -> None:
+        """Store the baseline price and/or the evidence of the latest check."""
+        sets, params = ["updated_at = ?"], [datetime.utcnow().isoformat()]
+        if baseline is not None:
+            sets.append("baseline = ?")
+            params.append(baseline)
+        if evidence is not None:
+            sets.append("evidence = ?")
+            params.append(json.dumps(evidence))
+        with self._get_conn() as conn:
+            conn.execute(
+                f"UPDATE prediction_targets SET {', '.join(sets)} WHERE claim_id = ?",
+                params + [claim_id],
+            )
+
+    def clear_prediction_target(self, claim_id: str) -> bool:
+        with self._get_conn() as conn:
+            cursor = conn.execute(
+                "DELETE FROM prediction_targets WHERE claim_id = ?", (claim_id,)
+            )
+            return cursor.rowcount > 0
+
+    def list_pending_predictions_for_checker(self) -> list[dict]:
+        """Every still-pending, not-rejected prediction with what the
+        checker needs: claim text, horizon, due date, review state, target,
+        and `made_at` — when the call was made (episode publish date, else
+        when the job was created, else when the prediction was stored)."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT p.claim_id, p.target_horizon, p.due_at, p.due_source,
+                       p.review_status, p.created_at AS prediction_created_at,
+                       c.text, j.content_info, j.created_at AS job_created_at
+                FROM predictions p
+                JOIN claims c ON c.claim_id = p.claim_id
+                LEFT JOIN jobs j ON j.job_id = c.episode_id
+                WHERE p.resolution = 'pending' AND p.review_status != 'rejected'
+                ORDER BY p.created_at ASC
+                """
+            ).fetchall()
+        items = [dict(r) for r in rows]
+        targets = self.get_prediction_targets([i["claim_id"] for i in items])
+        for item in items:
+            try:
+                info = json.loads(item.pop("content_info") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                info = {}
+            published = info.get("published_at") if isinstance(info, dict) else None
+            item["made_at"] = (
+                published or item.pop("job_created_at") or item["prediction_created_at"]
+            )
+            item.pop("job_created_at", None)
+            item["target"] = targets.get(item["claim_id"])
+        return items
+
+    @staticmethod
+    def _target_row_to_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        try:
+            d["evidence"] = json.loads(d["evidence"]) if d.get("evidence") else None
+        except (TypeError, json.JSONDecodeError):
+            d["evidence"] = None
+        return d
 
     @staticmethod
     def _claim_row_to_dict(row: sqlite3.Row) -> dict:

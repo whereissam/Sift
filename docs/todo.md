@@ -30,7 +30,9 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 
 - [ ] KOL prediction scorecard — design: [kol-scorecard.md](kol-scorecard.md)
   - [x] Step 1: KOLs, speaker → KOL mapping, review queue + Library tab
-  - [ ] Step 2: `due_at` + structured price targets; daily checker with a price feed
+  - [x] Step 2: `due_at` + structured price targets; price checker (CoinGecko)
+    - [ ] Follow-up: non-USD / non-price targets (market cap, dominance, ETH/BTC ratio)
+    - [ ] Follow-up: CoinGecko's keyless API only serves ~1 year of history; older calls need a key or another source
   - [ ] Step 3: scoring queries + weekly digest
   - [ ] Step 4: run on ~20 sources, publish issue #1
   - [ ] Follow-up: suggest speaker → KOL from host metadata / voice instead of manual only

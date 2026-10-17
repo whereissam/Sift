@@ -7,6 +7,10 @@ Mounted under /api:
   DELETE /api/predictions/{claim_id}/resolve    -> revert to pending
   GET    /api/predictions/review-queue          -> predictions awaiting human review
   POST   /api/predictions/{claim_id}/review     -> verify / reject / back to unreviewed
+  PUT    /api/predictions/{claim_id}/target     -> set the price target by hand
+  DELETE /api/predictions/{claim_id}/target     -> remove the price target
+  PUT    /api/predictions/{claim_id}/due        -> set / clear the due date by hand
+  POST   /api/predictions/check                 -> parse + price-check now (see prediction_checker)
 
 Predictions are stored in their own table keyed by `claim_id` (FK to
 claims). The `/resolve` endpoints are operator-driven; re-extraction
@@ -24,7 +28,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ..store import get_job_store
+from datetime import date
+
 from ..knowledge.knowledge_schema import Resolution
+from ..knowledge.prediction_checker import PredictionChecker
+from ..knowledge.prediction_targets import coin_id_for
 from .auth import verify_api_key
 
 logger = logging.getLogger(__name__)
@@ -40,6 +48,17 @@ router = APIRouter(tags=["Predictions"], dependencies=[Depends(verify_api_key)])
 ReviewStatus = Literal["unreviewed", "verified", "rejected"]
 
 
+class TargetResponse(BaseModel):
+    asset: str
+    coin_id: str
+    metric: str = "price"
+    comparator: Literal[">=", "<="]
+    value: float
+    baseline: Optional[float] = None
+    evidence: Optional[dict] = None
+    source: Literal["parsed", "manual"]
+
+
 class PredictionResponse(BaseModel):
     claim_id: str
     target_horizon: Optional[str] = None
@@ -53,6 +72,9 @@ class PredictionResponse(BaseModel):
     review_note: Optional[str] = None
     reviewed_at: Optional[str] = None
     reviewed_by: Optional[str] = None
+    due_at: Optional[str] = None
+    due_source: Optional[Literal["parsed", "manual"]] = None
+    target: Optional[TargetResponse] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -102,10 +124,35 @@ class ReviewPredictionBody(BaseModel):
     reviewed_by: Optional[str] = None
 
 
+class SetTargetBody(BaseModel):
+    asset: str = Field(description="Ticker, e.g. BTC, ETH, SOL.")
+    comparator: Literal[">=", "<="] = ">="
+    value: float = Field(gt=0, description="USD price.")
+
+
+class SetDueBody(BaseModel):
+    due_at: Optional[date] = Field(description="Last day the call can come true; null clears it.")
+
+
+class CheckSummaryResponse(BaseModel):
+    due_dates_parsed: int
+    targets_parsed: int
+    checked: int
+    resolved_true: int
+    resolved_false: int
+    errors: list[str]
+
+
 # ---------- Helpers ----------
 
 
-def _row_to_response(row: dict) -> PredictionResponse:
+def _row_to_response(row: dict, targets: Optional[dict] = None) -> PredictionResponse:
+    """`targets` is a batch from get_prediction_targets; without it the
+    target is looked up for this one row."""
+    if targets is None:
+        target = get_job_store().get_prediction_target(row["claim_id"])
+    else:
+        target = targets.get(row["claim_id"])
     return PredictionResponse(
         claim_id=row["claim_id"],
         target_horizon=row.get("target_horizon"),
@@ -119,6 +166,9 @@ def _row_to_response(row: dict) -> PredictionResponse:
         review_note=row.get("review_note"),
         reviewed_at=row.get("reviewed_at"),
         reviewed_by=row.get("reviewed_by"),
+        due_at=row.get("due_at"),
+        due_source=row.get("due_source"),
+        target=target,
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at"),
     )
@@ -141,14 +191,16 @@ async def list_predictions(
     offset: int = Query(default=0, ge=0),
 ):
     """List predictions, most recent first."""
-    rows = get_job_store().list_predictions(
+    store = get_job_store()
+    rows = store.list_predictions(
         resolution=resolution.value if resolution else None,
         since=since,
         limit=limit,
         offset=offset,
     )
+    targets = store.get_prediction_targets([r["claim_id"] for r in rows])
     return PredictionListResponse(
-        predictions=[_row_to_response(r) for r in rows],
+        predictions=[_row_to_response(r, targets) for r in rows],
         count=len(rows),
     )
 
@@ -161,9 +213,11 @@ async def review_queue(
     offset: int = Query(default=0, ge=0),
 ):
     """Predictions with their quote, speaker and source, oldest first."""
-    rows = get_job_store().list_review_queue(status=status, limit=limit, offset=offset)
+    store = get_job_store()
+    rows = store.list_review_queue(status=status, limit=limit, offset=offset)
+    targets = store.get_prediction_targets([r["claim_id"] for r in rows])
     items = [
-        ReviewQueueItem(**_row_to_response(r).model_dump(), **{
+        ReviewQueueItem(**_row_to_response(r, targets).model_dump(), **{
             k: r.get(k) for k in (
                 "episode_id", "episode_title", "source_url", "text", "evidence_excerpt",
                 "speaker", "timestamp_start", "timestamp_end", "confidence",
@@ -197,6 +251,52 @@ async def review_prediction(claim_id: str, body: ReviewPredictionBody):
         claim_id, status=body.status, note=body.note, reviewed_by=body.reviewed_by
     )
     return _row_to_response(updated)
+
+
+@router.post("/predictions/check", response_model=CheckSummaryResponse)
+async def check_predictions():
+    """Parse due dates / price targets and price-check verified calls now.
+
+    The background checker does the same every `prediction_checker_interval`
+    seconds; this is for "I just verified a batch, resolve what you can".
+    """
+    summary = await PredictionChecker().run()
+    return CheckSummaryResponse(**summary.__dict__)
+
+
+@router.put("/predictions/{claim_id}/target", response_model=PredictionResponse)
+async def set_prediction_target(claim_id: str, body: SetTargetBody):
+    """Set the price target by hand. A manual target is never replaced by
+    the parser."""
+    store = get_job_store()
+    row = store.get_prediction_by_claim_id(claim_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Prediction not found")
+    coin_id = coin_id_for(body.asset)
+    if not coin_id:
+        raise HTTPException(status_code=422, detail=f"Unknown asset {body.asset!r}")
+    store.set_prediction_target(
+        claim_id, asset=body.asset.strip().upper(), coin_id=coin_id,
+        comparator=body.comparator, value=body.value, source="manual",
+    )
+    return _row_to_response(row)
+
+
+@router.delete("/predictions/{claim_id}/target", status_code=204)
+async def clear_prediction_target(claim_id: str):
+    """Remove the target. The parser may set a new one on its next run
+    unless a manual target is set instead."""
+    if not get_job_store().clear_prediction_target(claim_id):
+        raise HTTPException(status_code=404, detail="No target for this prediction")
+
+
+@router.put("/predictions/{claim_id}/due", response_model=PredictionResponse)
+async def set_prediction_due(claim_id: str, body: SetDueBody):
+    store = get_job_store()
+    due = body.due_at.isoformat() if body.due_at else None
+    if not store.set_prediction_due(claim_id, due, source="manual"):
+        raise HTTPException(status_code=404, detail="Prediction not found")
+    return _row_to_response(store.get_prediction_by_claim_id(claim_id))
 
 
 @router.get("/predictions/{claim_id}", response_model=PredictionResponse)

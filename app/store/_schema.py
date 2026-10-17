@@ -358,6 +358,26 @@ class _SchemaMixin:
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_episode_speakers_entity ON episode_speakers(entity_id)")
+            # Scorecard step 2: what a price call actually claims, so it can
+            # be checked against a price feed. Keyed by claim_id like
+            # `predictions`; `source` is parsed|manual and a parsed row never
+            # replaces a manual one. `evidence` is the JSON price snapshot
+            # that decided the resolution.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS prediction_targets (
+                    claim_id TEXT PRIMARY KEY,
+                    asset TEXT NOT NULL,
+                    coin_id TEXT NOT NULL,
+                    metric TEXT NOT NULL DEFAULT 'price',
+                    comparator TEXT NOT NULL,
+                    value REAL NOT NULL,
+                    baseline REAL,
+                    evidence TEXT,
+                    source TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
 
             # Quarantine for malformed extraction outputs — keep raw response
             # and error so we can debug prompt drift without crashing the
@@ -716,6 +736,10 @@ class _SchemaMixin:
             ("review_note", "TEXT"),
             ("reviewed_at", "TEXT"),
             ("reviewed_by", "TEXT"),
+            # Scorecard step 2: the last day the call can come true, parsed
+            # from target_horizon or set by hand (`due_source` parsed|manual).
+            ("due_at", "TEXT"),
+            ("due_source", "TEXT"),
         ]:
             if col_name not in prediction_columns:
                 try:
