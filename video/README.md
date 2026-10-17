@@ -10,9 +10,13 @@ bun install
 bun run studio      # live preview / scrub in the browser
 bun run render      # -> out/sift-promo.mp4
 bun run still       # -> out/poster.png (thumbnail)
+bun run gif         # -> out/sift-promo.gif (README preview, half size)
 bun test && bun run typecheck
 ```
 
+- The README shows `docs/assets/sift-promo.gif` linking to
+  `docs/assets/sift-promo.mp4`. After changing the video, run `bun run render`
+  and `bun run gif` and copy both outputs there.
 - Scene order and lengths: `src/timeline.ts`
 - Colors and fonts (match `frontend/src/index.css`): `src/theme.ts`
 - Scenes: `src/scenes/*.tsx`

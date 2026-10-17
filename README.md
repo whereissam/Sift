@@ -11,6 +11,13 @@
 
 > Downloading is just the first step. Sift turns media into searchable, queryable intelligence.
 
+<p align="center">
+  <a href="docs/assets/sift-promo.mp4">
+    <img src="docs/assets/sift-promo.gif" alt="Sift in 30 seconds: paste a link, get the MP3 or MP4, then transcribe and search it" width="720">
+  </a>
+  <br><sub>30-second tour · <a href="docs/assets/sift-promo.mp4">watch in full quality (MP4)</a></sub>
+</p>
+
 ## Features
 
 ### Ingest & Extract
