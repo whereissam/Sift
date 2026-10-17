@@ -12,6 +12,7 @@ docs/test-links.md) — set it to a fresh URL before the run.
 
 import os
 from dataclasses import dataclass
+from typing import Mapping
 
 from sift_core import Platform
 
@@ -25,6 +26,9 @@ class Canary:
     download: bool = False
     # At least one of these must be set, or the canary skips (auth-gated sites).
     requires_any_env: tuple[str, ...] = ()
+    # Same, but only on CI: the site works from a home connection and
+    # bot-checks datacenter IPs such as GitHub's runners.
+    ci_requires_any_env: tuple[str, ...] = ()
 
     @property
     def env_var(self) -> str:
@@ -39,6 +43,23 @@ class Canary:
     def is_video(self) -> bool:
         return self.platform in VIDEO_PLATFORMS
 
+    def skip_reason(self, environ: Mapping[str, str] = os.environ) -> str | None:
+        """Why this canary can't run here, or None if it can."""
+        if not self.resolved_url:
+            return f"no stable link for {self.platform.value}; set {self.env_var}"
+        if self.requires_any_env and not any(environ.get(v) for v in self.requires_any_env):
+            return f"{self.platform.value} needs one of {', '.join(self.requires_any_env)}"
+        if (
+            environ.get("CI")
+            and self.ci_requires_any_env
+            and not any(environ.get(v) for v in self.ci_requires_any_env)
+        ):
+            return (
+                f"{self.platform.value} bot-checks CI runner IPs; add a cookies secret "
+                f"so one of {', '.join(self.ci_requires_any_env)} is set"
+            )
+        return None
+
 
 VIDEO_PLATFORMS = frozenset(
     {Platform.X_VIDEO, Platform.YOUTUBE_VIDEO, Platform.INSTAGRAM, Platform.XIAOHONGSHU}
@@ -46,10 +67,12 @@ VIDEO_PLATFORMS = frozenset(
 
 # "Me at the zoo": 19 seconds, the first YouTube upload, never coming down.
 _SHORT_YOUTUBE = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+# From a GitHub runner YouTube answers "Sign in to confirm you're not a bot".
+_YOUTUBE_COOKIES = ("YOUTUBE_COOKIES_FILE", "YOUTUBE_COOKIES_FROM_BROWSER")
 
 CANARIES: tuple[Canary, ...] = (
     # Audio
-    Canary(Platform.YOUTUBE, _SHORT_YOUTUBE, download=True),
+    Canary(Platform.YOUTUBE, _SHORT_YOUTUBE, download=True, ci_requires_any_env=_YOUTUBE_COOKIES),
     Canary(
         Platform.APPLE_PODCASTS,
         "https://podcasts.apple.com/de/podcast/351-rache-ist-kein-sch%C3%B6nes-ferd-sommerhack"
@@ -62,7 +85,9 @@ CANARIES: tuple[Canary, ...] = (
     Canary(Platform.X_SPACES, None),
     Canary(Platform.DISCORD, None),
     # Video
-    Canary(Platform.YOUTUBE_VIDEO, _SHORT_YOUTUBE, download=True),
+    Canary(
+        Platform.YOUTUBE_VIDEO, _SHORT_YOUTUBE, download=True, ci_requires_any_env=_YOUTUBE_COOKIES
+    ),
     Canary(Platform.X_VIDEO, "https://x.com/SpaceX/status/2072695632104468543", download=True),
     Canary(
         Platform.INSTAGRAM,

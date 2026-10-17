@@ -33,7 +33,9 @@ To cover an expiring platform, set `SIFT_CANARY_<PLATFORM>` (e.g.
 `SIFT_CANARY_SPOTIFY`) locally, or as a repository *variable* for CI. Optional
 CI secrets: `INSTAGRAM_COOKIES` / `YOUTUBE_COOKIES` (cookies.txt contents),
 `TWITTER_AUTH_TOKEN`, `TWITTER_CT0`, `SPOTIFY_SP_DC`. GitHub runner IPs are
-sometimes bot-checked by YouTube and Instagram; cookies fix that.
+bot-checked by YouTube and Instagram; cookies fix that. Until the
+`YOUTUBE_COOKIES` secret is set, the YouTube canaries skip on CI (they still
+run locally, where YouTube does not ask).
 
 ## By hand
 

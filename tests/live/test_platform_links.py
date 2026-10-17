@@ -35,12 +35,10 @@ MIN_FILE_BYTES = 20_000
 
 
 def _require_url(canary: Canary) -> str:
-    url = canary.resolved_url
-    if not url:
-        pytest.skip(f"no stable link for {canary.platform.value}; set {canary.env_var}")
-    if canary.requires_any_env and not any(os.environ.get(v) for v in canary.requires_any_env):
-        pytest.skip(f"{canary.platform.value} needs one of {', '.join(canary.requires_any_env)}")
-    return url
+    reason = canary.skip_reason()
+    if reason:
+        pytest.skip(reason)
+    return canary.resolved_url
 
 
 def _downloader(canary: Canary, tmp_path):

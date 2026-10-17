@@ -23,6 +23,19 @@ def test_canary_urls_are_accepted_by_their_adapter():
             assert adapters[canary.platform].can_handle_url(canary.url), canary
 
 
+def test_youtube_skips_on_ci_without_cookies_but_runs_locally():
+    canary = next(c for c in CANARIES if c.platform is Platform.YOUTUBE)
+    assert canary.skip_reason({}) is None
+    assert "bot-checks CI" in canary.skip_reason({"CI": "true"})
+    assert canary.skip_reason({"CI": "true", "YOUTUBE_COOKIES_FILE": "/tmp/c.txt"}) is None
+
+
+def test_auth_gated_canary_skips_everywhere_without_credentials():
+    canary = next(c for c in CANARIES if c.platform is Platform.INSTAGRAM)
+    assert "needs one of" in canary.skip_reason({})
+    assert canary.skip_reason({"INSTAGRAM_COOKIES_FILE": "/tmp/c.txt"}) is None
+
+
 def test_env_var_overrides_the_checked_in_url(monkeypatch):
     canary = next(c for c in CANARIES if c.platform is Platform.SPOTIFY)
     assert canary.resolved_url is None
