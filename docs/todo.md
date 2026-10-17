@@ -26,6 +26,12 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 
 - [x] Remotion promo video (`video/`, `make video`)
 
+### Growth experiments (2026-10-17)
+
+- [ ] KOL prediction scorecard — design: [kol-scorecard.md](kol-scorecard.md)
+- [ ] Free-tool landing pages — design: [free-tools.md](free-tools.md)
+- [ ] Contributor License Agreement before accepting outside PRs (keeps the AGPL relicense + closed cloud option)
+
 ### v2.0 — AI-Native Intelligence (Next)
 
 | Feature | Difficulty | Impact | Priority |

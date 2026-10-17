@@ -621,6 +621,8 @@ app/api/         FastAPI routers · app/mcp_server/ · app/bot/
 - [Queue & Scheduling](docs/queue-scheduling.md) - Batch downloads, priority queue, scheduling
 - [Webhooks & Annotations](docs/webhooks-annotations.md) - Notifications and collaboration
 - [Feature Roadmap](docs/todo.md) - Open work only
+- [KOL Prediction Scorecard](docs/kol-scorecard.md) - Design sketch
+- [Free-Tool Landing Pages](docs/free-tools.md) - Design sketch
 - [Shipped](docs/shipped.md) - Completed phases and the notes written when they landed
 
 ## Security
