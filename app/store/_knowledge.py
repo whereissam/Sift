@@ -13,6 +13,12 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Prediction columns set by an operator rather than by extraction.
+_PREDICTION_OPERATOR_COLUMNS = (
+    "resolution", "resolution_note", "resolved_at", "resolved_by",
+    "review_status", "review_note", "reviewed_at", "reviewed_by",
+)
+
 
 class _KnowledgeMixin:
     """Methods for the P18 knowledge layer."""
@@ -109,6 +115,13 @@ class _KnowledgeMixin:
                 (job_id, min_confidence),
             ).fetchall()
             return [self._claim_row_to_dict(r) for r in rows]
+
+    def get_claim(self, claim_id: str) -> Optional[dict]:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM claims WHERE claim_id = ?", (claim_id,)
+            ).fetchone()
+            return self._claim_row_to_dict(row) if row else None
 
     def query_claims(
         self,
@@ -213,6 +226,22 @@ class _KnowledgeMixin:
                 """,
                 (job_id,),
             )
+            # Resolution and review are operator decisions, not extraction
+            # output. Claim ids are content hashes, so a claim that survives
+            # re-extraction keeps its id — carry those decisions over to it.
+            operator_state = {
+                row["claim_id"]: dict(row)
+                for row in conn.execute(
+                    f"""
+                    SELECT claim_id, {', '.join(_PREDICTION_OPERATOR_COLUMNS)}
+                    FROM predictions
+                    WHERE claim_id IN (
+                        SELECT claim_id FROM claims WHERE episode_id = ?
+                    )
+                    """,
+                    (job_id,),
+                ).fetchall()
+            }
             conn.execute(
                 """
                 DELETE FROM predictions
@@ -300,6 +329,16 @@ class _KnowledgeMixin:
                         )
                         continue
                     self._upsert_prediction_row(conn, p, now)
+                    kept = operator_state.get(p["claim_id"])
+                    if kept:
+                        conn.execute(
+                            f"""
+                            UPDATE predictions SET
+                                {', '.join(f'{c} = ?' for c in _PREDICTION_OPERATOR_COLUMNS)}
+                            WHERE claim_id = ?
+                            """,
+                            [kept[c] for c in _PREDICTION_OPERATOR_COLUMNS] + [p["claim_id"]],
+                        )
         return len(claims)
 
     # ===== P18 Phase B: Entity + Mention accessors =====
@@ -763,6 +802,86 @@ class _KnowledgeMixin:
                     (resolution, note, now, resolved_by, now, claim_id),
                 )
         return self.get_prediction_by_claim_id(claim_id)
+
+    def set_prediction_review(
+        self,
+        claim_id: str,
+        *,
+        status: str,
+        note: Optional[str] = None,
+        reviewed_by: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Record the human review of a prediction's quote and speaker.
+
+        Returns the updated row, or None if no prediction exists. Setting
+        `unreviewed` puts it back in the queue and clears the review
+        metadata, mirroring how `resolve_prediction` handles `pending`.
+        """
+        now = datetime.utcnow().isoformat()
+        if status == "unreviewed":
+            note, reviewed_at, reviewed_by = None, None, None
+        else:
+            reviewed_at = now
+        with self._get_conn() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE predictions SET
+                    review_status = ?, review_note = ?, reviewed_at = ?,
+                    reviewed_by = ?, updated_at = ?
+                WHERE claim_id = ?
+                """,
+                (status, note, reviewed_at, reviewed_by, now, claim_id),
+            )
+            if cursor.rowcount == 0:
+                return None
+        return self.get_prediction_by_claim_id(claim_id)
+
+    def list_review_queue(
+        self,
+        *,
+        status: str = "unreviewed",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Predictions with everything a reviewer needs on one row.
+
+        Joins the claim (quote, evidence, timestamps, source), the
+        episode's speaker→KOL mapping, and the episode title. `kol_*` is
+        null while the speaker label has not been assigned to a KOL.
+        Oldest first, so the queue drains in the order calls were made.
+        """
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT p.*, c.episode_id, c.text, c.speaker, c.evidence_excerpt,
+                       c.timestamp_start, c.timestamp_end, c.confidence,
+                       c.source_url AS claim_source_url,
+                       es.entity_id AS kol_entity_id, e.name AS kol_name,
+                       j.source_url AS job_source_url, j.content_info
+                FROM predictions p
+                JOIN claims c ON c.claim_id = p.claim_id
+                LEFT JOIN episode_speakers es
+                       ON es.episode_id = c.episode_id AND es.speaker = c.speaker
+                LEFT JOIN entities e ON e.entity_id = es.entity_id
+                LEFT JOIN jobs j ON j.job_id = c.episode_id
+                WHERE p.review_status = ?
+                ORDER BY p.created_at ASC, c.timestamp_start ASC
+                LIMIT ? OFFSET ?
+                """,
+                (status, limit, offset),
+            ).fetchall()
+        items = []
+        for row in rows:
+            d = dict(row)
+            try:
+                info = json.loads(d.pop("content_info") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                info = {}
+            d["episode_title"] = info.get("title") if isinstance(info, dict) else None
+            d["source_url"] = d.pop("claim_source_url") or d.pop("job_source_url")
+            d.pop("job_source_url", None)
+            items.append(d)
+        return items
 
     @staticmethod
     def _claim_row_to_dict(row: sqlite3.Row) -> dict:

@@ -29,6 +29,11 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
 ### Growth experiments (2026-10-17)
 
 - [ ] KOL prediction scorecard — design: [kol-scorecard.md](kol-scorecard.md)
+  - [x] Step 1: KOLs, speaker → KOL mapping, review queue + Library tab
+  - [ ] Step 2: `due_at` + structured price targets; daily checker with a price feed
+  - [ ] Step 3: scoring queries + weekly digest
+  - [ ] Step 4: run on ~20 sources, publish issue #1
+  - [ ] Follow-up: suggest speaker → KOL from host metadata / voice instead of manual only
 - [ ] Free-tool landing pages — design: [free-tools.md](free-tools.md)
 - [ ] Contributor License Agreement before accepting outside PRs (keeps the AGPL relicense + closed cloud option)
 
