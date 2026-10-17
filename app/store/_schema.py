@@ -328,6 +328,37 @@ class _SchemaMixin:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_predictions_resolution ON predictions(resolution)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_predictions_created ON predictions(created_at)")
 
+            # KOL scorecard (docs/kol-scorecard.md). A KOL is a `person`
+            # entity plus its public handles; a handle belongs to exactly
+            # one person, hence the (platform, handle) PK.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kol_handles (
+                    entity_id TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    handle TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (platform, handle),
+                    FOREIGN KEY (entity_id) REFERENCES entities(entity_id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_kol_handles_entity ON kol_handles(entity_id)")
+            # Who is behind a speaker label in one episode. Keyed by the
+            # label as it appears on `claims.speaker`, not by claim, so it
+            # survives re-extraction (claims are replaced, labels are not).
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS episode_speakers (
+                    episode_id TEXT NOT NULL,
+                    speaker TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    confirmed_by TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (episode_id, speaker),
+                    FOREIGN KEY (entity_id) REFERENCES entities(entity_id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_episode_speakers_entity ON episode_speakers(entity_id)")
+
             # Quarantine for malformed extraction outputs — keep raw response
             # and error so we can debug prompt drift without crashing the
             # pipeline.
@@ -674,6 +705,31 @@ class _SchemaMixin:
                 logger.info("Added column task_presets to ai_settings")
             except sqlite3.OperationalError:
                 pass
+
+        # KOL scorecard: human review of a prediction's quote + speaker
+        # before anything about it is published. Operator state, like
+        # `resolution` — re-extraction must carry it over, never reset it.
+        cursor = conn.execute("PRAGMA table_info(predictions)")
+        prediction_columns = {row[1] for row in cursor.fetchall()}
+        for col_name, col_type in [
+            ("review_status", "TEXT NOT NULL DEFAULT 'unreviewed'"),
+            ("review_note", "TEXT"),
+            ("reviewed_at", "TEXT"),
+            ("reviewed_by", "TEXT"),
+        ]:
+            if col_name not in prediction_columns:
+                try:
+                    conn.execute(f"ALTER TABLE predictions ADD COLUMN {col_name} {col_type}")
+                    logger.info(f"Added column {col_name} to predictions table")
+                except sqlite3.OperationalError:
+                    pass
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_predictions_review "
+                "ON predictions(review_status)"
+            )
+        except sqlite3.OperationalError:
+            pass
 
         # Index for the Phase C.3 backfill pending-queue scan. Created here
         # (not in _init_db) because knowledge_status is added by migration
