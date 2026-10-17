@@ -140,6 +140,9 @@ class CheckSummaryResponse(BaseModel):
     checked: int
     resolved_true: int
     resolved_false: int
+    already_met: int = Field(
+        description="Verified calls whose target was already met when made; left for review."
+    )
     errors: list[str]
 
 

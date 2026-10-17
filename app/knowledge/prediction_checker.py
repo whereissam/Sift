@@ -6,6 +6,8 @@ Each tick:
    (a manual target is never replaced)
 3. for *verified* price calls, read the price history since the call was
    made from CoinGecko and resolve:
+   - target already met when the call was made   -> not resolved; flagged
+     for the reviewer (it's no prediction, or the target was misread)
    - target reached at any point in the window  -> true, immediately
    - due date passed without reaching it          -> false
    - otherwise                                     -> stays pending
@@ -83,6 +85,7 @@ class CheckSummary:
     checked: int = 0
     resolved_true: int = 0
     resolved_false: int = 0
+    already_met: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -156,12 +159,15 @@ class PredictionChecker:
         if not history:
             return
 
-        if target["baseline"] is None:
-            store.record_target_check(item["claim_id"], baseline=history[0][1])
+        baseline = target["baseline"]
+        if baseline is None:
+            baseline = history[0][1]
+            store.record_target_check(item["claim_id"], baseline=baseline)
 
         above = target["comparator"] == ">="
         best_at, best = (max if above else min)(history, key=lambda point: point[1])
         reached = best >= target["value"] if above else best <= target["value"]
+        already_met = baseline >= target["value"] if above else baseline <= target["value"]
         evidence = {
             "source": "coingecko",
             "window_start": made_at.isoformat(),
@@ -170,6 +176,13 @@ class PredictionChecker:
             "extreme_at": best_at.isoformat(),
             "checked_at": now.isoformat(),
         }
+        if already_met:
+            # "SOL drops to $120" said while SOL is at $106 would otherwise be
+            # an instant, free ✅. Leave it to the reviewer.
+            evidence["already_met_at_start"] = True
+            store.record_target_check(item["claim_id"], evidence=evidence)
+            summary.already_met += 1
+            return
         store.record_target_check(item["claim_id"], evidence=evidence)
 
         goal = f"{target['asset']} {'≥' if above else '≤'} {_usd(target['value'])}"

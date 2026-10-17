@@ -161,6 +161,18 @@ class TestResolution:
         assert p["resolution"] == "true"
         assert "SOL ≤ $80.00" in p["resolution_note"]
 
+    async def test_target_already_met_when_made_is_flagged_not_resolved(self, store):
+        sol = _claim("SOL drops to $120 within 2 months", 1)
+        _extract(store, [(sol, "within 2 months")])
+        _verify(store, sol["claim_id"])
+        summary = await _run(FakeFeed({0: 106, 1: 103}), MADE + timedelta(days=5))
+
+        assert (summary.already_met, summary.resolved_true) == (1, 0)
+        assert store.get_prediction_by_claim_id(sol["claim_id"])["resolution"] == "pending"
+        t = store.get_prediction_target(sol["claim_id"])
+        assert t["evidence"]["already_met_at_start"] is True
+        assert t["baseline"] == 106
+
     async def test_no_due_date_can_only_resolve_true(self, store):
         btc = _claim("BTC to 200k", 1)
         _extract(store, [(btc, None)])

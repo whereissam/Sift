@@ -17,6 +17,7 @@ interface Target {
   comparator: '>=' | '<='
   value: number
   baseline?: number | null
+  evidence?: { already_met_at_start?: boolean } | null
   source: 'parsed' | 'manual'
 }
 
@@ -26,6 +27,7 @@ interface CheckSummary {
   checked: number
   resolved_true: number
   resolved_false: number
+  already_met: number
   errors: string[]
 }
 
@@ -219,6 +221,13 @@ function TargetLine({ item, onChanged }: { item: QueueItem; onChanged: () => voi
       <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setEditing(true)}>
         <Pencil /> Edit
       </Button>
+      {target?.evidence?.already_met_at_start && (
+        <p className="w-full text-amber-600 dark:text-amber-400">
+          ⚠ This target was already met when the call was made
+          {target.baseline ? ` (price then: ${usd(target.baseline)})` : ''}, so it was not auto-resolved.
+          Check the target, or resolve it by hand.
+        </p>
+      )}
     </div>
   )
 }
@@ -382,6 +391,7 @@ export function ReviewPanel() {
         <p className="text-xs text-muted-foreground">
           Parsed {lastCheck.due_dates_parsed} due dates and {lastCheck.targets_parsed} targets · checked{' '}
           {lastCheck.checked} · ✅ {lastCheck.resolved_true} · ❌ {lastCheck.resolved_false}
+          {lastCheck.already_met > 0 && ` · ⚠ ${lastCheck.already_met} already met when made (check targets)`}
           {lastCheck.errors.length > 0 && ` · ${lastCheck.errors.length} price lookups failed`}
         </p>
       )}
