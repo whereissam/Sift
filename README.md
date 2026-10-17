@@ -1,7 +1,10 @@
 # Sift
 
 <p align="center">
-  <img src="frontend/public/logo.svg" alt="Sift" width="200">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/logo-dark.png">
+    <img src="frontend/public/logo.png" alt="Sift" width="200">
+  </picture>
 </p>
 
 **AI-First Knowledge Extraction Platform.** Ingest audio and video from X Spaces, Apple Podcasts, Spotify, YouTube, Discord, Instagram, 小红书, 小宇宙, 喜马拉雅, and more — then extract, search, and reason over the knowledge inside.
