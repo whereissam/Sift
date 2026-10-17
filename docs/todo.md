@@ -33,7 +33,9 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
   - [x] Step 2: `due_at` + structured price targets; price checker (CoinGecko)
     - [ ] Follow-up: non-USD / non-price targets (market cap, dominance, ETH/BTC ratio)
     - [ ] Follow-up: CoinGecko's keyless API only serves ~1 year of history; older calls need a key or another source
-  - [ ] Step 3: scoring queries + weekly digest
+  - [x] Step 3: leaderboard (Wilson score, bold hits, too-vague rate) + weekly digest (Library → Scorecard, `/api/scorecard/*`)
+    - [ ] Follow-up: calibration (Brier) once calls carry a `conviction`
+    - [ ] Follow-up: "Changed their mind" for verified non-prediction claims (needs a review step for claims)
   - [ ] Step 4: run on ~20 sources, publish issue #1
   - [ ] Follow-up: suggest speaker → KOL from host metadata / voice instead of manual only
 - [ ] Free-tool landing pages — design: [free-tools.md](free-tools.md)

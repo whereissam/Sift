@@ -32,6 +32,7 @@ from .entity_routes import router as entity_router
 from .topic_routes import router as topic_router
 from .prediction_routes import router as prediction_router
 from .kol_routes import router as kol_router
+from .scorecard_routes import router as scorecard_router
 from .digest_routes import router as digest_router
 from .export_routes import router as export_router
 from .search_routes import router as search_router
@@ -72,6 +73,7 @@ router.include_router(entity_router)  # P18 Phase B: /entities, /entities/{id_or
 router.include_router(topic_router)  # P18 Phase C.1: /topics, /topics/{id}[/claims]
 router.include_router(prediction_router)  # P18 Phase C.2: /predictions, /predictions/{claim_id}[/resolve|/review]
 router.include_router(kol_router)  # KOL scorecard: /kols, /episodes/{id}/speakers
+router.include_router(scorecard_router)  # KOL scorecard: /scorecard/leaderboard, /scorecard/digest
 router.include_router(digest_router)  # P20: /digests[/{id}[/run|/runs]], /topics/{id}/synthesis
 router.include_router(export_router)  # P21: /export-templates, /jobs/{id}/export
 router.include_router(search_router)  # P10: /search, /search/status, /jobs/{id}/search-index

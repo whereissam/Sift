@@ -192,6 +192,69 @@ class _KolsMixin:
             )
             return cursor.rowcount > 0
 
+    def list_scorecard_calls(self) -> list[dict]:
+        """Every *verified* prediction whose speaker is assigned to a KOL —
+        the only calls the scorecard may publish — with the KOL, quote,
+        source, resolution, due date, target, and `made_at` (episode publish
+        date, else job creation, else prediction creation)."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT p.claim_id, p.resolution, p.resolution_note, p.resolved_at,
+                       p.due_at, p.target_horizon, p.created_at AS prediction_created_at,
+                       c.episode_id, c.text, c.speaker, c.timestamp_start,
+                       c.source_url AS claim_source_url,
+                       es.entity_id AS kol_entity_id, e.name AS kol_name,
+                       (SELECT handle FROM kol_handles h
+                         WHERE h.entity_id = es.entity_id AND h.platform = 'x'
+                         ORDER BY h.handle LIMIT 1) AS kol_x_handle,
+                       j.source_url AS job_source_url, j.content_info,
+                       j.created_at AS job_created_at
+                FROM predictions p
+                JOIN claims c ON c.claim_id = p.claim_id
+                JOIN episode_speakers es
+                     ON es.episode_id = c.episode_id AND es.speaker = c.speaker
+                JOIN entities e ON e.entity_id = es.entity_id
+                LEFT JOIN jobs j ON j.job_id = c.episode_id
+                WHERE p.review_status = 'verified'
+                ORDER BY c.timestamp_start
+                """
+            ).fetchall()
+        calls = [dict(r) for r in rows]
+        targets = self.get_prediction_targets([c["claim_id"] for c in calls])
+        for call in calls:
+            try:
+                info = json.loads(call.pop("content_info") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                info = {}
+            if not isinstance(info, dict):
+                info = {}
+            call["episode_title"] = info.get("title")
+            call["made_at"] = (
+                info.get("published_at") or call["job_created_at"] or call["prediction_created_at"]
+            )
+            call["source_url"] = call.pop("claim_source_url") or call["job_source_url"]
+            for k in ("job_source_url", "job_created_at"):
+                call.pop(k, None)
+            call["target"] = targets.get(call["claim_id"])
+        return calls
+
+    def list_contradictions_between(self, claim_ids: list[str]) -> list[dict]:
+        """Contradictions whose two claims are both in `claim_ids`."""
+        if len(claim_ids) < 2:
+            return []
+        marks = ",".join("?" * len(claim_ids))
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM contradictions
+                WHERE claim_id_a IN ({marks}) AND claim_id_b IN ({marks})
+                ORDER BY detected_at
+                """,
+                claim_ids + claim_ids,
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def get_speaker_kol(self, episode_id: str, speaker: Optional[str]) -> Optional[str]:
         """The KOL entity_id behind a speaker label, or None if unassigned."""
         if not speaker:

@@ -224,6 +224,8 @@ Structured, citable knowledge extracted from transcripts. See [knowledge-schema.
 | PUT · DELETE | `/api/predictions/{claim_id}/target` | Set (`{asset, comparator, value}`) or remove a price target; a manual target is never replaced by the parser |
 | PUT | `/api/predictions/{claim_id}/due` | Set or clear the due date by hand (`{due_at: "2026-12-31" \| null}`) |
 | POST | `/api/predictions/check` | Parse due dates + price targets, resolve verified price calls against CoinGecko now |
+| GET | `/api/scorecard/leaderboard?min_resolved=5` | KOLs ranked by Wilson lower bound of hit rate, with bold hits / too-vague rate / open calls |
+| GET | `/api/scorecard/digest?start=&end=&format=md` | Weekly digest markdown (default: last 7 days); `format=json` adds stats |
 | GET · POST | `/api/kols` | KOLs (person entities) and their X / YouTube / podcast handles; a handle belongs to one KOL (409) |
 | DELETE | `/api/kols/{entity_id}/handles/{platform}/{handle}` | Remove a handle |
 | GET | `/api/episodes/{episode_id}/speakers` | Speaker labels in an episode with their assigned KOL |
