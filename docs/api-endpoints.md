@@ -219,6 +219,17 @@ Structured, citable knowledge extracted from transcripts. See [knowledge-schema.
 | GET | `/api/predictions?resolution=pending` · `/api/predictions/{claim_id}` | Forward-looking claims with lifecycle |
 | POST | `/api/predictions/{claim_id}/resolve` | Set a prediction's resolution |
 | DELETE | `/api/predictions/{claim_id}/resolve` | Revert a prediction to pending |
+| GET | `/api/predictions/review-queue?status=unreviewed` | Predictions with quote, speaker → KOL and source, for human review |
+| POST | `/api/predictions/{claim_id}/review` | `verified` / `rejected` / `unreviewed`; verifying requires the speaker to be assigned to a KOL (409 otherwise) |
+| PUT · DELETE | `/api/predictions/{claim_id}/target` | Set (`{asset, comparator, value}`) or remove a price target; a manual target is never replaced by the parser |
+| PUT | `/api/predictions/{claim_id}/due` | Set or clear the due date by hand (`{due_at: "2026-12-31" \| null}`) |
+| POST | `/api/predictions/check` | Parse due dates + price targets, resolve verified price calls against CoinGecko now |
+| GET | `/api/scorecard/leaderboard?min_resolved=5` | KOLs ranked by Wilson lower bound of hit rate, with bold hits / too-vague rate / open calls |
+| GET | `/api/scorecard/digest?start=&end=&format=md` | Weekly digest markdown (default: last 7 days); `format=json` adds stats |
+| GET · POST | `/api/kols` | KOLs (person entities) and their X / YouTube / podcast handles; a handle belongs to one KOL (409) |
+| DELETE | `/api/kols/{entity_id}/handles/{platform}/{handle}` | Remove a handle |
+| GET | `/api/episodes/{episode_id}/speakers` | Speaker labels in an episode with their assigned KOL |
+| PUT · DELETE | `/api/episodes/{episode_id}/speakers/{speaker}` | Assign / clear the KOL behind a speaker label |
 
 Newly completed transcriptions are auto-queued for extraction (toggle `KNOWLEDGE_AUTO_EXTRACT`); a background worker drains the queue under a per-day LLM budget (`KNOWLEDGE_DAILY_BUDGET_USD`).
 

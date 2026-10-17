@@ -56,6 +56,18 @@ export function apiPost<T>(path: string, body?: unknown, signal?: AbortSignal): 
   })
 }
 
+export function apiPut<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, {
+    method: 'PUT',
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
+  })
+}
+
+export function apiDelete<T = void>(path: string, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, { method: 'DELETE', signal })
+}
+
 /** Human-readable message for anything thrown by the helpers above. */
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message

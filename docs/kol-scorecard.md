@@ -1,6 +1,8 @@
 # KOL Prediction Scorecard
 
-Status: **design sketch** (2026-10-17). Nothing here is built yet.
+Status: **steps 1–3 built** (2026-10-17) — KOLs, speaker mapping, review queue;
+due dates, price targets, automatic price resolution; leaderboard + weekly
+digest. Step 4 (the 2-week live test) is next.
 
 Track what crypto KOLs predict on X Spaces and podcasts, check the calls when
 they come due, and publish a weekly digest and leaderboard. It reuses the
@@ -117,7 +119,24 @@ Spotted a mistake? → [request a correction]
 
 ## Build order (~2 weeks)
 
-1. `kol_handles` + `episode_speakers` + review page (approve quote, assign speaker)
-2. `due_at` + structured-target extraction; daily checker with a price feed
-3. Scoring queries; markdown digest from the template
+1. ✅ `kol_handles` + `episode_speakers` + review page (approve quote, assign speaker).
+   Shipped as `predictions.review_status` (unreviewed / verified / rejected),
+   `/api/kols`, `/api/episodes/{id}/speakers`, `/api/predictions/review-queue`,
+   `POST /api/predictions/{id}/review`, and Library → Review calls. Verifying
+   requires an assigned speaker. Re-extraction keeps review *and* resolution
+   (it previously reset resolution).
+2. ✅ `due_at` + structured-target extraction; daily checker with a price feed.
+   Built as deterministic parsers (`app/knowledge/prediction_targets.py`) rather
+   than an LLM pass — ambiguous text stays unparsed for the reviewer — and
+   `app/knowledge/prediction_checker.py` (CoinGecko, every 6 h + `POST
+   /api/predictions/check`). Only *verified* calls are resolved; a call resolves
+   true the moment the target is hit, false once the due date passes. The
+   `conviction` column was deferred to step 3 (it only feeds calibration).
+3. ✅ Scoring queries; markdown digest from the template. `app/knowledge/scorecard.py`
+   (pure), `GET /api/scorecard/leaderboard`, `GET /api/scorecard/digest`
+   (`?format=md` for raw markdown), Library → Scorecard. "Changed their mind"
+   only lists contradictions where *both* quotes are verified predictions —
+   detected contradictions on unreviewed quotes are never published.
+   The checker also refuses to auto-resolve a target that was already met
+   when the call was made (found in an end-to-end run with live prices).
 4. Run on ~20 sources, review, publish issue #1, measure sharing
