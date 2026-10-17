@@ -636,4 +636,7 @@ Don't open a public issue.
 
 ## License
 
-MIT
+[AGPL-3.0](LICENSE). You can use, modify, and self-host Sift freely. If you
+run a modified version as a network service, you must make your modified
+source available to its users. Versions released before this change remain
+available under MIT.
