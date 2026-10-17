@@ -1,0 +1,27 @@
+{
+  "name": "sift-video",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "version": "0.1.0",
+  "description": "Sift promo video, built with Remotion",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render SiftPromo out/sift-promo.mp4",
+    "still": "remotion still SiftPromo out/poster.png --frame=420",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.536",
+    "@remotion/google-fonts": "4.0.536",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "remotion": "4.0.536"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.10",
+    "@types/react": "19.2.8",
+    "typescript": "5.8.3"
+  }
+}

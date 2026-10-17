@@ -22,6 +22,10 @@ Sift is evolving from a media utility into an **AI-First Knowledge Extraction Pl
   - [ ] Follow-up: canaries for the Tauri desktop backend (`src-tauri/src/backend/downloader.rs` runs the system yt-dlp, not the pinned one)
   - [ ] Follow-up: verify the download half once locally on a machine with ffmpeg (only metadata was verified on 2026-10-17)
 
+### Marketing
+
+- [x] Remotion promo video (`video/`, `make video`)
+
 ### v2.0 — AI-Native Intelligence (Next)
 
 | Feature | Difficulty | Impact | Priority |

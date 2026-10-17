@@ -1,4 +1,4 @@
-.PHONY: desktop dev dev-web dev-backend dev-frontend test check-links lint clean
+.PHONY: desktop dev dev-web dev-backend dev-frontend test check-links lint clean video
 
 # ============================================================
 # Desktop App Build (Pure Rust — no Python bundling needed)
@@ -48,6 +48,10 @@ test:
 # Hit one real link per platform (network, ~2 min). See docs/test-links.md
 check-links:
 	SIFT_LIVE=1 uv run pytest tests/live -v -rs
+
+# Render the Remotion promo to video/out/sift-promo.mp4
+video:
+	cd video && bun install && bun run render
 
 lint:
 	uv run ruff check .

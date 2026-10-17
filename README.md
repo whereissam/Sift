@@ -373,6 +373,7 @@ Reject stale timestamps (e.g. older than 5 minutes) to block replays.
 | `make desktop` | Build desktop installer (`.dmg` / `.msi` / `.deb`) |
 | `make test` | Run Python test suite |
 | `make check-links` | Check one real link per platform (network) |
+| `make video` | Render the Remotion promo to `video/out/sift-promo.mp4` |
 | `make lint` | Lint Python + TypeScript + Rust |
 | `make clean` | Remove build artifacts |
 
