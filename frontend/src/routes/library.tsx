@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { SearchPanel, AskPanel, DistillPanel } from '@/components/library'
+import { SearchPanel, AskPanel, DistillPanel, ReviewPanel } from '@/components/library'
 
 export const Route = createFileRoute('/library')({
   component: LibraryRoute,
@@ -21,6 +21,7 @@ function LibraryRoute() {
           <TabsTrigger value="search">Search</TabsTrigger>
           <TabsTrigger value="ask">Ask</TabsTrigger>
           <TabsTrigger value="distill">Distill</TabsTrigger>
+          <TabsTrigger value="review">Review calls</TabsTrigger>
         </TabsList>
 
         <TabsContent value="search">
@@ -31,6 +32,9 @@ function LibraryRoute() {
         </TabsContent>
         <TabsContent value="distill">
           <DistillPanel />
+        </TabsContent>
+        <TabsContent value="review">
+          <ReviewPanel />
         </TabsContent>
       </Tabs>
     </div>

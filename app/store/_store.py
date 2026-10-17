@@ -21,6 +21,7 @@ from ._principals import _PrincipalsMixin
 from ._idempotency import _IdempotencyMixin
 from ._jobs import _JobsMixin
 from ._knowledge import _KnowledgeMixin
+from ._kols import _KolsMixin
 from ._pipeline import _PipelineMixin
 from ._schema import _SchemaMixin
 from ._search import _SearchMixin
@@ -37,6 +38,7 @@ class JobStore(
     _AnnotationsMixin,
     _SettingsMixin,
     _KnowledgeMixin,
+    _KolsMixin,
     _BackfillMixin,
     _DigestMixin,
     _SearchMixin,
