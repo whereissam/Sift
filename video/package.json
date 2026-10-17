@@ -9,6 +9,7 @@
     "studio": "remotion studio",
     "render": "remotion render SiftPromo out/sift-promo.mp4",
     "still": "remotion still SiftPromo out/poster.png --frame=420",
+    "gif": "remotion render SiftPromo out/sift-promo.gif --codec=gif --every-nth-frame=2 --scale=0.5",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
