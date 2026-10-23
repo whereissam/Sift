@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches, yt_dlp_transfer_args
 from ..exceptions import SiftError, ContentNotAvailableError, ContentNotFoundError
 from .youtube import youtube_cookie_args
 
@@ -115,9 +115,7 @@ class YouTubeVideoDownloader(PlatformDownloader):
                 "--print-json",
                 "--merge-output-format", "mp4",
                 "--force-overwrites",  # Overwrite existing files
-                # Parallel fragment downloads
-                "--concurrent-fragments", "16",
-                "--fragment-retries", "5",
+                *yt_dlp_transfer_args(self.settings),
             ]
 
             cmd.extend(youtube_cookie_args(self.settings))

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches, yt_dlp_transfer_args
 from ..exceptions import SiftError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -127,9 +127,7 @@ class InstagramVideoDownloader(PlatformDownloader):
                 "--recode-video", "mp4",  # Recode to mp4 if needed
                 # Instagram-specific options
                 "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                # Parallel fragment downloads
-                "--concurrent-fragments", "16",
-                "--fragment-retries", "5",
+                *yt_dlp_transfer_args(self.settings),
             ]
 
             cmd.extend(instagram_cookie_args(self.settings))

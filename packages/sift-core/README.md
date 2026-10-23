@@ -26,6 +26,7 @@ Leave `settings` out to read the same environment variables / `.env` as the app
 
 ```bash
 sift download "https://podcasts.apple.com/..." -f mp3
+sift download "https://youtube.com/watch?v=..." --limit-rate 2M -N 4
 sift convert episode.m4a -f mp3
 sift to-video episode.m4a
 ```
@@ -35,6 +36,9 @@ sift to-video episode.m4a
 `sift-core-mcp` gives an agent these tools with no Sift server and no database:
 `capabilities`, `get_metadata`, `download`, `fetch_transcript` (existing
 YouTube/Spotify captions) and `transcribe` (speech-to-text on a URL or a local file).
+`download` and `transcribe` take optional `rate_limit` (`"500K"`, `"2M"`) and
+`concurrent_fragments` (1-64), which override `DOWNLOAD_RATE_LIMIT` /
+`DOWNLOAD_CONCURRENT_FRAGMENTS` for that call on yt-dlp platforms.
 
 ```bash
 pip install 'sift-core[mcp,transcribe]'

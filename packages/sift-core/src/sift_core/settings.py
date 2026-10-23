@@ -18,12 +18,37 @@ the app's database, the app registers a `set_cloud_credentials_provider`.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_RATE_LIMIT = re.compile(r"^\d+(?:\.\d+)?[KMG]?$")
+
+
+def normalize_rate_limit(value: object) -> Optional[str]:
+    """Validate a yt-dlp ``--limit-rate`` value; blank means no limit.
+
+    Accepts bytes per second with an optional K/M/G suffix ("500K", "1.5M").
+    Anything else is rejected rather than handed to yt-dlp.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("rate limit must be a string such as '500K' or '2M'")
+    text = value.strip().upper()
+    if not text:
+        return None
+    if not _RATE_LIMIT.match(text) or float(text.rstrip("KMG")) == 0:
+        raise ValueError(
+            f"invalid rate limit {value!r}: use bytes/s with an optional "
+            "K, M or G suffix, e.g. '500K' or '2M'"
+        )
+    return text
 
 
 class IngestSettings(BaseSettings):
@@ -37,6 +62,13 @@ class IngestSettings(BaseSettings):
 
     # Downloads
     download_dir: str = "./output"
+
+    # yt-dlp transfer controls, applied by every yt-dlp adapter. Fragments
+    # are the HLS/DASH segments fetched in parallel; the rate limit is
+    # yt-dlp's --limit-rate syntax ("500K", "2M"). Throttling is less about
+    # bandwidth than about looking less like a scraper to the platform.
+    download_concurrent_fragments: int = Field(default=16, ge=1, le=64)
+    download_rate_limit: Optional[str] = None
 
     # Twitter Authentication
     twitter_auth_token: str = ""
@@ -82,6 +114,31 @@ class IngestSettings(BaseSettings):
     # the raw one-cue-per-segment path.
     subtitle_reflow: bool = True
     subtitle_style_preset: str = "balanced"  # broadcast | balanced | youtube | single_line
+
+    @field_validator("download_rate_limit", mode="before")
+    @classmethod
+    def _check_rate_limit(cls, value: object) -> Optional[str]:
+        return normalize_rate_limit(value)
+
+    def with_download_overrides(
+        self,
+        *,
+        concurrent_fragments: Optional[int] = None,
+        rate_limit: Optional[str] = None,
+    ) -> "IngestSettings":
+        """A copy with per-call transfer overrides; ``None`` keeps the setting.
+
+        `model_copy` skips validation, so the values are checked here — they
+        end up in a yt-dlp argv.
+        """
+        update: dict[str, object] = {}
+        if concurrent_fragments is not None:
+            if not 1 <= concurrent_fragments <= 64:
+                raise ValueError("concurrent_fragments must be between 1 and 64")
+            update["download_concurrent_fragments"] = concurrent_fragments
+        if rate_limit is not None:
+            update["download_rate_limit"] = normalize_rate_limit(rate_limit)
+        return self.model_copy(update=update) if update else self
 
     def get_download_path(self) -> Path:
         """Get download directory as Path, creating if needed."""

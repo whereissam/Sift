@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches, yt_dlp_transfer_args
 from ..exceptions import SiftError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -124,9 +124,7 @@ class XiaohongshuVideoDownloader(PlatformDownloader):
                 # XiaoHongShu extractor sets its own headers internally; forcing a
                 # custom UA makes the site return a page with no video data
                 # ("No video formats found!"). Let yt-dlp use its defaults.
-                # Parallel fragment downloads
-                "--concurrent-fragments", "16",
-                "--fragment-retries", "5",
+                *yt_dlp_transfer_args(self.settings),
             ]
 
             # "--" ends option parsing, so the URL can never be read as a

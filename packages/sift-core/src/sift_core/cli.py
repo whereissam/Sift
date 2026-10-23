@@ -9,6 +9,7 @@ from pathlib import Path
 from . import download_audio
 from .media.converter import AudioConverter
 from .fetch.downloader import DownloaderFactory
+from .settings import get_ingest_settings
 from .media.video import AudioToVideo
 
 
@@ -19,6 +20,15 @@ async def download_command(args):
         print(f"Error: Unsupported or invalid URL: {args.url}", file=sys.stderr)
         sys.exit(1)
 
+    try:
+        settings = get_ingest_settings().with_download_overrides(
+            concurrent_fragments=args.concurrent_fragments,
+            rate_limit=args.limit_rate,
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(2)
+
     print(f"Downloading from {platform.value}: {args.url}")
 
     result = await download_audio(
@@ -26,6 +36,7 @@ async def download_command(args):
         output_path=Path(args.output) if args.output else None,
         output_format=args.format,
         quality=args.quality,
+        settings=settings,
     )
 
     if result.success:
@@ -127,6 +138,7 @@ Examples:
   xdownloader download https://x.com/i/spaces/1vOxwdyYrlqKB
   xdownloader download -f mp3 https://youtube.com/watch?v=dQw4w9WgXcQ
   xdownloader download -o episode.m4a https://xiaoyuzhoufm.com/episode/...
+  xdownloader download --limit-rate 2M -N 4 https://youtube.com/watch?v=dQw4w9WgXcQ
         """,
     )
     download_parser.add_argument("url", help="URL to download (X Spaces, YouTube, podcasts, …)")
@@ -142,6 +154,19 @@ Examples:
         choices=["low", "medium", "high", "highest"],
         default="high",
         help="Quality preset for MP3 (default: high)",
+    )
+    download_parser.add_argument(
+        "-N", "--concurrent-fragments",
+        type=int,
+        metavar="N",
+        help="Parallel HLS/DASH fragments for yt-dlp platforms "
+        "(1-64; default: DOWNLOAD_CONCURRENT_FRAGMENTS or 16)",
+    )
+    download_parser.add_argument(
+        "-r", "--limit-rate",
+        metavar="RATE",
+        help="Max download speed for yt-dlp platforms, e.g. 500K or 2M "
+        "(default: DOWNLOAD_RATE_LIMIT or unlimited)",
     )
 
     # Convert command

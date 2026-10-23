@@ -142,14 +142,25 @@ def build_server(settings: Optional[IngestSettings] = None):
         url: str,
         format: Literal["m4a", "mp3", "mp4"] = "m4a",
         quality: Literal["low", "medium", "high", "highest"] = "high",
+        rate_limit: Optional[str] = None,
+        concurrent_fragments: Optional[int] = None,
     ) -> dict:
         """Download audio (or video, for video platforms) to the local download
-        directory and return the file path. Long episodes take a while."""
+        directory and return the file path. Long episodes take a while.
+        `rate_limit` caps speed ("500K", "2M") and `concurrent_fragments`
+        (1-64) sets parallel segment fetches; both apply to yt-dlp platforms
+        and default to the server's settings."""
         if DownloaderFactory.detect_platform(url) is None:
             return _failure(f"Unsupported URL: {url}")
         try:
+            run_settings = _settings().with_download_overrides(
+                concurrent_fragments=concurrent_fragments, rate_limit=rate_limit
+            )
+        except ValueError as e:
+            return _failure(str(e))
+        try:
             result = await download_audio(
-                url, output_format=format, quality=quality, settings=_settings()
+                url, output_format=format, quality=quality, settings=run_settings
             )
         except SiftError as e:
             return _failure(str(e))
@@ -196,10 +207,14 @@ def build_server(settings: Optional[IngestSettings] = None):
         engine: Optional[Literal["whisper", "sensevoice", "apple", "cloud"]] = None,
         include_segments: bool = False,
         max_chars: int = DEFAULT_MAX_CHARS,
+        rate_limit: Optional[str] = None,
+        concurrent_fragments: Optional[int] = None,
     ) -> dict:
         """Speech-to-text on a URL (downloaded first) or a local audio file.
         Picks the best installed engine unless `engine` is given. Slow: roughly
-        real-time or faster depending on the engine and hardware."""
+        real-time or faster depending on the engine and hardware.
+        `rate_limit` and `concurrent_fragments` shape the download, as in
+        `download`."""
         from .transcribe.transcription_engine import (
             TranscriptionEngine,
             get_best_engine,
@@ -210,7 +225,13 @@ def build_server(settings: Optional[IngestSettings] = None):
             if DownloaderFactory.detect_platform(source) is None:
                 return _failure(f"Unsupported URL: {source}")
             try:
-                result = await download_audio(source, settings=_settings())
+                run_settings = _settings().with_download_overrides(
+                    concurrent_fragments=concurrent_fragments, rate_limit=rate_limit
+                )
+            except ValueError as e:
+                return _failure(str(e))
+            try:
+                result = await download_audio(source, settings=run_settings)
             except SiftError as e:
                 return _failure(str(e))
             if not result.success:
