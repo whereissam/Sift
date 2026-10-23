@@ -99,6 +99,21 @@ def yt_dlp_available() -> bool:
     return True
 
 
+def yt_dlp_transfer_args(settings) -> list[str]:
+    """yt-dlp flags for parallelism, retries and throttling, from settings.
+
+    Every yt-dlp adapter used to hardcode ``--concurrent-fragments 16``; this
+    is the one place those flags are built now.
+    """
+    args = [
+        "--concurrent-fragments", str(settings.download_concurrent_fragments),
+        "--fragment-retries", "5",
+    ]
+    if settings.download_rate_limit:
+        args += ["--limit-rate", settings.download_rate_limit]
+    return args
+
+
 class Platform(str, Enum):
     """Supported platforms."""
 

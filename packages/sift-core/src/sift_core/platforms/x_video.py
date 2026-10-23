@@ -17,6 +17,7 @@ from ..base import (
     DownloadResult,
     resolve_yt_dlp,
     yt_dlp_available,
+    yt_dlp_transfer_args,
 )
 from ..exceptions import SiftError, ContentNotFoundError
 
@@ -181,9 +182,7 @@ class XVideoDownloader(PlatformDownloader):
                     "-o", output_template,
                     "--print-json",
                     "--merge-output-format", "mp4",
-                    # Parallel fragment downloads
-                    "--concurrent-fragments", "16",
-                    "--fragment-retries", "5",
+                    *yt_dlp_transfer_args(self.settings),
                 ],
                 url,
                 settings=self.settings,

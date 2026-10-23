@@ -803,6 +803,49 @@ remaining coupling was configuration.
 - [ ] Rename the `AudioMetadata` / `DownloadResult` public types before the
   package is published, if at all — after that they are an API
 
+## P26: Download Engine Controls — 8 open
+
+**Goal:** expose the yt-dlp knobs that matter for acquisition reliability
+through settings, API, CLI and both MCP servers. Triaged 2026-10-23 from an
+external 20-item feature list; most of its task-management half already exists
+(queue + priority 1–10, `max_concurrent_downloads`, batch URL/file upload,
+cancel, retry, SQLite job recovery on restart, idempotency + asset
+fingerprinting, subscriptions, webhooks).
+
+### Tasks
+- [x] Configurable parallel fragments + download rate limit (2026-10-23) —
+      `DOWNLOAD_CONCURRENT_FRAGMENTS` (default 16, was hardcoded in 6 adapters)
+      and `DOWNLOAD_RATE_LIMIT` on `IngestSettings`, built into argv by
+      `yt_dlp_transfer_args`; per-call override via CLI `-N` / `--limit-rate`
+      and local MCP `download` / `transcribe` params. Verified live: same file
+      2s unthrottled vs 10s at `--limit-rate 30K`
+  - [ ] Per-request override on the server API / hosted `sift-mcp` (server
+        uses the env setting for now)
+  - [ ] Non-yt-dlp adapters (Apple Podcasts, 小宇宙, Discord via httpx;
+        Spotify via spotDL) ignore the rate limit
+- [ ] Playlist item selection — yt-dlp `--playlist-items` (e.g. `3-7`). Not a
+      flag pass-through: every adapter parses one `--print-json` line into one
+      `DownloadResult`, and a job owns one asset, so this needs a fan-out
+      (one job per item, e.g. via the batch path) — design first
+  - [ ] Check what the YouTube adapters do with `watch?v=…&list=…` URLs: they
+        don't pass `--no-playlist` (Ximalaya does), so yt-dlp may expand the
+        whole list while only the first item is recorded
+- [ ] Pause / resume a queued or running job (cancel exists, pause does not)
+- [ ] Verify byte-level resume of partial downloads after a crash/restart —
+      job-level recovery exists (`recover_unfinished_jobs`); confirm yt-dlp
+      `.part` files are reused rather than restarted
+- [ ] Download speed / ETA in job progress — progress today is stage-based in
+      media seconds; add bytes/s + ETA from yt-dlp progress hooks
+- [ ] Automatic retry with backoff for failed queue jobs (manual
+      `POST /jobs/{id}/retry` exists; per-platform yt-dlp retries exist)
+
+### Explicitly out of scope
+- aria2c / external downloader, "smart" engine selection, dynamic concurrency
+  tuning — extra binary and complexity for speed, which is not the moat
+- Hand-rolled HTTP Range chunking — yt-dlp already does it
+- Arbitrary shell commands after completion — remote command execution on the
+  server; webhooks cover the use case
+
 ## Transcription Engine Ideas — 1 open
 
 - [ ] **Breeze-ASR-25 engine** (MediaTek, Whisper-large-v2 fine-tune) for

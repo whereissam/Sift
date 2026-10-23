@@ -95,6 +95,8 @@ make dev-web
 uv run sift download "https://x.com/i/spaces/1vOxwdyYrlqKB"
 uv run sift download "https://youtube.com/watch?v=xxx" -f mp3
 uv run sift download "https://podcasts.apple.com/..." -f mp3 -q highest
+# Throttle to 2 MB/s and fetch 4 HLS/DASH fragments in parallel (yt-dlp platforms)
+uv run sift download "https://youtube.com/watch?v=xxx" --limit-rate 2M -N 4
 ```
 
 ### As a Python library
@@ -227,6 +229,13 @@ HUGGINGFACE_TOKEN=hf_xxx  # For speaker diarization
 # `uv sync` installs) over a system-wide install, so a stale `brew install
 # yt-dlp` can't silently shadow it. Set this to force a specific binary.
 # YT_DLP_PATH=/usr/local/bin/yt-dlp
+
+# yt-dlp transfer controls (YouTube, X, Instagram, 小红书, 喜马拉雅).
+# Parallel HLS/DASH fragments per download, 1-64:
+# DOWNLOAD_CONCURRENT_FRAGMENTS=16
+# Max speed per download, bytes/s with optional K/M/G. Unset = unlimited.
+# Throttling also makes bot-blocking less likely on long runs:
+# DOWNLOAD_RATE_LIMIT=2M
 
 # Queue & Scheduling
 QUEUE_ENABLED=true

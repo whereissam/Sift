@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..settings import IngestSettings, get_ingest_settings
-from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches
+from ..base import Platform, PlatformDownloader, AudioMetadata, DownloadResult, resolve_yt_dlp, yt_dlp_available, url_host_matches, yt_dlp_transfer_args
 from ..exceptions import SiftError, ContentNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ class XimalayaDownloader(PlatformDownloader):
                 "--audio-format", download_format if download_format == "mp3" else "m4a",
                 "-o", output_template,
                 "--print-json",
-                "--fragment-retries", "5",
+                *yt_dlp_transfer_args(self.settings),
             ]
 
             if download_format == "mp3":

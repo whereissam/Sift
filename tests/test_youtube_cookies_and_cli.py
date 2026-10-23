@@ -86,7 +86,7 @@ def test_cli_download_success_path(monkeypatch, capsys, tmp_path):
     media = tmp_path / "a.m4a"
     media.write_bytes(b"x" * 2048)
 
-    async def fake_download_audio(url, output_path, output_format, quality):
+    async def fake_download_audio(url, output_path, output_format, quality, settings):
         return SimpleNamespace(
             success=True,
             file_path=media,
@@ -98,7 +98,8 @@ def test_cli_download_success_path(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(cli, "download_audio", fake_download_audio)
 
     args = SimpleNamespace(
-        url="https://youtu.be/dQw4w9WgXcQ", output=None, format="m4a", quality="high"
+        url="https://youtu.be/dQw4w9WgXcQ", output=None, format="m4a", quality="high",
+        concurrent_fragments=None, limit_rate=None,
     )
     asyncio.run(cli.download_command(args))
     out = capsys.readouterr().out
