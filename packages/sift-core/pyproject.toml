@@ -18,7 +18,7 @@ dependencies = [
     "youtube-transcript-api>=1.0.0",
     # Run as a binary, but installed here so the pinned version is the one
     # `resolve_yt_dlp` finds next to the interpreter.
-    "yt-dlp>=2026.8.19",
+    "yt-dlp>=2026.10.21",
 ]
 
 [project.optional-dependencies]
