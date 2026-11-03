@@ -803,7 +803,7 @@ remaining coupling was configuration.
 - [ ] Rename the `AudioMetadata` / `DownloadResult` public types before the
   package is published, if at all — after that they are an API
 
-## P26: Download Engine Controls — 8 open
+## P26: Download Engine Controls — 7 open
 
 **Goal:** expose the yt-dlp knobs that matter for acquisition reliability
 through settings, API, CLI and both MCP servers. Triaged 2026-10-23 from an
@@ -827,9 +827,11 @@ fingerprinting, subscriptions, webhooks).
       flag pass-through: every adapter parses one `--print-json` line into one
       `DownloadResult`, and a job owns one asset, so this needs a fan-out
       (one job per item, e.g. via the batch path) — design first
-  - [ ] Check what the YouTube adapters do with `watch?v=…&list=…` URLs: they
-        don't pass `--no-playlist` (Ximalaya does), so yt-dlp may expand the
-        whole list while only the first item is recorded
+  - [x] YouTube adapters expanded `watch?v=…&list=…` URLs into the whole list
+        (2026-11-03, `fix/youtube-no-playlist`) — confirmed live (a `&list=UU…`
+        uploads URL resolved to 30+ items vs 1), fixed with `--no-playlist` on
+        download + metadata in `youtube.py` / `youtube_video.py`; regression
+        test `tests/test_youtube_no_playlist.py`
 - [ ] Pause / resume a queued or running job (cancel exists, pause does not)
 - [ ] Verify byte-level resume of partial downloads after a crash/restart —
       job-level recovery exists (`recover_unfinished_jobs`); confirm yt-dlp

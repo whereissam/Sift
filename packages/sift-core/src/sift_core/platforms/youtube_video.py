@@ -109,6 +109,7 @@ class YouTubeVideoDownloader(PlatformDownloader):
                 # can be solved (via the local deno runtime); without it some
                 # formats are missing / throttled.
                 "--remote-components", "ejs:github",
+                "--no-playlist",  # watch?v=…&list=… means that one video, not the list
                 "--no-progress",
                 "-f", format_spec,
                 "-o", output_template,
@@ -235,6 +236,7 @@ class YouTubeVideoDownloader(PlatformDownloader):
             cmd = [
                 self._yt_dlp_path,
                 "--remote-components", "ejs:github",
+                "--no-playlist",  # watch?v=…&list=… means that one video, not the list
                 "--no-download",
                 "--print-json",
                 "--",

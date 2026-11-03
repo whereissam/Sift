@@ -122,6 +122,7 @@ class YouTubeDownloader(PlatformDownloader):
                 # can be solved (via the local deno runtime); without it some
                 # formats are missing / throttled.
                 "--remote-components", "ejs:github",
+                "--no-playlist",  # watch?v=…&list=… means that one video, not the list
                 "--no-progress",
                 "-x",  # Extract audio
                 "--audio-format", download_format if download_format == "mp3" else "m4a",
@@ -267,6 +268,7 @@ class YouTubeDownloader(PlatformDownloader):
             cmd = [
                 self._yt_dlp_path,
                 "--remote-components", "ejs:github",
+                "--no-playlist",  # watch?v=…&list=… means that one video, not the list
                 "--no-download",
                 "--print-json",
                 # Without these, metadata fails on exactly the videos that need
