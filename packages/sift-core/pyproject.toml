@@ -15,7 +15,7 @@ dependencies = [
     "cachetools>=5.3.0",
     "feedparser>=6.0.0",
     "mutagen>=1.47.0",
-    "youtube-transcript-api>=1.0.0",
+    "youtube-transcript-api>=1.2.5",
     # Run as a binary, but installed here so the pinned version is the one
     # `resolve_yt_dlp` finds next to the interpreter.
     "yt-dlp>=2026.8.19",
