@@ -31,7 +31,7 @@ dependencies = [
     # which is 3.11+, so importing litellm fails outright on Python 3.10.
     "litellm>=1.30.0,<1.98",
     "opencc-python-reimplemented>=0.1.7",
-    "youtube-transcript-api>=1.0.0",
+    "youtube-transcript-api>=1.2.5",
     "av>=16.1.0",
     "numpy>=2.2.6",
     "ctranslate2>=4.6.3",
